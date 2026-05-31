@@ -135,6 +135,127 @@ async function main(): Promise<void> {
     "created program not in list"
   );
 
+  // ---------- Day 3: customers + cards ----------
+
+  console.log("→ create customer");
+  const customer = await call<{ id: string; name: string | null }>(
+    "POST",
+    "/v1/customers",
+    { name: "Jane Smoke", phone: "+31600000000" },
+    jwt
+  );
+  assert(customer.id, "no customer id");
+
+  console.log("→ customer with neither phone nor email should 400");
+  let validationBlocked = false;
+  try {
+    await call("POST", "/v1/customers", { name: "Bad" }, jwt);
+  } catch (err) {
+    validationBlocked = String(err).includes("400");
+  }
+  assert(validationBlocked, "phone-or-email validation did not 400");
+
+  console.log("→ list customers");
+  const customers = await call<{ customers: Array<{ id: string }> }>(
+    "GET",
+    "/v1/customers",
+    undefined,
+    jwt
+  );
+  assert(
+    customers.customers.some((c) => c.id === customer.id),
+    "created customer not in list"
+  );
+
+  console.log("→ enrol card");
+  const card = await call<{
+    id: string;
+    qrToken: string;
+    stampsRequired: number;
+    cardState: { stamps_current: number; total_lifetime: number; rewards_redeemed: number };
+  }>(
+    "POST",
+    "/v1/cards",
+    { customerId: customer.id, programId: program.id },
+    jwt
+  );
+  assert(card.id, "no card id");
+  assert(card.qrToken.length === 64, "qr_token should be 64 hex chars");
+  assert(card.stampsRequired === 10, `stampsRequired wrong: ${card.stampsRequired}`);
+  assert(card.cardState.stamps_current === 0, "initial stamps_current should be 0");
+  assert(card.cardState.total_lifetime === 0, "initial total_lifetime should be 0");
+
+  console.log("→ duplicate enrol should 409");
+  let dupBlocked = false;
+  try {
+    await call("POST", "/v1/cards", { customerId: customer.id, programId: program.id }, jwt);
+  } catch (err) {
+    dupBlocked = String(err).includes("409");
+  }
+  assert(dupBlocked, "duplicate card enrol was not blocked");
+
+  console.log("→ stamp the card 10 times");
+  for (let i = 1; i <= 10; i++) {
+    const r = await call<{
+      card: { cardState: { stamps_current: number; total_lifetime: number } };
+      events: Array<{ eventType: string }>;
+    }>("POST", `/v1/cards/${card.id}/stamp`, undefined, jwt);
+    assert(r.card.cardState.stamps_current === i, `stamps_current should be ${i}`);
+    assert(r.card.cardState.total_lifetime === i, `total_lifetime should be ${i}`);
+    assert(r.events[0].eventType === "stamp", "latest event should be stamp");
+  }
+
+  console.log("→ stamping past the threshold should 400");
+  let pastThresholdBlocked = false;
+  try {
+    await call("POST", `/v1/cards/${card.id}/stamp`, undefined, jwt);
+  } catch (err) {
+    pastThresholdBlocked = String(err).includes("400");
+  }
+  assert(pastThresholdBlocked, "stamping past threshold was not blocked");
+
+  console.log("→ redeem");
+  const afterRedeem = await call<{
+    card: {
+      cardState: { stamps_current: number; rewards_redeemed: number; total_lifetime: number };
+    };
+    events: Array<{ eventType: string }>;
+  }>("POST", `/v1/cards/${card.id}/redeem`, undefined, jwt);
+  assert(
+    afterRedeem.card.cardState.stamps_current === 0,
+    "stamps_current should reset to 0 after redeem"
+  );
+  assert(
+    afterRedeem.card.cardState.rewards_redeemed === 1,
+    "rewards_redeemed should be 1"
+  );
+  assert(
+    afterRedeem.card.cardState.total_lifetime === 10,
+    "total_lifetime should not reset on redeem"
+  );
+  assert(afterRedeem.events[0].eventType === "redeem", "latest event should be redeem");
+
+  console.log("→ redeem when ineligible should 400");
+  let redeemBlocked = false;
+  try {
+    await call("POST", `/v1/cards/${card.id}/redeem`, undefined, jwt);
+  } catch (err) {
+    redeemBlocked = String(err).includes("400");
+  }
+  assert(redeemBlocked, "redeem without enough stamps was not blocked");
+
+  console.log("→ card detail has events");
+  const detail = await call<{
+    card: { id: string };
+    events: Array<{ eventType: string }>;
+  }>("GET", `/v1/cards/${card.id}`, undefined, jwt);
+  assert(detail.card.id === card.id, "detail card id mismatch");
+  assert(detail.events.length >= 12, `expected ≥12 events, got ${detail.events.length}`);
+  const types = detail.events.map((e) => e.eventType);
+  assert(types.includes("signup"), "no signup event");
+  assert(types.filter((t) => t === "stamp").length === 10, "should be 10 stamp events");
+  assert(types.filter((t) => t === "redeem").length === 1, "should be 1 redeem event");
+
   console.log("✓ smoke test passed");
 }
 

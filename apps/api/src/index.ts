@@ -7,6 +7,8 @@ import { logger } from "./logger.js";
 import { ensureDbConnection, pool } from "./db/pool.js";
 import { errorHandler } from "./errors.js";
 import { authRouter } from "./routes/auth.js";
+import { cardsRouter } from "./routes/cards.js";
+import { customersRouter } from "./routes/customers.js";
 import { merchantsRouter } from "./routes/merchants.js";
 import { meRouter } from "./routes/me.js";
 import { programsRouter } from "./routes/programs.js";
@@ -24,6 +26,8 @@ app.use("/v1/auth", authRouter);
 app.use("/v1/merchants", merchantsRouter);
 app.use("/v1/me", meRouter);
 app.use("/v1/programs", programsRouter);
+app.use("/v1/customers", customersRouter);
+app.use("/v1/cards", cardsRouter);
 
 app.use(errorHandler);
 

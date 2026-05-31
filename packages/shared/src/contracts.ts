@@ -88,3 +88,76 @@ export const Program = z.object({
   createdAt: z.string(),
 });
 export type Program = z.infer<typeof Program>;
+
+// ---------- Customers ----------
+
+export const CustomerCreateInput = z
+  .object({
+    name: z.string().min(1).max(200),
+    phone: z.string().max(20).optional(),
+    email: z.string().email().max(200).optional(),
+  })
+  .refine((v) => (v.phone && v.phone.trim() !== "") || (v.email && v.email.trim() !== ""), {
+    message: "phone or email is required",
+  });
+export type CustomerCreateInput = z.infer<typeof CustomerCreateInput>;
+
+export const Customer = z.object({
+  id: z.string(),
+  merchantId: z.string(),
+  name: z.string().nullable(),
+  phone: z.string().nullable(),
+  email: z.string().nullable(),
+  createdAt: z.string(),
+});
+export type Customer = z.infer<typeof Customer>;
+
+// ---------- Cards ----------
+
+export const CardCreateInput = z.object({
+  customerId: z.string().min(1),
+  programId: z.string().min(1),
+});
+export type CardCreateInput = z.infer<typeof CardCreateInput>;
+
+export const Card = z.object({
+  id: z.string(),
+  merchantId: z.string(),
+  customerId: z.string(),
+  programId: z.string(),
+  customerName: z.string().nullable(),
+  programName: z.string(),
+  stampsRequired: z.number().int().positive(),
+  cardState: z.unknown(), // typed at usage site via the CardState union from index.ts
+  qrToken: z.string(),
+  status: z.enum(["active", "blocked"]),
+  rewardText: z.string(),
+  createdAt: z.string(),
+  lastEventAt: z.string().nullable(),
+});
+export type Card = z.infer<typeof Card>;
+
+export const CardEvent = z.object({
+  id: z.number(),
+  cardId: z.string(),
+  eventType: z.enum([
+    "stamp",
+    "redeem",
+    "reset",
+    "manual_adjust",
+    "points_add",
+    "review_reward",
+    "signup",
+    "expire",
+  ]),
+  deltaJson: z.unknown(),
+  note: z.string().nullable(),
+  createdAt: z.string(),
+});
+export type CardEvent = z.infer<typeof CardEvent>;
+
+export const CardDetail = z.object({
+  card: Card,
+  events: z.array(CardEvent),
+});
+export type CardDetail = z.infer<typeof CardDetail>;
