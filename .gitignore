@@ -1,0 +1,34 @@
+# deps
+node_modules/
+.pnpm-store/
+
+# env (never commit real env files)
+.env
+.env.*
+!.env.example
+
+# build outputs
+dist/
+.next/
+out/
+build/
+*.tsbuildinfo
+
+# logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# secrets (never commit)
+secrets/
+
+# coverage
+**/coverage/
+
+# editor / OS
+.DS_Store
+.vscode/
+.idea/
+*.swp

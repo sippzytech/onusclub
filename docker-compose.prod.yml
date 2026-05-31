@@ -1,0 +1,85 @@
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: stampdeck-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-stampdeck}
+      MYSQL_USER: ${MYSQL_USER:-stampdeck}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    volumes:
+      - stampdeck_mysql:/var/lib/mysql
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    image: stampdeck/api:latest
+    container_name: stampdeck-api
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      DATABASE_URL: mysql://${MYSQL_USER:-stampdeck}:${MYSQL_PASSWORD}@mysql:3306/${MYSQL_DATABASE:-stampdeck}
+      GOOGLE_WALLET_ISSUER_ID: ${GOOGLE_WALLET_ISSUER_ID}
+      GOOGLE_WALLET_SA_KEY_PATH: /secrets/wallet-sa.json
+      JWT_SECRET: ${JWT_SECRET}
+      BASE_URL_WEB: https://${DOMAIN_WEB}
+    volumes:
+      - /docker/stampdeck/secrets:/secrets:ro
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - internal
+      - n8n_default
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=n8n_default"
+      - "traefik.http.routers.stampdeck-api.rule=Host(`${DOMAIN_API}`)"
+      - "traefik.http.routers.stampdeck-api.entrypoints=websecure"
+      - "traefik.http.routers.stampdeck-api.tls=true"
+      - "traefik.http.routers.stampdeck-api.tls.certresolver=mytlschallenge"
+      - "traefik.http.services.stampdeck-api.loadbalancer.server.port=4000"
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    image: stampdeck/web:latest
+    container_name: stampdeck-web
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      NEXT_PUBLIC_API_BASE: https://${DOMAIN_API}
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET}
+      NEXTAUTH_URL: https://${DOMAIN_WEB}
+    depends_on:
+      - api
+    networks:
+      - n8n_default
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=n8n_default"
+      - "traefik.http.routers.stampdeck-web.rule=Host(`${DOMAIN_WEB}`)"
+      - "traefik.http.routers.stampdeck-web.entrypoints=websecure"
+      - "traefik.http.routers.stampdeck-web.tls=true"
+      - "traefik.http.routers.stampdeck-web.tls.certresolver=mytlschallenge"
+      - "traefik.http.services.stampdeck-web.loadbalancer.server.port=3001"
+
+networks:
+  internal:
+  n8n_default:
+    external: true
+
+volumes:
+  stampdeck_mysql:
