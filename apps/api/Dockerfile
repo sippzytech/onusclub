@@ -13,6 +13,10 @@ COPY tsconfig.base.json ./
 COPY packages/shared ./packages/shared
 COPY apps/api ./apps/api
 RUN pnpm --filter @stampdeck/api run build
+# tsc only compiles .ts files. Copy the SQL migrations alongside the compiled
+# migrate.js so that `node dist/db/migrate.js` can find them at runtime
+# (migrate.ts resolves the migrations dir relative to its own location).
+RUN cp -r apps/api/src/db/migrations apps/api/dist/db/migrations
 
 FROM base AS runtime
 ENV NODE_ENV=production
@@ -21,7 +25,6 @@ COPY --from=deps   /repo/apps/api/node_modules ./apps/api/node_modules
 COPY --from=build  /repo/apps/api/dist ./apps/api/dist
 COPY --from=build  /repo/packages/shared ./packages/shared
 COPY apps/api/package.json ./apps/api/package.json
-COPY apps/api/src/db/migrations ./apps/api/src/db/migrations
 WORKDIR /repo/apps/api
 EXPOSE 4000
 CMD ["node", "dist/index.js"]

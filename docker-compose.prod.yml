@@ -8,10 +8,23 @@ services:
       MYSQL_DATABASE: ${MYSQL_DATABASE:-stampdeck}
       MYSQL_USER: ${MYSQL_USER:-stampdeck}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      # Used by the init script (apps/api/src/db/init/01-reporting-user.sh) to
+      # create a read-only user for n8n + Metabase dashboards.
+      REPORTING_PASSWORD: ${REPORTING_PASSWORD}
     volumes:
       - stampdeck_mysql:/var/lib/mysql
+      - ./apps/api/src/db/init:/docker-entrypoint-initdb.d:ro
     networks:
+      # `internal` keeps api/web talking to the DB on a private network.
+      # `n8n_default` lets n8n + Metabase reach it as `stampdeck-mysql:3306`
+      # without exposing anything to the public internet.
       - internal
+      - n8n_default
+    ports:
+      # Host-only binding so anything native on the VPS (SSH tunnel, future
+      # native tools) can reach the DB at 127.0.0.1:33061. The host MySQL
+      # already owns 3306, so we use 33061 to coexist.
+      - "127.0.0.1:33061:3306"
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}"]
       interval: 10s
@@ -33,6 +46,8 @@ services:
       GOOGLE_WALLET_SA_KEY_PATH: /secrets/wallet-sa.json
       JWT_SECRET: ${JWT_SECRET}
       BASE_URL_WEB: https://${DOMAIN_WEB}
+      RESEND_API_KEY: ${RESEND_API_KEY}
+      EMAIL_FROM: ${EMAIL_FROM:-Stampdeck <onboarding@resend.dev>}
     volumes:
       - /docker/stampdeck/secrets:/secrets:ro
     depends_on:
