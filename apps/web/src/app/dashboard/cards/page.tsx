@@ -3,6 +3,7 @@ import type { Card, Customer, Program } from "@stampdeck/shared";
 import { apiFetch } from "@/lib/api";
 import { requireSession } from "@/lib/session";
 import { DashboardShell } from "../dashboard-shell";
+import { CardsList } from "./cards-list";
 import { EnrolCardForm } from "./enrol-card-form";
 
 export const dynamic = "force-dynamic";
@@ -18,47 +19,16 @@ export default async function CardsPage(): Promise<JSX.Element> {
   return (
     <DashboardShell user={user} merchant={merchant}>
       <section className="space-y-4">
-        <h2 className="text-lg font-medium text-gray-900">Cards</h2>
-        {cards.length === 0 ? (
-          <p className="text-sm text-gray-600">
-            No cards yet. Enrol a customer into a program below.
-          </p>
-        ) : (
-          <ul className="space-y-2">
-            {cards.map((c) => {
-              const state = c.cardState as
-                | { stamps_current?: number; rewards_redeemed?: number }
-                | null;
-              const cur = state?.stamps_current ?? 0;
-              return (
-                <li key={c.id}>
-                  <Link
-                    href={`/dashboard/cards/${c.id}`}
-                    className="block rounded-md border border-gray-200 bg-white p-4 text-sm hover:bg-gray-50"
-                  >
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <div className="font-medium text-gray-900">
-                          {c.customerName ?? "(no name)"}
-                        </div>
-                        <div className="text-gray-600 mt-1">{c.programName}</div>
-                      </div>
-                      <div className="text-right">
-                        <div className="text-2xl font-semibold tabular-nums text-gray-900">
-                          {cur}
-                          <span className="text-gray-400">/{c.stampsRequired}</span>
-                        </div>
-                        <div className="text-xs text-gray-500 mt-1">
-                          {state?.rewards_redeemed ?? 0} redeemed
-                        </div>
-                      </div>
-                    </div>
-                  </Link>
-                </li>
-              );
-            })}
-          </ul>
-        )}
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-medium text-gray-900">Cards</h2>
+          <Link
+            href="/dashboard/scan"
+            className="text-sm text-gray-700 underline hover:text-gray-900"
+          >
+            Scan QR →
+          </Link>
+        </div>
+        <CardsList cards={cards} />
       </section>
 
       <section className="space-y-3 mt-10">

@@ -169,3 +169,18 @@ export const WalletLink = z.object({
   url: z.string().url().nullable(),
 });
 export type WalletLink = z.infer<typeof WalletLink>;
+
+// ---------- Scan ----------
+
+export const ScanInput = z.object({
+  qrToken: z.string().length(64),
+  // "auto" stamps when below threshold, redeems when at threshold.
+  action: z.enum(["auto", "stamp", "redeem"]).default("auto"),
+});
+export type ScanInput = z.infer<typeof ScanInput>;
+
+export const ScanResult = z.object({
+  detail: CardDetail,
+  appliedAction: z.enum(["stamp", "redeem"]),
+});
+export type ScanResult = z.infer<typeof ScanResult>;

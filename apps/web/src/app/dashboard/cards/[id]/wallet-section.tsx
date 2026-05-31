@@ -3,20 +3,40 @@
 import { useState } from "react";
 
 export function WalletSection({
+  cardId,
   walletUrl,
   qrSvg,
   qrToken,
+  customerHasEmail,
 }: {
+  cardId: string;
   walletUrl: string | null;
   qrSvg: string;
   qrToken: string;
+  customerHasEmail: boolean;
 }): JSX.Element {
   const [copied, setCopied] = useState<"link" | "token" | null>(null);
+  const [resending, setResending] = useState(false);
+  const [resendMsg, setResendMsg] = useState<string | null>(null);
 
   async function copy(text: string, kind: "link" | "token"): Promise<void> {
     await navigator.clipboard.writeText(text);
     setCopied(kind);
     setTimeout(() => setCopied(null), 1500);
+  }
+
+  async function resendInvite(): Promise<void> {
+    setResending(true);
+    setResendMsg(null);
+    const res = await fetch(`/api/cards/${cardId}/resend-invite`, { method: "POST" });
+    setResending(false);
+    if (!res.ok) {
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      setResendMsg(`Failed: ${body.error ?? "send failed"}`);
+      return;
+    }
+    const body = (await res.json()) as { emailedTo?: string };
+    setResendMsg(`Re-sent to ${body.emailedTo ?? "customer"}.`);
   }
 
   return (
@@ -46,6 +66,22 @@ export function WalletSection({
               </button>
             </div>
             <p className="text-xs text-gray-500 break-all">{walletUrl}</p>
+            {customerHasEmail ? (
+              <div className="pt-2 border-t border-gray-100 space-y-2">
+                <button
+                  onClick={() => void resendInvite()}
+                  disabled={resending}
+                  className="rounded-md border border-gray-300 px-3 py-2 text-xs font-medium text-gray-800 hover:bg-gray-50 disabled:opacity-50"
+                >
+                  {resending ? "Sending…" : "Resend invite email"}
+                </button>
+                {resendMsg ? <p className="text-xs text-gray-600">{resendMsg}</p> : null}
+              </div>
+            ) : (
+              <p className="text-xs text-gray-500">
+                No email on file for this customer — invite emails disabled.
+              </p>
+            )}
           </>
         ) : (
           <p className="text-xs text-gray-600">

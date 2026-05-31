@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import QRCode from "qrcode";
-import type { CardDetail, WalletLink } from "@stampdeck/shared";
+import type { CardDetail, Customer, WalletLink } from "@stampdeck/shared";
 import { ApiCallError, apiFetch } from "@/lib/api";
 import { requireSession } from "@/lib/session";
 import { DashboardShell } from "../../dashboard-shell";
@@ -36,6 +36,10 @@ export default async function CardDetailPage({
     margin: 1,
     width: 180,
   });
+  // Look up the customer to know if we have an email on file (controls
+  // whether the "Resend invite" button is offered).
+  const { customers } = await apiFetch<{ customers: Customer[] }>("/v1/customers", { jwt });
+  const customer = customers.find((c) => c.id === detail.card.customerId) ?? null;
 
   const state = detail.card.cardState as {
     stamps_current: number;
@@ -81,9 +85,11 @@ export default async function CardDetailPage({
         <section className="space-y-3">
           <h3 className="text-base font-medium text-gray-900">Pass &amp; QR</h3>
           <WalletSection
+            cardId={detail.card.id}
             walletUrl={walletLink.available ? walletLink.url : null}
             qrSvg={qrSvg}
             qrToken={detail.card.qrToken}
+            customerHasEmail={!!customer?.email}
           />
         </section>
 

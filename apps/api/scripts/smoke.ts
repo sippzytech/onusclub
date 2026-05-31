@@ -256,6 +256,73 @@ async function main(): Promise<void> {
   assert(types.filter((t) => t === "stamp").length === 10, "should be 10 stamp events");
   assert(types.filter((t) => t === "redeem").length === 1, "should be 1 redeem event");
 
+  // ---------- Day 5: scan flow ----------
+
+  console.log("→ scan with valid token (auto) should stamp");
+  const scan1 = await call<{
+    detail: { card: { cardState: { stamps_current: number } } };
+    appliedAction: "stamp" | "redeem";
+  }>("POST", "/v1/scan", { qrToken: card.qrToken, action: "auto" }, jwt);
+  assert(scan1.appliedAction === "stamp", `expected stamp, got ${scan1.appliedAction}`);
+  assert(
+    scan1.detail.card.cardState.stamps_current === 1,
+    "scan stamp should bring count to 1"
+  );
+
+  console.log("→ scan 9 more times to reach threshold via scan");
+  for (let i = 2; i <= 10; i++) {
+    const r = await call<{
+      detail: { card: { cardState: { stamps_current: number } } };
+      appliedAction: "stamp" | "redeem";
+    }>("POST", "/v1/scan", { qrToken: card.qrToken, action: "auto" }, jwt);
+    assert(r.appliedAction === "stamp", `iteration ${i}: expected stamp`);
+    assert(
+      r.detail.card.cardState.stamps_current === i,
+      `iteration ${i}: stamps_current ${r.detail.card.cardState.stamps_current}`
+    );
+  }
+
+  console.log("→ scan with auto at threshold should redeem");
+  const redeemViaScan = await call<{
+    detail: { card: { cardState: { stamps_current: number; rewards_redeemed: number } } };
+    appliedAction: "stamp" | "redeem";
+  }>("POST", "/v1/scan", { qrToken: card.qrToken, action: "auto" }, jwt);
+  assert(
+    redeemViaScan.appliedAction === "redeem",
+    `expected redeem, got ${redeemViaScan.appliedAction}`
+  );
+  assert(
+    redeemViaScan.detail.card.cardState.stamps_current === 0,
+    "after redeem stamps_current should be 0"
+  );
+  assert(
+    redeemViaScan.detail.card.cardState.rewards_redeemed === 2,
+    "rewards_redeemed should be 2 (one from earlier route-based redeem)"
+  );
+
+  console.log("→ scan with junk token should 404");
+  let scan404 = false;
+  try {
+    await call(
+      "POST",
+      "/v1/scan",
+      { qrToken: "0".repeat(64), action: "auto" },
+      jwt
+    );
+  } catch (err) {
+    scan404 = String(err).includes("404");
+  }
+  assert(scan404, "unknown qr_token should 404");
+
+  console.log("→ scan with malformed token should 400 (zod validation)");
+  let scan400 = false;
+  try {
+    await call("POST", "/v1/scan", { qrToken: "short", action: "auto" }, jwt);
+  } catch (err) {
+    scan400 = String(err).includes("400");
+  }
+  assert(scan400, "malformed qr_token should 400");
+
   console.log("✓ smoke test passed");
 }
 

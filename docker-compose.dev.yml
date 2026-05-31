@@ -23,6 +23,10 @@ services:
     container_name: stampdeck-api-dev
     working_dir: /repo
     command: sh -c "corepack enable && corepack prepare pnpm@9.1.0 --activate && pnpm install && pnpm --filter @stampdeck/api run dev"
+    # Pull anything in apps/api/.env (e.g. RESEND_API_KEY) into the container.
+    # The explicit `environment:` block below still overrides per-key.
+    env_file:
+      - ./apps/api/.env
     environment:
       NODE_ENV: development
       PORT: 4000

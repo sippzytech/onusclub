@@ -8,6 +8,9 @@ const EnvSchema = z.object({
   GOOGLE_WALLET_SA_KEY_PATH: z.string().min(1),
   JWT_SECRET: z.string().min(8),
   BASE_URL_WEB: z.string().url(),
+  // Empty string → degrade to console-only email (matches the wallet pattern).
+  RESEND_API_KEY: z.string().optional().default(""),
+  EMAIL_FROM: z.string().default("Stampdeck <onboarding@resend.dev>"),
 });
 
 export type Env = z.infer<typeof EnvSchema>;

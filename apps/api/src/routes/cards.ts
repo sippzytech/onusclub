@@ -1,12 +1,10 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { Router, type Request, type Response } from "express";
 import type { ResultSetHeader, RowDataPacket } from "mysql2";
-import type { PoolConnection } from "mysql2/promise";
 import {
   CardCreateInput,
   type Card,
   type CardDetail,
-  type CardEvent,
   type StampCardState,
 } from "@stampdeck/shared";
 import { pool } from "../db/pool.js";
@@ -14,12 +12,14 @@ import { authContext, requireAuth } from "../auth/middleware.js";
 import { ApiError } from "../errors.js";
 import { logger } from "../logger.js";
 import {
-  createLoyaltyObject,
-  ensureLoyaltyClass,
-  patchLoyaltyObject,
-  sendCardMessage,
-} from "../wallet/loyalty.js";
-import type { WalletEvent } from "../wallet/state.js";
+  getCardDetail,
+  redeemCardById,
+  stampCardById,
+  syncCardToWallet,
+} from "../cards/operations.js";
+import { buildSaveJwt, saveUrl } from "../wallet/loyalty.js";
+import { sendEmail } from "../email/client.js";
+import { walletInviteEmail } from "../email/templates.js";
 
 export const cardsRouter: Router = Router();
 
@@ -49,116 +49,17 @@ interface CountRow extends RowDataPacket {
   c: number;
 }
 
-interface EventRow extends RowDataPacket {
-  id: number;
-  card_id: string;
-  event_type: CardEvent["eventType"];
-  delta_json: unknown;
-  note: string | null;
-  created_at: Date;
+interface InviteRow extends RowDataPacket {
+  google_wallet_object_id: string | null;
+  business_name: string;
+  customer_name: string | null;
+  customer_email: string | null;
+  reward_text: string;
+  program_config: unknown;
 }
 
 function parseJson<T>(value: unknown): T {
   return typeof value === "string" ? (JSON.parse(value) as T) : (value as T);
-}
-
-interface CardSyncContext extends RowDataPacket {
-  card_id: string;
-  qr_token: string;
-  card_state: unknown;
-  google_wallet_object_id: string | null;
-  merchant_id: string;
-  business_name: string;
-  brand_color: string | null;
-  logo_url: string | null;
-  google_wallet_class_id: string | null;
-  program_id: string;
-  program_name: string;
-  program_config: unknown;
-  reward_text: string;
-  customer_name: string | null;
-}
-
-/**
- * Mirror a card's state into Google Wallet, then deliver an event-specific
- * push notification (welcome / stamp / threshold-hit / redeem). Idempotent:
- * registers the class the first time it sees a merchant, creates the object
- * the first time it sees a card, otherwise PATCHes. Failures are logged but
- * never thrown — stamp/redeem must succeed even when Wallet is degraded.
- */
-async function syncCardToWallet(
-  cardId: string,
-  merchantId: string,
-  event: WalletEvent
-): Promise<void> {
-  try {
-    const [rows] = await pool.execute<CardSyncContext[]>(
-      `SELECT c.id AS card_id, c.qr_token, c.card_state, c.google_wallet_object_id,
-              m.id AS merchant_id, m.business_name, m.brand_color, m.logo_url,
-              m.google_wallet_class_id,
-              p.id AS program_id, p.name AS program_name,
-              p.config_json AS program_config, p.reward_text,
-              cu.name AS customer_name
-         FROM loyalty_cards c
-         JOIN merchants m ON m.id = c.merchant_id
-         JOIN loyalty_programs p ON p.id = c.program_id
-         JOIN customers cu ON cu.id = c.customer_id
-        WHERE c.id = ? AND c.merchant_id = ?
-        LIMIT 1`,
-      [cardId, merchantId]
-    );
-    if (rows.length === 0) return;
-    const row = rows[0];
-    const state = parseJson<StampCardState>(row.card_state);
-    if (state.type !== "stamp") return;
-    const cfg = parseJson<{ stamps_required?: number }>(row.program_config);
-    const stampsRequired = cfg.stamps_required ?? 0;
-    if (stampsRequired <= 0) return;
-
-    const merchantBranding = {
-      id: row.merchant_id,
-      businessName: row.business_name,
-      brandColor: row.brand_color,
-      logoUrl: row.logo_url,
-    };
-    const programForWallet = {
-      id: row.program_id,
-      name: row.program_name,
-      rewardText: row.reward_text,
-      stampsRequired,
-    };
-    const cardForWallet = {
-      id: row.card_id,
-      qrToken: row.qr_token,
-      state,
-      customerName: row.customer_name,
-    };
-
-    await ensureLoyaltyClass(
-      merchantBranding,
-      programForWallet,
-      row.google_wallet_class_id
-    );
-
-    if (!row.google_wallet_object_id) {
-      await createLoyaltyObject(merchantBranding, programForWallet, cardForWallet);
-    } else {
-      await patchLoyaltyObject(programForWallet, cardForWallet);
-    }
-
-    // Push event notification to the customer's phone. Best-effort — failure
-    // is logged inside sendCardMessage and never bubbles up.
-    await sendCardMessage({
-      event,
-      businessName: row.business_name,
-      rewardText: row.reward_text,
-      stampsCurrent: state.stamps_current,
-      stampsRequired,
-      cardId,
-    });
-  } catch (err) {
-    logger.error({ err, cardId, event }, "wallet sync failed");
-  }
 }
 
 function rowToCard(row: CardRow): Card {
@@ -180,17 +81,6 @@ function rowToCard(row: CardRow): Card {
   };
 }
 
-function rowToEvent(row: EventRow): CardEvent {
-  return {
-    id: row.id,
-    cardId: row.card_id,
-    eventType: row.event_type,
-    deltaJson: parseJson(row.delta_json),
-    note: row.note,
-    createdAt: new Date(row.created_at).toISOString(),
-  };
-}
-
 const CARD_SELECT = `
   SELECT c.id, c.merchant_id, c.customer_id, c.program_id, c.card_state,
          c.qr_token, c.status, c.created_at, c.last_event_at,
@@ -203,6 +93,65 @@ const CARD_SELECT = `
     JOIN loyalty_programs p ON p.id = c.program_id
 `;
 
+/**
+ * Send the wallet save link to the customer's email if we have one. Runs
+ * after the wallet object has been created. Best-effort: failures (no email,
+ * Resend down, wallet offline) are logged and swallowed.
+ */
+async function sendWalletInviteEmail(
+  cardId: string,
+  merchantId: string
+): Promise<boolean> {
+  try {
+    const [rows] = await pool.execute<InviteRow[]>(
+      `SELECT c.google_wallet_object_id,
+              m.business_name,
+              cu.name AS customer_name, cu.email AS customer_email,
+              p.reward_text, p.config_json AS program_config
+         FROM loyalty_cards c
+         JOIN merchants m ON m.id = c.merchant_id
+         JOIN customers cu ON cu.id = c.customer_id
+         JOIN loyalty_programs p ON p.id = c.program_id
+        WHERE c.id = ? AND c.merchant_id = ?
+        LIMIT 1`,
+      [cardId, merchantId]
+    );
+    if (rows.length === 0) return false;
+    const row = rows[0];
+    if (!row.customer_email) {
+      logger.info({ cardId }, "email skipped — no customer email");
+      return false;
+    }
+    if (!row.google_wallet_object_id) {
+      logger.info({ cardId }, "email skipped — wallet object not yet created");
+      return false;
+    }
+    const token = await buildSaveJwt(cardId);
+    if (!token) {
+      logger.info({ cardId }, "email skipped — wallet save JWT unavailable");
+      return false;
+    }
+    const cfg = parseJson<{ stamps_required?: number }>(row.program_config);
+    const { subject, html, text } = walletInviteEmail({
+      businessName: row.business_name,
+      customerName: row.customer_name,
+      rewardText: row.reward_text,
+      stampsRequired: cfg.stamps_required ?? 0,
+      walletSaveUrl: saveUrl(token),
+    });
+    const result = await sendEmail({
+      to: row.customer_email,
+      subject,
+      html,
+      text,
+    });
+    return result.ok;
+  } catch (err) {
+    logger.error({ err, cardId }, "wallet invite email failed");
+    return false;
+  }
+}
+
 // ---------- create card ----------
 
 cardsRouter.post("/", requireAuth, async (req: Request, res: Response<Card>) => {
@@ -213,7 +162,6 @@ cardsRouter.post("/", requireAuth, async (req: Request, res: Response<Card>) => 
   try {
     await conn.beginTransaction();
 
-    // Verify customer + program both belong to this merchant.
     const [customerCheck] = await conn.execute<CountRow[]>(
       "SELECT COUNT(*) AS c FROM customers WHERE id = ? AND merchant_id = ?",
       [input.customerId, ctx.merchantId]
@@ -230,9 +178,6 @@ cardsRouter.post("/", requireAuth, async (req: Request, res: Response<Card>) => 
       throw ApiError.badRequest("only stamp programs are supported in Phase 1");
     }
 
-    // Prevent duplicate active card for the same (customer, program) — keeps the
-    // enrol UX idempotent in practice without a unique index across nullable
-    // columns.
     const [dupRows] = await conn.execute<CountRow[]>(
       `SELECT COUNT(*) AS c FROM loyalty_cards
         WHERE customer_id = ? AND program_id = ? AND status = 'active'`,
@@ -278,9 +223,10 @@ cardsRouter.post("/", requireAuth, async (req: Request, res: Response<Card>) => 
     await conn.commit();
 
     // Mirror the new card to Google Wallet + send the welcome notification.
-    // Failures are logged inside, never bubble up — the DB row is the source
-    // of truth and stays committed.
     await syncCardToWallet(id, ctx.merchantId, "signup");
+
+    // If the customer has an email, send them the wallet save link.
+    await sendWalletInviteEmail(id, ctx.merchantId);
 
     return res.status(201).json(rowToCard(rows[0]));
   } catch (err) {
@@ -310,129 +256,17 @@ cardsRouter.get(
 
 cardsRouter.get("/:id", requireAuth, async (req: Request, res: Response<CardDetail>) => {
   const ctx = authContext(req);
-  const id = req.params.id;
-
-  const [cardRows] = await pool.execute<CardRow[]>(
-    `${CARD_SELECT} WHERE c.id = ? AND c.merchant_id = ?`,
-    [id, ctx.merchantId]
-  );
-  if (cardRows.length === 0) throw ApiError.notFound("card not found");
-
-  const [eventRows] = await pool.execute<EventRow[]>(
-    `SELECT id, card_id, event_type, delta_json, note, created_at
-       FROM card_events
-      WHERE card_id = ? AND merchant_id = ?
-      ORDER BY id DESC
-      LIMIT 50`,
-    [id, ctx.merchantId]
-  );
-
-  return res.json({
-    card: rowToCard(cardRows[0]),
-    events: eventRows.map(rowToEvent),
-  });
+  return res.json(await getCardDetail(req.params.id, ctx.merchantId));
 });
 
 // ---------- stamp ----------
-// Uses SELECT … FOR UPDATE so two concurrent stamp calls cannot double-count.
-
-async function loadCardForUpdate(
-  conn: PoolConnection,
-  cardId: string,
-  merchantId: string
-): Promise<{ row: CardRow; state: StampCardState; stampsRequired: number }> {
-  const [rows] = await conn.execute<CardRow[]>(
-    `${CARD_SELECT} WHERE c.id = ? AND c.merchant_id = ? FOR UPDATE`,
-    [cardId, merchantId]
-  );
-  if (rows.length === 0) throw ApiError.notFound("card not found");
-  const row = rows[0];
-  if (row.status !== "active") throw ApiError.badRequest("card is not active");
-  const state = parseJson<StampCardState>(row.card_state);
-  if (state.type !== "stamp") throw ApiError.badRequest("not a stamp card");
-  const cfg = parseJson<{ stamps_required?: number }>(row.program_config);
-  const stampsRequired = cfg.stamps_required ?? 0;
-  if (stampsRequired <= 0) throw ApiError.badRequest("program misconfigured");
-  return { row, state, stampsRequired };
-}
 
 cardsRouter.post(
   "/:id/stamp",
   requireAuth,
   async (req: Request, res: Response<CardDetail>) => {
     const ctx = authContext(req);
-    const id = req.params.id;
-
-    const conn = await pool.getConnection();
-    try {
-      await conn.beginTransaction();
-      const { state, stampsRequired } = await loadCardForUpdate(conn, id, ctx.merchantId);
-
-      if (state.stamps_current >= stampsRequired) {
-        throw ApiError.badRequest(
-          "card is at the reward threshold — redeem first before stamping again"
-        );
-      }
-
-      const before = state.stamps_current;
-      const newState: StampCardState = {
-        type: "stamp",
-        stamps_current: state.stamps_current + 1,
-        total_lifetime: state.total_lifetime + 1,
-        rewards_redeemed: state.rewards_redeemed,
-      };
-
-      await conn.execute<ResultSetHeader>(
-        `UPDATE loyalty_cards
-            SET card_state = ?, last_event_at = CURRENT_TIMESTAMP
-          WHERE id = ? AND merchant_id = ?`,
-        [JSON.stringify(newState), id, ctx.merchantId]
-      );
-      await conn.execute<ResultSetHeader>(
-        `INSERT INTO card_events (merchant_id, card_id, event_type, delta_json, note)
-         VALUES (?, ?, 'stamp', ?, NULL)`,
-        [
-          ctx.merchantId,
-          id,
-          JSON.stringify({
-            stamps_before: before,
-            stamps_after: newState.stamps_current,
-            stamps_required: stampsRequired,
-          }),
-        ]
-      );
-
-      const [cardRows] = await conn.execute<CardRow[]>(
-        `${CARD_SELECT} WHERE c.id = ? AND c.merchant_id = ?`,
-        [id, ctx.merchantId]
-      );
-      const [eventRows] = await conn.execute<EventRow[]>(
-        `SELECT id, card_id, event_type, delta_json, note, created_at
-           FROM card_events WHERE card_id = ? AND merchant_id = ?
-           ORDER BY id DESC LIMIT 50`,
-        [id, ctx.merchantId]
-      );
-
-      await conn.commit();
-
-      // Push the new state + a stamp / threshold-hit notification to the
-      // customer's phone. The threshold message fires only on the stamp that
-      // brings the card up to the reward count; subsequent stamping at that
-      // count is blocked above.
-      const event: WalletEvent =
-        newState.stamps_current >= stampsRequired ? "threshold" : "stamp";
-      await syncCardToWallet(id, ctx.merchantId, event);
-
-      return res.json({
-        card: rowToCard(cardRows[0]),
-        events: eventRows.map(rowToEvent),
-      });
-    } catch (err) {
-      await conn.rollback();
-      throw err;
-    } finally {
-      conn.release();
-    }
+    return res.json(await stampCardById(req.params.id, ctx.merchantId));
   }
 );
 
@@ -443,72 +277,6 @@ cardsRouter.post(
   requireAuth,
   async (req: Request, res: Response<CardDetail>) => {
     const ctx = authContext(req);
-    const id = req.params.id;
-
-    const conn = await pool.getConnection();
-    try {
-      await conn.beginTransaction();
-      const { state, stampsRequired } = await loadCardForUpdate(conn, id, ctx.merchantId);
-
-      if (state.stamps_current < stampsRequired) {
-        throw ApiError.badRequest(
-          `not enough stamps to redeem (${state.stamps_current}/${stampsRequired})`
-        );
-      }
-
-      const rewardsBefore = state.rewards_redeemed;
-      const newState: StampCardState = {
-        type: "stamp",
-        stamps_current: 0,
-        total_lifetime: state.total_lifetime,
-        rewards_redeemed: rewardsBefore + 1,
-      };
-
-      await conn.execute<ResultSetHeader>(
-        `UPDATE loyalty_cards
-            SET card_state = ?, last_event_at = CURRENT_TIMESTAMP
-          WHERE id = ? AND merchant_id = ?`,
-        [JSON.stringify(newState), id, ctx.merchantId]
-      );
-      await conn.execute<ResultSetHeader>(
-        `INSERT INTO card_events (merchant_id, card_id, event_type, delta_json, note)
-         VALUES (?, ?, 'redeem', ?, NULL)`,
-        [
-          ctx.merchantId,
-          id,
-          JSON.stringify({
-            stamps_required: stampsRequired,
-            rewards_redeemed_before: rewardsBefore,
-            rewards_redeemed_after: newState.rewards_redeemed,
-          }),
-        ]
-      );
-
-      const [cardRows] = await conn.execute<CardRow[]>(
-        `${CARD_SELECT} WHERE c.id = ? AND c.merchant_id = ?`,
-        [id, ctx.merchantId]
-      );
-      const [eventRows] = await conn.execute<EventRow[]>(
-        `SELECT id, card_id, event_type, delta_json, note, created_at
-           FROM card_events WHERE card_id = ? AND merchant_id = ?
-           ORDER BY id DESC LIMIT 50`,
-        [id, ctx.merchantId]
-      );
-
-      await conn.commit();
-
-      // Push the reset state + a redeem notification.
-      await syncCardToWallet(id, ctx.merchantId, "redeem");
-
-      return res.json({
-        card: rowToCard(cardRows[0]),
-        events: eventRows.map(rowToEvent),
-      });
-    } catch (err) {
-      await conn.rollback();
-      throw err;
-    } finally {
-      conn.release();
-    }
+    return res.json(await redeemCardById(req.params.id, ctx.merchantId));
   }
 );
