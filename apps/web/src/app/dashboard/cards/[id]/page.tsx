@@ -1,11 +1,13 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import type { CardDetail } from "@stampdeck/shared";
+import QRCode from "qrcode";
+import type { CardDetail, WalletLink } from "@stampdeck/shared";
 import { ApiCallError, apiFetch } from "@/lib/api";
 import { requireSession } from "@/lib/session";
 import { DashboardShell } from "../../dashboard-shell";
 import { CardActions } from "./card-actions";
 import { EventTimeline } from "./event-timeline";
+import { WalletSection } from "./wallet-section";
 
 export const dynamic = "force-dynamic";
 
@@ -23,6 +25,17 @@ export default async function CardDetailPage({
     if (err instanceof ApiCallError && err.status === 404) notFound();
     throw err;
   }
+
+  // Fetch the wallet save URL and pre-render the QR fallback server-side.
+  // Both are best-effort: if either fails the rest of the page still renders.
+  const walletLink = await apiFetch<WalletLink>(`/v1/cards/${params.id}/wallet-link`, {
+    jwt,
+  }).catch(() => ({ available: false, url: null }) as WalletLink);
+  const qrSvg = await QRCode.toString(detail.card.qrToken, {
+    type: "svg",
+    margin: 1,
+    width: 180,
+  });
 
   const state = detail.card.cardState as {
     stamps_current: number;
@@ -49,10 +62,6 @@ export default async function CardDetailPage({
               <p className="text-sm text-gray-600 mt-2">
                 {detail.card.programName} · reward: {detail.card.rewardText}
               </p>
-              <p className="text-xs text-gray-500 mt-3">
-                QR token (Day 4 will turn this into a scannable code):{" "}
-                <code className="text-xs">{detail.card.qrToken.slice(0, 12)}…</code>
-              </p>
             </div>
             <div className="text-right shrink-0">
               <div className="text-5xl font-semibold tabular-nums text-gray-900">
@@ -68,6 +77,15 @@ export default async function CardDetailPage({
             <CardActions cardId={detail.card.id} eligible={eligible} />
           </div>
         </header>
+
+        <section className="space-y-3">
+          <h3 className="text-base font-medium text-gray-900">Pass &amp; QR</h3>
+          <WalletSection
+            walletUrl={walletLink.available ? walletLink.url : null}
+            qrSvg={qrSvg}
+            qrToken={detail.card.qrToken}
+          />
+        </section>
 
         <section className="space-y-3">
           <h3 className="text-base font-medium text-gray-900">Activity</h3>

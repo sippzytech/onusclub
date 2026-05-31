@@ -12,6 +12,7 @@ import { customersRouter } from "./routes/customers.js";
 import { merchantsRouter } from "./routes/merchants.js";
 import { meRouter } from "./routes/me.js";
 import { programsRouter } from "./routes/programs.js";
+import { walletRouter } from "./routes/wallet.js";
 
 const app = express();
 
@@ -28,6 +29,7 @@ app.use("/v1/me", meRouter);
 app.use("/v1/programs", programsRouter);
 app.use("/v1/customers", customersRouter);
 app.use("/v1/cards", cardsRouter);
+app.use("/v1", walletRouter);
 
 app.use(errorHandler);
 

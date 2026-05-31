@@ -12,6 +12,14 @@ import {
 import { pool } from "../db/pool.js";
 import { authContext, requireAuth } from "../auth/middleware.js";
 import { ApiError } from "../errors.js";
+import { logger } from "../logger.js";
+import {
+  createLoyaltyObject,
+  ensureLoyaltyClass,
+  patchLoyaltyObject,
+  sendCardMessage,
+} from "../wallet/loyalty.js";
+import type { WalletEvent } from "../wallet/state.js";
 
 export const cardsRouter: Router = Router();
 
@@ -52,6 +60,105 @@ interface EventRow extends RowDataPacket {
 
 function parseJson<T>(value: unknown): T {
   return typeof value === "string" ? (JSON.parse(value) as T) : (value as T);
+}
+
+interface CardSyncContext extends RowDataPacket {
+  card_id: string;
+  qr_token: string;
+  card_state: unknown;
+  google_wallet_object_id: string | null;
+  merchant_id: string;
+  business_name: string;
+  brand_color: string | null;
+  logo_url: string | null;
+  google_wallet_class_id: string | null;
+  program_id: string;
+  program_name: string;
+  program_config: unknown;
+  reward_text: string;
+  customer_name: string | null;
+}
+
+/**
+ * Mirror a card's state into Google Wallet, then deliver an event-specific
+ * push notification (welcome / stamp / threshold-hit / redeem). Idempotent:
+ * registers the class the first time it sees a merchant, creates the object
+ * the first time it sees a card, otherwise PATCHes. Failures are logged but
+ * never thrown — stamp/redeem must succeed even when Wallet is degraded.
+ */
+async function syncCardToWallet(
+  cardId: string,
+  merchantId: string,
+  event: WalletEvent
+): Promise<void> {
+  try {
+    const [rows] = await pool.execute<CardSyncContext[]>(
+      `SELECT c.id AS card_id, c.qr_token, c.card_state, c.google_wallet_object_id,
+              m.id AS merchant_id, m.business_name, m.brand_color, m.logo_url,
+              m.google_wallet_class_id,
+              p.id AS program_id, p.name AS program_name,
+              p.config_json AS program_config, p.reward_text,
+              cu.name AS customer_name
+         FROM loyalty_cards c
+         JOIN merchants m ON m.id = c.merchant_id
+         JOIN loyalty_programs p ON p.id = c.program_id
+         JOIN customers cu ON cu.id = c.customer_id
+        WHERE c.id = ? AND c.merchant_id = ?
+        LIMIT 1`,
+      [cardId, merchantId]
+    );
+    if (rows.length === 0) return;
+    const row = rows[0];
+    const state = parseJson<StampCardState>(row.card_state);
+    if (state.type !== "stamp") return;
+    const cfg = parseJson<{ stamps_required?: number }>(row.program_config);
+    const stampsRequired = cfg.stamps_required ?? 0;
+    if (stampsRequired <= 0) return;
+
+    const merchantBranding = {
+      id: row.merchant_id,
+      businessName: row.business_name,
+      brandColor: row.brand_color,
+      logoUrl: row.logo_url,
+    };
+    const programForWallet = {
+      id: row.program_id,
+      name: row.program_name,
+      rewardText: row.reward_text,
+      stampsRequired,
+    };
+    const cardForWallet = {
+      id: row.card_id,
+      qrToken: row.qr_token,
+      state,
+      customerName: row.customer_name,
+    };
+
+    await ensureLoyaltyClass(
+      merchantBranding,
+      programForWallet,
+      row.google_wallet_class_id
+    );
+
+    if (!row.google_wallet_object_id) {
+      await createLoyaltyObject(merchantBranding, programForWallet, cardForWallet);
+    } else {
+      await patchLoyaltyObject(programForWallet, cardForWallet);
+    }
+
+    // Push event notification to the customer's phone. Best-effort — failure
+    // is logged inside sendCardMessage and never bubbles up.
+    await sendCardMessage({
+      event,
+      businessName: row.business_name,
+      rewardText: row.reward_text,
+      stampsCurrent: state.stamps_current,
+      stampsRequired,
+      cardId,
+    });
+  } catch (err) {
+    logger.error({ err, cardId, event }, "wallet sync failed");
+  }
 }
 
 function rowToCard(row: CardRow): Card {
@@ -169,6 +276,12 @@ cardsRouter.post("/", requireAuth, async (req: Request, res: Response<Card>) => 
       [id, ctx.merchantId]
     );
     await conn.commit();
+
+    // Mirror the new card to Google Wallet + send the welcome notification.
+    // Failures are logged inside, never bubble up — the DB row is the source
+    // of truth and stays committed.
+    await syncCardToWallet(id, ctx.merchantId, "signup");
+
     return res.status(201).json(rowToCard(rows[0]));
   } catch (err) {
     await conn.rollback();
@@ -301,6 +414,15 @@ cardsRouter.post(
       );
 
       await conn.commit();
+
+      // Push the new state + a stamp / threshold-hit notification to the
+      // customer's phone. The threshold message fires only on the stamp that
+      // brings the card up to the reward count; subsequent stamping at that
+      // count is blocked above.
+      const event: WalletEvent =
+        newState.stamps_current >= stampsRequired ? "threshold" : "stamp";
+      await syncCardToWallet(id, ctx.merchantId, event);
+
       return res.json({
         card: rowToCard(cardRows[0]),
         events: eventRows.map(rowToEvent),
@@ -374,6 +496,10 @@ cardsRouter.post(
       );
 
       await conn.commit();
+
+      // Push the reset state + a redeem notification.
+      await syncCardToWallet(id, ctx.merchantId, "redeem");
+
       return res.json({
         card: rowToCard(cardRows[0]),
         events: eventRows.map(rowToEvent),

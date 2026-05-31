@@ -161,3 +161,11 @@ export const CardDetail = z.object({
   events: z.array(CardEvent),
 });
 export type CardDetail = z.infer<typeof CardDetail>;
+
+// ---------- Wallet ----------
+
+export const WalletLink = z.object({
+  available: z.boolean(),
+  url: z.string().url().nullable(),
+});
+export type WalletLink = z.infer<typeof WalletLink>;
