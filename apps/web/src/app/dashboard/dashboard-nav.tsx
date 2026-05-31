@@ -8,6 +8,7 @@ const TABS = [
   { href: "/dashboard/customers", label: "Customers" },
   { href: "/dashboard/cards", label: "Cards" },
   { href: "/dashboard/scan", label: "Scan" },
+  { href: "/dashboard/messages", label: "Messages" },
 ];
 
 export function DashboardNav(): JSX.Element {

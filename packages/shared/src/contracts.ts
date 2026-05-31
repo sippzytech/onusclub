@@ -96,6 +96,12 @@ export const CustomerCreateInput = z
     name: z.string().min(1).max(200),
     phone: z.string().max(20).optional(),
     email: z.string().email().max(200).optional(),
+    // ISO date string like "1990-04-23". Year is stored but the sweep matches
+    // on month+day only, so any year is fine.
+    birthday: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/, "use YYYY-MM-DD")
+      .optional(),
   })
   .refine((v) => (v.phone && v.phone.trim() !== "") || (v.email && v.email.trim() !== ""), {
     message: "phone or email is required",
@@ -108,6 +114,7 @@ export const Customer = z.object({
   name: z.string().nullable(),
   phone: z.string().nullable(),
   email: z.string().nullable(),
+  birthday: z.string().nullable(),
   createdAt: z.string(),
 });
 export type Customer = z.infer<typeof Customer>;
@@ -184,3 +191,81 @@ export const ScanResult = z.object({
   appliedAction: z.enum(["stamp", "redeem"]),
 });
 export type ScanResult = z.infer<typeof ScanResult>;
+
+// ---------- Messaging (broadcasts + sweeps) ----------
+
+export const BroadcastCreateInput = z.object({
+  header: z.string().min(1).max(60),
+  body: z.string().min(1).max(200),
+});
+export type BroadcastCreateInput = z.infer<typeof BroadcastCreateInput>;
+
+export const RunStatus = z.enum(["running", "completed", "failed"]);
+export type RunStatus = z.infer<typeof RunStatus>;
+
+export const Broadcast = z.object({
+  id: z.string(),
+  merchantId: z.string(),
+  header: z.string(),
+  body: z.string(),
+  status: RunStatus,
+  scanned: z.number().int(),
+  sent: z.number().int(),
+  failed: z.number().int(),
+  startedAt: z.string(),
+  finishedAt: z.string().nullable(),
+});
+export type Broadcast = z.infer<typeof Broadcast>;
+
+export const SweepType = z.enum(["birthday", "inactivity"]);
+export type SweepType = z.infer<typeof SweepType>;
+
+export const SweepRun = z.object({
+  id: z.string(),
+  sweepType: SweepType,
+  status: RunStatus,
+  scanned: z.number().int(),
+  sent: z.number().int(),
+  failed: z.number().int(),
+  startedAt: z.string(),
+  finishedAt: z.string().nullable(),
+  errorMessage: z.string().nullable(),
+});
+export type SweepRun = z.infer<typeof SweepRun>;
+
+export const DeliveryStatus = z.enum(["pending", "sent", "failed"]);
+export type DeliveryStatus = z.infer<typeof DeliveryStatus>;
+
+export const MessageDelivery = z.object({
+  id: z.number(),
+  sourceType: z.enum(["broadcast", "birthday", "inactivity"]),
+  sourceId: z.string(),
+  merchantId: z.string(),
+  cardId: z.string(),
+  customerId: z.string(),
+  customerName: z.string().nullable(),
+  programName: z.string(),
+  status: DeliveryStatus,
+  attempts: z.number().int(),
+  lastError: z.string().nullable(),
+  lastAttemptAt: z.string().nullable(),
+  createdAt: z.string(),
+});
+export type MessageDelivery = z.infer<typeof MessageDelivery>;
+
+// Unified "feed item" shape so the Messages tab can render broadcasts and
+// sweep runs in one chronological list.
+export const MessageFeedItem = z.object({
+  kind: z.enum(["broadcast", "sweep"]),
+  id: z.string(),
+  sweepType: SweepType.optional(),
+  header: z.string(), // broadcast header or "Birthday sweep" / "Inactivity sweep"
+  body: z.string().nullable(), // broadcast body, null for sweeps
+  status: RunStatus,
+  scanned: z.number().int(),
+  sent: z.number().int(),
+  failed: z.number().int(),
+  startedAt: z.string(),
+  finishedAt: z.string().nullable(),
+});
+export type MessageFeedItem = z.infer<typeof MessageFeedItem>;

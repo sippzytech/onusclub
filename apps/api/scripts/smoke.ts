@@ -323,6 +323,103 @@ async function main(): Promise<void> {
   }
   assert(scan400, "malformed qr_token should 400");
 
+  // ---------- Day 6: broadcasts + sweeps ----------
+
+  console.log("→ create a 2nd customer + card so broadcast targets multiple");
+  const c2 = await call<{ id: string }>(
+    "POST",
+    "/v1/customers",
+    { name: "C2", phone: "+31611111112" },
+    jwt
+  );
+  await call("POST", "/v1/cards", { customerId: c2.id, programId: program.id }, jwt);
+
+  console.log("→ POST /v1/broadcasts kicks off async send");
+  const start = await call<{ broadcastId: string }>(
+    "POST",
+    "/v1/broadcasts",
+    { header: "Smoke test broadcast", body: "Ignore this — automated." },
+    jwt
+  );
+  assert(start.broadcastId, "no broadcastId returned");
+
+  console.log("→ poll broadcast until status=completed");
+  let final: {
+    broadcast: { status: string; scanned: number; sent: number; failed: number };
+    deliveries: Array<{ status: string }>;
+  } | null = null;
+  for (let attempt = 0; attempt < 30; attempt++) {
+    final = await call(
+      "GET",
+      `/v1/broadcasts/${start.broadcastId}`,
+      undefined,
+      jwt
+    );
+    if (final.broadcast.status === "completed") break;
+    await new Promise((r) => setTimeout(r, 500));
+  }
+  assert(final, "broadcast never returned a row");
+  assert(final.broadcast.status === "completed", "broadcast did not complete");
+  assert(final.broadcast.scanned === 2, `scanned should be 2, got ${final.broadcast.scanned}`);
+  assert(
+    final.broadcast.sent + final.broadcast.failed === 2,
+    "sent+failed should equal scanned"
+  );
+  assert(final.deliveries.length === 2, "expected 2 delivery rows");
+
+  console.log("→ /v1/messages feed lists the broadcast");
+  const feed = await call<{ items: Array<{ kind: string; id: string }> }>(
+    "GET",
+    "/v1/messages",
+    undefined,
+    jwt
+  );
+  assert(
+    feed.items.some((i) => i.kind === "broadcast" && i.id === start.broadcastId),
+    "feed missing the broadcast"
+  );
+
+  console.log("→ create customer with birthday today, then run birthday sweep");
+  const todayBirthday = new Date().toISOString().slice(0, 10);
+  const bday = await call<{ id: string }>(
+    "POST",
+    "/v1/customers",
+    { name: "Birthday Person", phone: "+31611111113", birthday: todayBirthday },
+    jwt
+  );
+  await call("POST", "/v1/cards", { customerId: bday.id, programId: program.id }, jwt);
+  const birthdayRun = await call<{ scanned: number; sent: number; failed: number; id: string }>(
+    "POST",
+    "/v1/sweeps/run/birthday",
+    undefined,
+    jwt
+  );
+  assert(
+    birthdayRun.scanned >= 1,
+    `birthday sweep should have scanned ≥1, got ${birthdayRun.scanned}`
+  );
+
+  console.log("→ run birthday sweep AGAIN same day → dedup should skip");
+  const birthdayRun2 = await call<{ scanned: number; sent: number; failed: number }>(
+    "POST",
+    "/v1/sweeps/run/birthday",
+    undefined,
+    jwt
+  );
+  assert(
+    birthdayRun2.scanned === 0,
+    `second birthday sweep should scan 0 (dedup), got ${birthdayRun2.scanned}`
+  );
+
+  console.log("→ inactivity sweep with no eligible cards should scan 0");
+  const inactRun = await call<{ scanned: number }>(
+    "POST",
+    "/v1/sweeps/run/inactivity",
+    undefined,
+    jwt
+  );
+  assert(inactRun.scanned === 0, `inactivity sweep with fresh cards should be 0`);
+
   console.log("✓ smoke test passed");
 }
 

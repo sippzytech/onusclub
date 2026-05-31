@@ -7,13 +7,17 @@ import { logger } from "./logger.js";
 import { ensureDbConnection, pool } from "./db/pool.js";
 import { errorHandler } from "./errors.js";
 import { authRouter } from "./routes/auth.js";
+import { broadcastsRouter } from "./routes/broadcasts.js";
 import { cardsRouter } from "./routes/cards.js";
 import { customersRouter } from "./routes/customers.js";
 import { merchantsRouter } from "./routes/merchants.js";
 import { meRouter } from "./routes/me.js";
+import { messagesRouter } from "./routes/messages.js";
 import { programsRouter } from "./routes/programs.js";
 import { scanRouter } from "./routes/scan.js";
+import { sweepsRouter } from "./routes/sweeps.js";
 import { walletRouter } from "./routes/wallet.js";
+import { startMessagingCrons } from "./messaging/cron.js";
 
 const app = express();
 
@@ -31,12 +35,16 @@ app.use("/v1/programs", programsRouter);
 app.use("/v1/customers", customersRouter);
 app.use("/v1/cards", cardsRouter);
 app.use("/v1/scan", scanRouter);
+app.use("/v1/broadcasts", broadcastsRouter);
+app.use("/v1/sweeps", sweepsRouter);
+app.use("/v1/messages", messagesRouter);
 app.use("/v1", walletRouter);
 
 app.use(errorHandler);
 
 async function main(): Promise<void> {
   await ensureDbConnection();
+  startMessagingCrons();
 
   const server = app.listen(env.PORT, () => {
     logger.info({ port: env.PORT }, "api listening");

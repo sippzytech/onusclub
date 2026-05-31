@@ -147,6 +147,59 @@ export async function sendCardMessage(ctx: MessageContext): Promise<boolean> {
   return true;
 }
 
+export interface CustomCardMessageInput {
+  cardId: string;
+  header: string;
+  body: string;
+}
+
+export interface CustomMessageResult {
+  ok: boolean;
+  error?: string;
+}
+
+/**
+ * Send a free-form push notification to a card's pass (used by broadcasts +
+ * birthday + inactivity sweeps). Returns a structured result so the caller
+ * can persist the specific error per-card for retry / audit.
+ */
+export async function sendCustomCardMessage(
+  input: CustomCardMessageInput
+): Promise<CustomMessageResult> {
+  if (!(await walletEnabled())) return { ok: false, error: "wallet not configured" };
+  const id = objectId(input.cardId);
+  const now = new Date();
+  const expiry = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+  const messageId = `custom-${input.cardId.replace(/-/g, "")}-${now.getTime()}`;
+  const message = {
+    id: messageId,
+    messageType: "TEXT_AND_NOTIFY",
+    header: input.header,
+    body: input.body,
+    displayInterval: {
+      kind: "walletobjects#timeInterval",
+      start: { date: now.toISOString() },
+      end: { date: expiry.toISOString() },
+    },
+  };
+
+  const res = await walletRequest({
+    method: "POST",
+    path: `/loyaltyObject/${id}/addMessage`,
+    body: { message },
+  });
+  if (!res) return { ok: false, error: "wallet request returned null" };
+  if (res.status >= 300) {
+    const errMsg =
+      typeof res.data === "object" && res.data !== null && "error" in res.data
+        ? // @ts-expect-error - Google's error shape is loose
+          (res.data.error?.message as string | undefined) ?? `HTTP ${res.status}`
+        : `HTTP ${res.status}`;
+    return { ok: false, error: errMsg };
+  }
+  return { ok: true };
+}
+
 /**
  * Builds a "Save to Google Wallet" JWT, signed with the SA private key. The
  * pass that gets saved is the one referenced by objectId(card.id), which must

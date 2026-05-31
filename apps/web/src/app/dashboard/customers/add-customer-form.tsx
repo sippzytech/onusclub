@@ -8,6 +8,7 @@ export function AddCustomerForm(): JSX.Element {
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
+  const [birthday, setBirthday] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -26,6 +27,7 @@ export function AddCustomerForm(): JSX.Element {
         name,
         phone: phone.trim() === "" ? undefined : phone.trim(),
         email: email.trim() === "" ? undefined : email.trim(),
+        birthday: birthday.trim() === "" ? undefined : birthday.trim(),
       }),
     });
     setPending(false);
@@ -37,6 +39,7 @@ export function AddCustomerForm(): JSX.Element {
     setName("");
     setPhone("");
     setEmail("");
+    setBirthday("");
     router.refresh();
   }
 
@@ -72,6 +75,18 @@ export function AddCustomerForm(): JSX.Element {
             placeholder="jane@example.com"
           />
         </div>
+      </div>
+      <div>
+        <label className="block text-sm font-medium text-gray-800">Birthday (optional)</label>
+        <input
+          type="date"
+          value={birthday}
+          onChange={(e) => setBirthday(e.target.value)}
+          className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+        />
+        <p className="mt-1 text-xs text-gray-500">
+          Used by the birthday sweep to send an automatic greeting + bonus offer.
+        </p>
       </div>
       <p className="text-xs text-gray-500">At least one of phone or email is required.</p>
       {error ? (

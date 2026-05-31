@@ -40,6 +40,7 @@ export function CustomersList({ customers }: { customers: Customer[] }): JSX.Ele
               <div className="font-medium text-gray-900">{c.name ?? "(no name)"}</div>
               <div className="text-gray-600 mt-1">
                 {[c.phone, c.email].filter(Boolean).join(" · ") || "—"}
+                {c.birthday ? <span className="text-gray-400"> · 🎂 {c.birthday}</span> : null}
               </div>
             </li>
           ))}
