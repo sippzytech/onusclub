@@ -11,8 +11,22 @@ export default function HomePage(): JSX.Element {
         </h1>
         <p className="text-gray-600">
           Stamp cards, points, memberships — straight into Google Wallet. Built
-          for Dutch SMBs. Day 1 skeleton is live; full dashboard coming soon.
+          for Dutch SMBs.
         </p>
+        <div className="flex justify-center gap-3 pt-2">
+          <a
+            href="/signup"
+            className="rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800"
+          >
+            Create account
+          </a>
+          <a
+            href="/login"
+            className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-900 hover:bg-gray-100"
+          >
+            Sign in
+          </a>
+        </div>
       </div>
     </main>
   );

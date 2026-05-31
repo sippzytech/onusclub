@@ -58,3 +58,5 @@ export interface HealthResponse {
   service: string;
   version: string;
 }
+
+export * from "./contracts.js";
