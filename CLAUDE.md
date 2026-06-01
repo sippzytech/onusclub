@@ -94,7 +94,38 @@ When adding a new `program_type`, define its config + state shapes in `packages/
 - Secrets only via env vars or mounted files — never committed.
 - All tenant-scoped queries must filter by `merchant_id`. (Will be enforced via a request-scoped context once auth lands.)
 
-## Status — Day 1
+## Status — Day 9 (current)
 
-- ✅ Skeleton, `/health` endpoint, DB connection, migrations runner, dev + prod compose, placeholder web home.
-- ⏭ Day 2: merchant signup + magic-link auth, first real API routes, Google Wallet class registration.
+**Deployed live at `api.sippzy.com` + `app.sippzy.com`**.
+
+What works end-to-end:
+
+- ✅ Owner signup/login with password (bcrypt), forgot/reset password flow
+- ✅ Multi-tenant with auto-generated public slug per merchant
+- ✅ Programs, customers, cards, stamp + redeem (transactional, day-rate-limited on scan)
+- ✅ Google Wallet integration: per-merchant LoyaltyClass, per-card LoyaltyObject, save-to-Wallet JWT, live state PATCH on every stamp/redeem, lifecycle push notifications
+- ✅ Public QR-driven customer self-signup (Perkstar-style flow at `/m/[slug]`)
+- ✅ QR scanner UI (`html5-qrcode`) with state-machine feedback
+- ✅ Async broadcasts with audience filters + live progress polling
+- ✅ Daily cron sweeps: birthday 08:00, inactivity 10:00, expiry 03:00 (Europe/Amsterdam)
+- ✅ Per-card delivery audit (broadcasts + sweeps) with manual retry
+- ✅ Premium feature gate (fake unlock for now) + crons-enabled kill-switch
+- ✅ Card expiry (per-program `expiry_days` config → Wallet `state=EXPIRED`)
+- ✅ Staff/team accounts (`/dashboard/team`, owner-only CRUD)
+- ✅ Resend email delivery (still on Resend test mode — only delivers to sippzy.official@gmail.com until domain verified)
+
+## Where to look for the current plan
+
+**[ROADMAP.md](./ROADMAP.md)** is the canonical source of truth for:
+- Day-by-day history (every shipped feature)
+- Deferred items (Wallet production approval, Resend domain, card customization, etc.) with the "why"
+- Likely next-step candidates ranked by effort vs value
+- How to onboard a fresh Claude session (or any new collaborator)
+
+Read ROADMAP.md before planning anything new.
+
+## Other key docs
+
+- **[DEPLOY.md](./DEPLOY.md)** — first-time VPS deploy + day-to-day deploy commands.
+- **[METABASE.md](./METABASE.md)** — wire the existing VPS Metabase to Stampdeck data, with 7 starter SQL queries.
+- **[README.md](./README.md)** — local-dev quickstart.
