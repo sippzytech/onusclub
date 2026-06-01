@@ -351,13 +351,29 @@ export async function getCardDetail(
 
 /**
  * Resolve a card by its qr_token, scoped to the merchant. Used by /v1/scan.
+ * Also returns whether the card already has a stamp event for today (server's
+ * local date) so the scan route can enforce the "one stamp per day" rule.
  */
 export async function findCardByQrToken(
   qrToken: string,
   merchantId: string
-): Promise<{ id: string; stampsCurrent: number; stampsRequired: number } | null> {
+): Promise<
+  | {
+      id: string;
+      stampsCurrent: number;
+      stampsRequired: number;
+      stampedToday: boolean;
+    }
+  | null
+> {
   const [rows] = await pool.execute<RowDataPacket[]>(
-    `SELECT c.id, c.card_state, p.config_json AS program_config
+    `SELECT c.id, c.card_state, p.config_json AS program_config,
+            EXISTS (
+              SELECT 1 FROM card_events e
+               WHERE e.card_id = c.id
+                 AND e.event_type = 'stamp'
+                 AND DATE(e.created_at) = CURDATE()
+            ) AS stamped_today
        FROM loyalty_cards c
        JOIN loyalty_programs p ON p.id = c.program_id
       WHERE c.qr_token = ? AND c.merchant_id = ? AND c.status = 'active'
@@ -372,5 +388,6 @@ export async function findCardByQrToken(
     id: row.id as string,
     stampsCurrent: state.stamps_current,
     stampsRequired: cfg.stamps_required ?? 0,
+    stampedToday: Number(row.stamped_today) === 1,
   };
 }

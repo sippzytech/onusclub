@@ -2,19 +2,35 @@ import type { MessageFeedItem } from "@stampdeck/shared";
 import { apiFetch } from "@/lib/api";
 import { requireSession } from "@/lib/session";
 import { DashboardShell } from "../dashboard-shell";
+import { AutomationToggle } from "./automation-toggle";
 import { BroadcastComposer } from "./broadcast-composer";
 import { MessagesFeed } from "./messages-feed";
+import { PremiumLock } from "./premium-lock";
 import { SweepTriggers } from "./sweep-triggers";
 
 export const dynamic = "force-dynamic";
 
 export default async function MessagesPage(): Promise<JSX.Element> {
-  const { jwt, user, merchant } = await requireSession();
+  const { jwt, user, merchant, preferences } = await requireSession();
+
+  // Non-premium merchants see the lock screen. UI gate only — the api also
+  // returns 402 on broadcast send so this can't be bypassed by calling the
+  // endpoint directly.
+  if (!preferences.isPremium) {
+    return (
+      <DashboardShell user={user} merchant={merchant}>
+        <PremiumLock />
+      </DashboardShell>
+    );
+  }
+
   const { items } = await apiFetch<{ items: MessageFeedItem[] }>("/v1/messages", { jwt });
 
   return (
     <DashboardShell user={user} merchant={merchant}>
       <div className="space-y-10">
+        <AutomationToggle cronsEnabled={preferences.cronsEnabled} />
+
         <section className="space-y-3">
           <h2 className="text-lg font-medium text-gray-900">Send a broadcast</h2>
           <p className="text-sm text-gray-600">

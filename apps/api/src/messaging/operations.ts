@@ -218,6 +218,8 @@ export async function runBirthdaySweep(): Promise<SweepResult> {
          JOIN customers cu ON cu.id = c.customer_id
          JOIN loyalty_programs p ON p.id = c.program_id
         WHERE c.status = 'active'
+          AND m.is_premium = TRUE
+          AND m.crons_enabled = TRUE
           AND cu.birthday IS NOT NULL
           AND DATE_FORMAT(cu.birthday, '%m-%d') = ?
           AND NOT EXISTS (
@@ -278,6 +280,8 @@ export async function runInactivitySweep(): Promise<SweepResult> {
          JOIN customers cu ON cu.id = c.customer_id
          JOIN loyalty_programs p ON p.id = c.program_id
         WHERE c.status = 'active'
+          AND m.is_premium = TRUE
+          AND m.crons_enabled = TRUE
           AND c.last_event_at IS NOT NULL
           AND c.last_event_at < DATE_SUB(NOW(), INTERVAL ? DAY)
           AND NOT EXISTS (

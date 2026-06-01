@@ -27,6 +27,18 @@ scanRouter.post(
       applied = input.action;
     }
 
+    // One-stamp-per-day rule: prevents accidental double-stamping when the
+    // camera fires twice in a row AND deliberate-but-shady same-day rescans.
+    // Redeems are NOT day-capped — owners may need to redeem on the same
+    // day as a stamp that pushed the card past threshold.
+    if (applied === "stamp" && found.stampedToday) {
+      throw new ApiError(
+        409,
+        "already_stamped_today",
+        "This card was already stamped today — try again tomorrow."
+      );
+    }
+
     const detail =
       applied === "stamp"
         ? await stampCardById(found.id, ctx.merchantId)

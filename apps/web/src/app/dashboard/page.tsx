@@ -19,7 +19,7 @@ export default async function DashboardPage(): Promise<JSX.Element> {
   return (
     <DashboardShell user={user} merchant={merchant}>
       {publicSlug ? (
-        <section className="space-y-3 mb-10">
+        <section className="mb-12">
           <QrShareCard publicUrl={publicUrlFor(publicSlug)} />
         </section>
       ) : null}

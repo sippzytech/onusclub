@@ -6,7 +6,7 @@ import { useState, type FormEvent } from "react";
 export function CreateProgramForm(): JSX.Element {
   const router = useRouter();
   const [name, setName] = useState("");
-  const [stampsRequired, setStampsRequired] = useState(10);
+  const [stampsRequired, setStampsRequired] = useState(6);
   const [rewardText, setRewardText] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);

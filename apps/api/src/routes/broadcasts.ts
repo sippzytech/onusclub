@@ -74,12 +74,31 @@ function rowToDelivery(row: DeliveryRow): MessageDelivery {
   };
 }
 
-// POST /v1/broadcasts — fire a broadcast (async).
+interface PremiumRow extends RowDataPacket {
+  is_premium: number;
+}
+
+async function requirePremium(merchantId: string): Promise<void> {
+  const [rows] = await pool.execute<PremiumRow[]>(
+    "SELECT is_premium FROM merchants WHERE id = ? LIMIT 1",
+    [merchantId]
+  );
+  if (rows.length === 0 || !rows[0].is_premium) {
+    throw new ApiError(
+      402,
+      "premium_required",
+      "messaging is a premium feature — unlock to use"
+    );
+  }
+}
+
+// POST /v1/broadcasts — fire a broadcast (async). Premium-only.
 broadcastsRouter.post(
   "/",
   requireAuth,
   async (req: Request, res: Response<{ broadcastId: string }>) => {
     const ctx = authContext(req);
+    await requirePremium(ctx.merchantId);
     const input = BroadcastCreateInput.parse(req.body);
     const id = await startBroadcast(ctx.merchantId, input.header, input.body);
     return res.status(202).json({ broadcastId: id });

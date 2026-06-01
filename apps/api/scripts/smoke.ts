@@ -259,34 +259,49 @@ async function main(): Promise<void> {
   // ---------- Day 5: scan flow ----------
 
   console.log("→ scan with valid token (auto) should stamp");
+  // Enrol a fresh card so the earlier route-based stamps don't interfere
+  // with the once-per-day rule.
+  const scanCustomer = await call<{ id: string }>(
+    "POST",
+    "/v1/customers",
+    { name: "Scan Tester", phone: "+31600000033" },
+    jwt
+  );
+  const scanCard = await call<{ id: string; qrToken: string }>(
+    "POST",
+    "/v1/cards",
+    { customerId: scanCustomer.id, programId: program.id },
+    jwt
+  );
   const scan1 = await call<{
     detail: { card: { cardState: { stamps_current: number } } };
     appliedAction: "stamp" | "redeem";
-  }>("POST", "/v1/scan", { qrToken: card.qrToken, action: "auto" }, jwt);
+  }>("POST", "/v1/scan", { qrToken: scanCard.qrToken, action: "auto" }, jwt);
   assert(scan1.appliedAction === "stamp", `expected stamp, got ${scan1.appliedAction}`);
   assert(
     scan1.detail.card.cardState.stamps_current === 1,
     "scan stamp should bring count to 1"
   );
 
-  console.log("→ scan 9 more times to reach threshold via scan");
+  console.log("→ 9 more stamps via owner endpoint to reach threshold");
   for (let i = 2; i <= 10; i++) {
-    const r = await call<{
-      detail: { card: { cardState: { stamps_current: number } } };
-      appliedAction: "stamp" | "redeem";
-    }>("POST", "/v1/scan", { qrToken: card.qrToken, action: "auto" }, jwt);
-    assert(r.appliedAction === "stamp", `iteration ${i}: expected stamp`);
+    const r = await call<{ card: { cardState: { stamps_current: number } } }>(
+      "POST",
+      `/v1/cards/${scanCard.id}/stamp`,
+      undefined,
+      jwt
+    );
     assert(
-      r.detail.card.cardState.stamps_current === i,
-      `iteration ${i}: stamps_current ${r.detail.card.cardState.stamps_current}`
+      r.card.cardState.stamps_current === i,
+      `owner stamp iter ${i}: got ${r.card.cardState.stamps_current}`
     );
   }
 
-  console.log("→ scan with auto at threshold should redeem");
+  console.log("→ scan with auto at threshold should redeem (not day-capped)");
   const redeemViaScan = await call<{
     detail: { card: { cardState: { stamps_current: number; rewards_redeemed: number } } };
     appliedAction: "stamp" | "redeem";
-  }>("POST", "/v1/scan", { qrToken: card.qrToken, action: "auto" }, jwt);
+  }>("POST", "/v1/scan", { qrToken: scanCard.qrToken, action: "auto" }, jwt);
   assert(
     redeemViaScan.appliedAction === "redeem",
     `expected redeem, got ${redeemViaScan.appliedAction}`
@@ -296,8 +311,8 @@ async function main(): Promise<void> {
     "after redeem stamps_current should be 0"
   );
   assert(
-    redeemViaScan.detail.card.cardState.rewards_redeemed === 2,
-    "rewards_redeemed should be 2 (one from earlier route-based redeem)"
+    redeemViaScan.detail.card.cardState.rewards_redeemed === 1,
+    "rewards_redeemed should be 1 on this fresh card"
   );
 
   console.log("→ scan with junk token should 404");
@@ -323,6 +338,30 @@ async function main(): Promise<void> {
   }
   assert(scan400, "malformed qr_token should 400");
 
+  console.log("→ scan twice in same day on same card should 409");
+  // Enrol a fresh card just for this assertion (the earlier card was already
+  // stamped to threshold + redeemed, which leaves a stamp event today).
+  const dailyCustomer = await call<{ id: string }>(
+    "POST",
+    "/v1/customers",
+    { name: "Daily Block Test", phone: "+31600000044" },
+    jwt
+  );
+  const dailyCard = await call<{ qrToken: string }>(
+    "POST",
+    "/v1/cards",
+    { customerId: dailyCustomer.id, programId: program.id },
+    jwt
+  );
+  await call("POST", "/v1/scan", { qrToken: dailyCard.qrToken, action: "auto" }, jwt);
+  let dailyBlocked = false;
+  try {
+    await call("POST", "/v1/scan", { qrToken: dailyCard.qrToken, action: "auto" }, jwt);
+  } catch (err) {
+    dailyBlocked = String(err).includes("409");
+  }
+  assert(dailyBlocked, "second scan same day should 409");
+
   // ---------- Day 6: broadcasts + sweeps ----------
 
   console.log("→ create a 2nd customer + card so broadcast targets multiple");
@@ -333,6 +372,50 @@ async function main(): Promise<void> {
     jwt
   );
   await call("POST", "/v1/cards", { customerId: c2.id, programId: program.id }, jwt);
+
+  console.log("→ POST /v1/broadcasts without premium → 402");
+  let premBlocked = false;
+  try {
+    await call(
+      "POST",
+      "/v1/broadcasts",
+      { header: "Should fail", body: "Not premium yet" },
+      jwt
+    );
+  } catch (err) {
+    premBlocked = String(err).includes("402");
+  }
+  assert(premBlocked, "broadcast without premium should 402");
+
+  console.log("→ PATCH /v1/me/preferences { isPremium: true }");
+  const upgraded = await call<{ isPremium: boolean; cronsEnabled: boolean }>(
+    "PATCH",
+    "/v1/me/preferences",
+    { isPremium: true },
+    jwt
+  );
+  assert(upgraded.isPremium === true, "isPremium not flipped");
+  assert(upgraded.cronsEnabled === true, "cronsEnabled default should be true");
+
+  console.log("→ /v1/me reflects new prefs");
+  const meAfter = await call<{ preferences: { isPremium: boolean } }>(
+    "GET",
+    "/v1/me",
+    undefined,
+    jwt
+  );
+  assert(meAfter.preferences.isPremium === true, "/me prefs not updated");
+
+  console.log("→ PATCH cronsEnabled false");
+  const cronsOff = await call<{ cronsEnabled: boolean }>(
+    "PATCH",
+    "/v1/me/preferences",
+    { cronsEnabled: false },
+    jwt
+  );
+  assert(cronsOff.cronsEnabled === false, "cronsEnabled not flipped off");
+  // re-enable for downstream tests
+  await call("PATCH", "/v1/me/preferences", { cronsEnabled: true }, jwt);
 
   console.log("→ POST /v1/broadcasts kicks off async send");
   const start = await call<{ broadcastId: string }>(
@@ -360,12 +443,18 @@ async function main(): Promise<void> {
   }
   assert(final, "broadcast never returned a row");
   assert(final.broadcast.status === "completed", "broadcast did not complete");
-  assert(final.broadcast.scanned === 2, `scanned should be 2, got ${final.broadcast.scanned}`);
   assert(
-    final.broadcast.sent + final.broadcast.failed === 2,
+    final.broadcast.scanned >= 2,
+    `scanned should be ≥2, got ${final.broadcast.scanned}`
+  );
+  assert(
+    final.broadcast.sent + final.broadcast.failed === final.broadcast.scanned,
     "sent+failed should equal scanned"
   );
-  assert(final.deliveries.length === 2, "expected 2 delivery rows");
+  assert(
+    final.deliveries.length === final.broadcast.scanned,
+    `deliveries length should match scanned (got ${final.deliveries.length})`
+  );
 
   console.log("→ /v1/messages feed lists the broadcast");
   const feed = await call<{ items: Array<{ kind: string; id: string }> }>(

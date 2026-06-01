@@ -83,6 +83,20 @@ export const PasswordAuthResult = z.object({
 });
 export type PasswordAuthResult = z.infer<typeof PasswordAuthResult>;
 
+// ---------- Merchant preferences (premium gate + cron switch) ----------
+
+export const MerchantPreferences = z.object({
+  isPremium: z.boolean(),
+  cronsEnabled: z.boolean(),
+});
+export type MerchantPreferences = z.infer<typeof MerchantPreferences>;
+
+export const MerchantPreferencesInput = z.object({
+  isPremium: z.boolean().optional(),
+  cronsEnabled: z.boolean().optional(),
+});
+export type MerchantPreferencesInput = z.infer<typeof MerchantPreferencesInput>;
+
 // ---------- Programs ----------
 
 export const StampProgramCreateInput = z.object({
