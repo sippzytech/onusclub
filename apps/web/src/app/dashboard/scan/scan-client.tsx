@@ -36,12 +36,30 @@ export function ScanClient(): JSX.Element {
   useEffect(() => {
     return () => {
       const inst = scannerRef.current;
-      if (inst) {
-        void inst.stop().catch(() => undefined);
-        void inst.clear();
-      }
+      if (!inst) return;
+      // html5-qrcode states: 1=NOT_STARTED, 2=SCANNING, 3=PAUSED.
+      // Calling stop() on a NOT_STARTED scanner throws AND console.errors,
+      // which Next.js turns into a full-page "Application error" overlay.
+      void teardown(inst);
     };
   }, []);
+
+  async function teardown(inst: Html5Qrcode): Promise<void> {
+    try {
+      const state = inst.getState();
+      // 2 = SCANNING, 3 = PAUSED. Only these two states accept stop().
+      if (state === 2 || state === 3) {
+        await inst.stop().catch(() => undefined);
+      }
+    } catch {
+      // getState() shouldn't throw, but be defensive.
+    }
+    try {
+      inst.clear();
+    } catch {
+      // ignore
+    }
+  }
 
   async function start(): Promise<void> {
     setStatus({ kind: "starting" });
@@ -71,7 +89,10 @@ export function ScanClient(): JSX.Element {
     const inst = scannerRef.current;
     if (inst) {
       try {
-        await inst.stop();
+        const state = inst.getState();
+        if (state === 2 || state === 3) {
+          await inst.stop();
+        }
       } catch {
         /* ignore */
       }
