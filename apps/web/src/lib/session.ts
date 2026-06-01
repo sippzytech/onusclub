@@ -7,11 +7,16 @@ export async function requireSession(): Promise<{
   jwt: string;
   user: SessionUser;
   merchant: Merchant;
+  publicSlug: string;
 }> {
   const jwt = cookies().get(SESSION_COOKIE)?.value;
   if (!jwt) redirect("/login");
   try {
-    const me = await apiFetch<{ user: SessionUser; merchant: Merchant }>("/v1/me", { jwt });
+    const me = await apiFetch<{
+      user: SessionUser;
+      merchant: Merchant;
+      publicSlug: string;
+    }>("/v1/me", { jwt });
     return { jwt, ...me };
   } catch {
     redirect("/login?error=session_invalid");

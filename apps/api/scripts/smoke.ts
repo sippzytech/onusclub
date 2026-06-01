@@ -420,6 +420,145 @@ async function main(): Promise<void> {
   );
   assert(inactRun.scanned === 0, `inactivity sweep with fresh cards should be 0`);
 
+  // ---------- Day 8: password auth + public QR signup ----------
+
+  const pwEmail = `pw-${Date.now()}-${Math.random().toString(36).slice(2, 8)}@example.com`;
+  const pwBusiness = `Pw Café ${new Date().toISOString()}`;
+
+  console.log("→ password signup creates merchant + slug");
+  const pwSignup = await call<{
+    jwt: string;
+    publicSlug: string;
+    merchant: { id: string };
+  }>("POST", "/v1/auth/signup", {
+    businessName: pwBusiness,
+    ownerEmail: pwEmail,
+    password: "correct-horse-battery-staple",
+    ownerName: "Pw Tester",
+  });
+  assert(pwSignup.jwt.split(".").length === 3, "signup jwt shape wrong");
+  assert(pwSignup.publicSlug.length > 5, "no public slug");
+  assert(pwSignup.publicSlug.includes("-"), "public slug should be kebab+suffix");
+
+  console.log("→ duplicate password signup → 409");
+  let pwDupBlocked = false;
+  try {
+    await call("POST", "/v1/auth/signup", {
+      businessName: pwBusiness,
+      ownerEmail: pwEmail,
+      password: "correct-horse-battery-staple",
+    });
+  } catch (err) {
+    pwDupBlocked = String(err).includes("409");
+  }
+  assert(pwDupBlocked, "duplicate password signup not blocked");
+
+  console.log("→ login with wrong password → 401");
+  let wrongPwBlocked = false;
+  try {
+    await call("POST", "/v1/auth/login", {
+      email: pwEmail,
+      password: "wrong-on-purpose",
+    });
+  } catch (err) {
+    wrongPwBlocked = String(err).includes("401");
+  }
+  assert(wrongPwBlocked, "wrong-password login not 401");
+
+  console.log("→ login with right password → JWT");
+  const pwLogin = await call<{ jwt: string; publicSlug: string }>(
+    "POST",
+    "/v1/auth/login",
+    { email: pwEmail, password: "correct-horse-battery-staple" }
+  );
+  assert(pwLogin.jwt.split(".").length === 3, "login jwt shape wrong");
+  assert(pwLogin.publicSlug === pwSignup.publicSlug, "slug must match across signup/login");
+
+  console.log("→ /v1/me includes publicSlug");
+  const meForPw = await call<{ publicSlug: string }>("GET", "/v1/me", undefined, pwLogin.jwt);
+  assert(meForPw.publicSlug === pwSignup.publicSlug, "/me publicSlug mismatch");
+
+  console.log("→ create a stamp program on the pw merchant");
+  const pwProg = await call<{ id: string }>(
+    "POST",
+    "/v1/programs",
+    { name: "Loyalty 5", stampsRequired: 5, rewardText: "A free coffee" },
+    pwLogin.jwt
+  );
+
+  console.log("→ public GET /v1/public/m/:slug lists active programs");
+  const pubInfo = await call<{
+    businessName: string;
+    publicSlug: string;
+    programs: Array<{ id: string; stampsRequired: number }>;
+  }>("GET", `/v1/public/m/${pwSignup.publicSlug}`);
+  assert(pubInfo.businessName === pwBusiness, "public business name mismatch");
+  assert(
+    pubInfo.programs.some((p) => p.id === pwProg.id),
+    "public program list missing the program"
+  );
+
+  console.log("→ public GET with unknown slug → 404");
+  let unknownSlug404 = false;
+  try {
+    await call("GET", "/v1/public/m/no-such-merchant-x7k9z");
+  } catch (err) {
+    unknownSlug404 = String(err).includes("404");
+  }
+  assert(unknownSlug404, "unknown slug should 404");
+
+  console.log("→ public POST enrol creates customer + card");
+  const pubEnrol = await call<{
+    walletSaveUrl: string | null;
+    existing: boolean;
+  }>("POST", `/v1/public/m/${pwSignup.publicSlug}/enrol`, {
+    name: "Public Customer",
+    phone: "+31600000099",
+    programId: pwProg.id,
+  });
+  assert(pubEnrol.existing === false, "first enrol should not be flagged existing");
+  // walletSaveUrl may be null when wallet client isn't configured (smoke
+  // sometimes runs without the SA key). That's acceptable here — the
+  // important assertion is that the DB row was created. We verify by re-
+  // enrolling with the same phone and expecting existing=true.
+
+  console.log("→ public POST enrol again with same phone → existing=true");
+  const pubEnrol2 = await call<{ existing: boolean }>(
+    "POST",
+    `/v1/public/m/${pwSignup.publicSlug}/enrol`,
+    {
+      name: "Public Customer",
+      phone: "+31600000099",
+      programId: pwProg.id,
+    }
+  );
+  assert(pubEnrol2.existing === true, "second enrol with same phone should match");
+
+  console.log("→ public POST enrol with no phone AND no email → 400");
+  let noContact400 = false;
+  try {
+    await call("POST", `/v1/public/m/${pwSignup.publicSlug}/enrol`, {
+      name: "No Contact",
+      programId: pwProg.id,
+    });
+  } catch (err) {
+    noContact400 = String(err).includes("400");
+  }
+  assert(noContact400, "no-contact public enrol should 400");
+
+  console.log("→ public POST enrol with unknown programId → 404");
+  let unknownProg404 = false;
+  try {
+    await call("POST", `/v1/public/m/${pwSignup.publicSlug}/enrol`, {
+      name: "Wrong Prog",
+      phone: "+31600000098",
+      programId: "00000000-0000-0000-0000-000000000000",
+    });
+  } catch (err) {
+    unknownProg404 = String(err).includes("404");
+  }
+  assert(unknownProg404, "unknown program id should 404");
+
   console.log("✓ smoke test passed");
 }
 

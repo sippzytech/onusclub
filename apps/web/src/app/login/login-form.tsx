@@ -5,45 +5,30 @@ import { useState, type FormEvent } from "react";
 interface LoginResponse {
   ok?: boolean;
   error?: string;
-  devMagicLink?: string | null;
 }
 
 export function LoginForm(): JSX.Element {
   const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [pending, setPending] = useState(false);
-  const [result, setResult] = useState<LoginResponse | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   async function onSubmit(e: FormEvent<HTMLFormElement>): Promise<void> {
     e.preventDefault();
+    setError(null);
     setPending(true);
-    setResult(null);
-    const res = await fetch("/api/auth/request", {
+    const res = await fetch("/api/login", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ email }),
+      body: JSON.stringify({ email, password }),
     });
-    const data = (await res.json()) as LoginResponse;
-    setResult(data);
-    setPending(false);
-  }
-
-  if (result?.ok) {
-    return (
-      <div className="rounded-md border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
-        <p className="font-medium">Check your email.</p>
-        <p className="mt-1">
-          If an account exists for this address, a sign-in link is on its way.
-        </p>
-        {result.devMagicLink ? (
-          <p className="mt-3 text-xs text-emerald-800">
-            Dev shortcut:{" "}
-            <a className="underline break-all" href={result.devMagicLink}>
-              {result.devMagicLink}
-            </a>
-          </p>
-        ) : null}
-      </div>
-    );
+    if (!res.ok) {
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      setError(body.error ?? "could not sign in");
+      setPending(false);
+      return;
+    }
+    window.location.href = "/dashboard";
   }
 
   return (
@@ -59,9 +44,20 @@ export function LoginForm(): JSX.Element {
           placeholder="you@example.com"
         />
       </div>
-      {result?.error ? (
+      <div>
+        <label className="block text-sm font-medium text-gray-800">Password</label>
+        <input
+          required
+          type="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+          placeholder="Your password"
+        />
+      </div>
+      {error ? (
         <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800">
-          {result.error}
+          {error}
         </div>
       ) : null}
       <button
@@ -69,7 +65,7 @@ export function LoginForm(): JSX.Element {
         disabled={pending}
         className="w-full rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50"
       >
-        {pending ? "Sending…" : "Send magic link"}
+        {pending ? "Signing in…" : "Sign in"}
       </button>
     </form>
   );

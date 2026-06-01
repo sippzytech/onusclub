@@ -21,12 +21,16 @@ interface MerchantRow extends RowDataPacket {
   owner_email: string;
   country: string;
   status: "active" | "suspended" | "trial";
+  public_slug: string | null;
 }
 
 meRouter.get(
   "/",
   requireAuth,
-  async (req: Request, res: Response<{ user: SessionUser; merchant: Merchant }>) => {
+  async (
+    req: Request,
+    res: Response<{ user: SessionUser; merchant: Merchant; publicSlug: string }>
+  ) => {
     const ctx = authContext(req);
 
     const [userRows] = await pool.execute<StaffUserRow[]>(
@@ -37,7 +41,7 @@ meRouter.get(
     const u = userRows[0];
 
     const [merchantRows] = await pool.execute<MerchantRow[]>(
-      "SELECT id, business_name, owner_email, country, status FROM merchants WHERE id = ? LIMIT 1",
+      "SELECT id, business_name, owner_email, country, status, public_slug FROM merchants WHERE id = ? LIMIT 1",
       [ctx.merchantId]
     );
     if (merchantRows.length === 0) throw ApiError.unauthorized("merchant not found");
@@ -58,6 +62,7 @@ meRouter.get(
         country: m.country,
         status: m.status,
       },
+      publicSlug: m.public_slug ?? "",
     });
   }
 );

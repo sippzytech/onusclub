@@ -9,7 +9,7 @@ export default function SignupPage(): JSX.Element {
             Create your Stampdeck account
           </h1>
           <p className="text-sm text-gray-600 mt-2">
-            We&apos;ll email you a magic link to sign in. No password to remember.
+            Pick a password and you&apos;re in. Onboarding help is just an email away.
           </p>
         </div>
         <SignupForm />

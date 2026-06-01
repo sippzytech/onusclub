@@ -1,23 +1,23 @@
 import { NextResponse } from "next/server";
-import type { PasswordAuthResult, PasswordSignupInput } from "@stampdeck/shared";
+import type { PasswordAuthResult, PasswordLoginInput } from "@stampdeck/shared";
 import { ApiCallError, apiFetch, SESSION_COOKIE } from "@/lib/api";
 
 const SEVEN_DAYS = 60 * 60 * 24 * 7;
 
 export async function POST(req: Request): Promise<NextResponse> {
-  let body: PasswordSignupInput;
+  let body: PasswordLoginInput;
   try {
-    body = (await req.json()) as PasswordSignupInput;
+    body = (await req.json()) as PasswordLoginInput;
   } catch {
     return NextResponse.json({ error: "invalid json" }, { status: 400 });
   }
 
   try {
-    const result = await apiFetch<PasswordAuthResult>("/v1/auth/signup", {
+    const result = await apiFetch<PasswordAuthResult>("/v1/auth/login", {
       method: "POST",
       body,
     });
-    const res = NextResponse.json({ ok: true, publicSlug: result.publicSlug });
+    const res = NextResponse.json({ ok: true });
     res.cookies.set(SESSION_COOKIE, result.jwt, {
       httpOnly: true,
       sameSite: "lax",

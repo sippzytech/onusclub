@@ -14,6 +14,7 @@ import { merchantsRouter } from "./routes/merchants.js";
 import { meRouter } from "./routes/me.js";
 import { messagesRouter } from "./routes/messages.js";
 import { programsRouter } from "./routes/programs.js";
+import { publicRouter } from "./routes/public.js";
 import { scanRouter } from "./routes/scan.js";
 import { sweepsRouter } from "./routes/sweeps.js";
 import { walletRouter } from "./routes/wallet.js";
@@ -38,6 +39,7 @@ app.use("/v1/scan", scanRouter);
 app.use("/v1/broadcasts", broadcastsRouter);
 app.use("/v1/sweeps", sweepsRouter);
 app.use("/v1/messages", messagesRouter);
+app.use("/v1/public", publicRouter);
 app.use("/v1", walletRouter);
 
 app.use(errorHandler);

@@ -3,15 +3,27 @@ import { apiFetch } from "@/lib/api";
 import { requireSession } from "@/lib/session";
 import { CreateProgramForm } from "./create-program-form";
 import { DashboardShell } from "./dashboard-shell";
+import { QrShareCard } from "./qr-share-card";
 
 export const dynamic = "force-dynamic";
 
+function publicUrlFor(slug: string): string {
+  const base = process.env.NEXT_PUBLIC_WEB_BASE ?? "http://localhost:3001";
+  return `${base.replace(/\/$/, "")}/m/${slug}`;
+}
+
 export default async function DashboardPage(): Promise<JSX.Element> {
-  const { jwt, user, merchant } = await requireSession();
+  const { jwt, user, merchant, publicSlug } = await requireSession();
   const { programs } = await apiFetch<{ programs: Program[] }>("/v1/programs", { jwt });
 
   return (
     <DashboardShell user={user} merchant={merchant}>
+      {publicSlug ? (
+        <section className="space-y-3 mb-10">
+          <QrShareCard publicUrl={publicUrlFor(publicSlug)} />
+        </section>
+      ) : null}
+
       <section className="space-y-4">
         <h2 className="text-lg font-medium text-gray-900">Stamp programs</h2>
         {programs.length === 0 ? (

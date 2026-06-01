@@ -13,7 +13,7 @@ export default function LoginPage({
             Sign in to Stampdeck
           </h1>
           <p className="text-sm text-gray-600 mt-2">
-            Enter your email and we&apos;ll send you a magic link.
+            Enter your email and password.
           </p>
         </div>
         {searchParams.error ? (

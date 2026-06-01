@@ -59,6 +59,30 @@ export const MerchantSignupResult = z.object({
 });
 export type MerchantSignupResult = z.infer<typeof MerchantSignupResult>;
 
+// ---------- Password auth ----------
+
+export const PasswordSignupInput = z.object({
+  businessName: z.string().min(1).max(200),
+  ownerEmail: z.string().email().max(200),
+  ownerName: z.string().max(200).optional(),
+  password: z.string().min(8).max(200),
+});
+export type PasswordSignupInput = z.infer<typeof PasswordSignupInput>;
+
+export const PasswordLoginInput = z.object({
+  email: z.string().email().max(200),
+  password: z.string().min(1).max(200),
+});
+export type PasswordLoginInput = z.infer<typeof PasswordLoginInput>;
+
+export const PasswordAuthResult = z.object({
+  jwt: z.string(),
+  user: SessionUser,
+  merchant: Merchant,
+  publicSlug: z.string(),
+});
+export type PasswordAuthResult = z.infer<typeof PasswordAuthResult>;
+
 // ---------- Programs ----------
 
 export const StampProgramCreateInput = z.object({
@@ -191,6 +215,50 @@ export const ScanResult = z.object({
   appliedAction: z.enum(["stamp", "redeem"]),
 });
 export type ScanResult = z.infer<typeof ScanResult>;
+
+// ---------- Public per-merchant signup (customer-facing QR flow) ----------
+
+export const PublicProgram = z.object({
+  id: z.string(),
+  name: z.string(),
+  stampsRequired: z.number().int().positive(),
+  rewardText: z.string(),
+});
+export type PublicProgram = z.infer<typeof PublicProgram>;
+
+export const PublicMerchant = z.object({
+  businessName: z.string(),
+  brandColor: z.string().nullable(),
+  logoUrl: z.string().nullable(),
+  publicSlug: z.string(),
+  programs: z.array(PublicProgram),
+});
+export type PublicMerchant = z.infer<typeof PublicMerchant>;
+
+export const PublicEnrolInput = z
+  .object({
+    name: z.string().min(1).max(200),
+    phone: z.string().max(20).optional(),
+    email: z.string().email().max(200).optional(),
+    birthday: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/, "use YYYY-MM-DD")
+      .optional(),
+    programId: z.string().min(1),
+  })
+  .refine(
+    (v) => (v.phone && v.phone.trim() !== "") || (v.email && v.email.trim() !== ""),
+    { message: "phone or email is required" }
+  );
+export type PublicEnrolInput = z.infer<typeof PublicEnrolInput>;
+
+export const PublicEnrolResult = z.object({
+  walletSaveUrl: z.string().url().nullable(),
+  // true if we matched an existing customer by email/phone and returned that
+  // card instead of creating a new one. UI uses this to show "Welcome back".
+  existing: z.boolean(),
+});
+export type PublicEnrolResult = z.infer<typeof PublicEnrolResult>;
 
 // ---------- Messaging (broadcasts + sweeps) ----------
 
