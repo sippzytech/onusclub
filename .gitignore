@@ -13,6 +13,7 @@ dist/
 out/
 build/
 *.tsbuildinfo
+packages/shared/dist/
 
 # logs
 *.log

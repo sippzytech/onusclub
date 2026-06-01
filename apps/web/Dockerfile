@@ -12,6 +12,10 @@ FROM deps AS build
 COPY tsconfig.base.json ./
 COPY packages/shared ./packages/shared
 COPY apps/web ./apps/web
+# Next.js transpilePackages handles .ts at build time, but we build shared
+# anyway for consistency with the api image and so the d.ts files exist for
+# downstream tooling.
+RUN pnpm --filter @stampdeck/shared run build
 RUN pnpm --filter @stampdeck/web run build
 
 FROM base AS runtime

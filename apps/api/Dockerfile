@@ -12,6 +12,10 @@ FROM deps AS build
 COPY tsconfig.base.json ./
 COPY packages/shared ./packages/shared
 COPY apps/api ./apps/api
+# Build the shared package first so its dist/ exists when api resolves
+# @stampdeck/shared at compile-time AND runtime (api's `main` field points to
+# dist/index.js — see packages/shared/package.json).
+RUN pnpm --filter @stampdeck/shared run build
 RUN pnpm --filter @stampdeck/api run build
 # tsc only compiles .ts files. Copy the SQL migrations alongside the compiled
 # migrate.js so that `node dist/db/migrate.js` can find them at runtime
