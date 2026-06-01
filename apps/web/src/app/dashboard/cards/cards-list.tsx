@@ -66,13 +66,27 @@ export function CardsList({ cards }: { cards: Card[] }): JSX.Element {
               | null;
             const cur = state?.stamps_current ?? 0;
             const eligible = cur >= c.stampsRequired;
+            const expired = c.status === "expired";
             const s = stampState[c.id] ?? { busy: false, err: null };
             return (
-              <li key={c.id} className="rounded-md border border-gray-200 bg-white p-4 text-sm">
+              <li
+                key={c.id}
+                className={
+                  "rounded-md border bg-white p-4 text-sm " +
+                  (expired ? "border-gray-200 opacity-70" : "border-gray-200")
+                }
+              >
                 <div className="flex items-center justify-between gap-4">
                   <Link href={`/dashboard/cards/${c.id}`} className="block flex-1 hover:underline">
-                    <div className="font-medium text-gray-900">
-                      {c.customerName ?? "(no name)"}
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-gray-900">
+                        {c.customerName ?? "(no name)"}
+                      </span>
+                      {expired ? (
+                        <span className="rounded-full bg-gray-200 px-2 py-0.5 text-xs text-gray-700">
+                          Expired
+                        </span>
+                      ) : null}
                     </div>
                     <div className="text-gray-600 mt-1">{c.programName}</div>
                   </Link>
@@ -87,9 +101,13 @@ export function CardsList({ cards }: { cards: Card[] }): JSX.Element {
                   </div>
                   <button
                     onClick={() => void quickStamp(c)}
-                    disabled={s.busy || eligible}
+                    disabled={s.busy || eligible || expired}
                     title={
-                      eligible ? "At threshold — open the card to redeem" : "Add one stamp"
+                      expired
+                        ? "Card is expired"
+                        : eligible
+                        ? "At threshold — open the card to redeem"
+                        : "Add one stamp"
                     }
                     className="rounded-md bg-gray-900 px-3 py-2 text-xs font-medium text-white hover:bg-gray-800 disabled:opacity-40 shrink-0"
                   >

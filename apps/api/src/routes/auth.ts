@@ -4,10 +4,13 @@ import type { ResultSetHeader, RowDataPacket } from "mysql2";
 import {
   AuthRequestInput,
   AuthVerifyInput,
+  ForgotPasswordInput,
   PasswordLoginInput,
   PasswordSignupInput,
+  ResetPasswordInput,
   type AuthRequestResult,
   type AuthVerifyResult,
+  type ForgotPasswordResult,
   type Merchant,
   type PasswordAuthResult,
   type SessionUser,
@@ -300,3 +303,119 @@ authRouter.post("/verify", async (req: Request, res: Response<AuthVerifyResult>)
     conn.release();
   }
 });
+
+// ---------- Forgot password ----------
+
+interface UserIdRow extends RowDataPacket {
+  id: string;
+}
+
+authRouter.post(
+  "/forgot-password",
+  async (req: Request, res: Response<ForgotPasswordResult>) => {
+    const { email } = ForgotPasswordInput.parse(req.body);
+
+    const [rows] = await pool.execute<UserIdRow[]>(
+      "SELECT id FROM staff_users WHERE email = ? LIMIT 1",
+      [email]
+    );
+    // Respond OK either way so the endpoint can't be used to enumerate
+    // accounts. Token is only issued when the user actually exists.
+    if (rows.length === 0) return res.json({ ok: true });
+
+    const { url } = await issueMagicLink(rows[0].id);
+    // Reset link points at the password-reset page, not the magic-link
+    // verify page — they live under different routes on web.
+    const resetUrl = url.replace("/auth/verify", "/auth/reset-password");
+
+    // Best-effort email — Resend test mode caveats still apply.
+    void sendEmail({
+      to: email,
+      subject: "Reset your Stampdeck password",
+      text:
+        `We received a request to reset your Stampdeck password.\n\n` +
+        `Click this link to choose a new password:\n${resetUrl}\n\n` +
+        `If you didn't request this, ignore this email. The link expires in 1 hour.`,
+      html:
+        `<p>We received a request to reset your Stampdeck password.</p>` +
+        `<p><a href="${resetUrl}">Choose a new password</a></p>` +
+        `<p>If you didn't request this, ignore this email. The link expires in 1 hour.</p>`,
+    }).catch((err: unknown) => logger.warn({ err, email }, "reset email failed"));
+
+    const result: ForgotPasswordResult = { ok: true };
+    if (env.NODE_ENV !== "production") result.devResetLink = resetUrl;
+    return res.json(result);
+  }
+);
+
+authRouter.post(
+  "/reset-password",
+  async (req: Request, res: Response<PasswordAuthResult>) => {
+    const { token, password } = ResetPasswordInput.parse(req.body);
+
+    const conn = await pool.getConnection();
+    try {
+      await conn.beginTransaction();
+
+      const [tokenRows] = await conn.execute<AuthTokenRow[]>(
+        "SELECT token, user_id, expires_at, used FROM auth_tokens WHERE token = ? LIMIT 1",
+        [token]
+      );
+      if (tokenRows.length === 0) throw ApiError.unauthorized("invalid token");
+      const row = tokenRows[0];
+      if (row.used) throw ApiError.unauthorized("token already used");
+      if (new Date(row.expires_at).getTime() < Date.now()) {
+        throw ApiError.unauthorized("token expired");
+      }
+
+      await conn.execute("UPDATE auth_tokens SET used = TRUE WHERE token = ?", [token]);
+
+      const passwordHash = await hashPassword(password);
+      await conn.execute(
+        "UPDATE staff_users SET password_hash = ? WHERE id = ?",
+        [Buffer.from(passwordHash, "utf8"), row.user_id]
+      );
+
+      const [userRows] = await conn.execute<UserWithPasswordRow[]>(
+        `SELECT id, merchant_id, email, name, role, password_hash
+           FROM staff_users WHERE id = ? LIMIT 1`,
+        [row.user_id]
+      );
+      if (userRows.length === 0) throw ApiError.unauthorized("user not found");
+      const u = userRows[0];
+
+      const [merchantRows] = await conn.execute<MerchantWithSlugRow[]>(
+        `SELECT id, business_name, owner_email, country, status, public_slug
+           FROM merchants WHERE id = ? LIMIT 1`,
+        [u.merchant_id]
+      );
+      if (merchantRows.length === 0) throw ApiError.unauthorized("merchant not found");
+      const m = merchantRows[0];
+
+      await conn.commit();
+
+      const user: SessionUser = {
+        id: u.id,
+        email: u.email,
+        name: u.name,
+        role: u.role,
+        merchantId: u.merchant_id,
+      };
+      const merchant: Merchant = {
+        id: m.id,
+        businessName: m.business_name,
+        ownerEmail: m.owner_email,
+        country: m.country,
+        status: m.status,
+      };
+      const jwt = signJwt({ userId: u.id, merchantId: m.id, role: u.role });
+
+      return res.json({ jwt, user, merchant, publicSlug: m.public_slug ?? "" });
+    } catch (err) {
+      await conn.rollback();
+      throw err;
+    } finally {
+      conn.release();
+    }
+  }
+);

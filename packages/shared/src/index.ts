@@ -18,7 +18,7 @@ export type EventType =
   | "signup"
   | "expire";
 
-export type CardStatus = "active" | "blocked";
+export type CardStatus = "active" | "blocked" | "expired";
 export type MerchantStatus = "active" | "suspended" | "trial";
 export type StaffRole = "owner" | "staff";
 

@@ -12,6 +12,7 @@ import { env } from "../config.js";
 import {
   retrySource,
   runBirthdaySweep,
+  runExpirySweep,
   runInactivitySweep,
 } from "../messaging/operations.js";
 
@@ -155,16 +156,18 @@ sweepsRouter.post(
   requireAuth,
   async (
     req: Request,
-    res: Response<{ id: string; scanned: number; sent: number; failed: number }>
+    res: Response<
+      | { id: string; scanned: number; sent: number; failed: number }
+      | { scanned: number; expired: number }
+    >
   ) => {
     if (env.NODE_ENV === "production") {
       throw ApiError.notFound("not available in production");
     }
     const type = req.params.type;
-    let result;
-    if (type === "birthday") result = await runBirthdaySweep();
-    else if (type === "inactivity") result = await runInactivitySweep();
-    else throw ApiError.badRequest("unknown sweep type");
-    return res.json(result);
+    if (type === "birthday") return res.json(await runBirthdaySweep());
+    if (type === "inactivity") return res.json(await runInactivitySweep());
+    if (type === "expiry") return res.json(await runExpirySweep());
+    throw ApiError.badRequest("unknown sweep type");
   }
 );

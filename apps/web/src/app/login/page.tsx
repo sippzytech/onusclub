@@ -22,12 +22,14 @@ export default function LoginPage({
           </div>
         ) : null}
         <LoginForm />
-        <p className="text-xs text-gray-500">
-          New here?{" "}
+        <div className="flex items-center justify-between text-xs text-gray-500">
+          <a className="underline" href="/forgot-password">
+            Forgot password?
+          </a>
           <a className="underline" href="/signup">
             Create an account
           </a>
-        </p>
+        </div>
       </div>
     </main>
   );

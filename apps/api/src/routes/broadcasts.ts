@@ -17,6 +17,7 @@ interface BroadcastRow extends RowDataPacket {
   merchant_id: string;
   header: string;
   body: string;
+  audience_filter: unknown;
   status: Broadcast["status"];
   scanned: number;
   sent: number;
@@ -42,11 +43,18 @@ interface DeliveryRow extends RowDataPacket {
 }
 
 function rowToBroadcast(row: BroadcastRow): Broadcast {
+  const filter =
+    row.audience_filter === null || row.audience_filter === undefined
+      ? null
+      : typeof row.audience_filter === "string"
+      ? (JSON.parse(row.audience_filter) as Broadcast["audienceFilter"])
+      : (row.audience_filter as Broadcast["audienceFilter"]);
   return {
     id: row.id,
     merchantId: row.merchant_id,
     header: row.header,
     body: row.body,
+    audienceFilter: filter,
     status: row.status,
     scanned: row.scanned,
     sent: row.sent,
@@ -100,7 +108,12 @@ broadcastsRouter.post(
     const ctx = authContext(req);
     await requirePremium(ctx.merchantId);
     const input = BroadcastCreateInput.parse(req.body);
-    const id = await startBroadcast(ctx.merchantId, input.header, input.body);
+    const id = await startBroadcast(
+      ctx.merchantId,
+      input.header,
+      input.body,
+      input.audienceFilter
+    );
     return res.status(202).json({ broadcastId: id });
   }
 );
@@ -112,7 +125,7 @@ broadcastsRouter.get(
   async (req: Request, res: Response<{ broadcasts: Broadcast[] }>) => {
     const ctx = authContext(req);
     const [rows] = await pool.execute<BroadcastRow[]>(
-      `SELECT id, merchant_id, header, body, status, scanned, sent, failed,
+      `SELECT id, merchant_id, header, body, audience_filter, status, scanned, sent, failed,
               started_at, finished_at
          FROM broadcasts
         WHERE merchant_id = ?
@@ -134,7 +147,7 @@ broadcastsRouter.get(
   ) => {
     const ctx = authContext(req);
     const [rows] = await pool.execute<BroadcastRow[]>(
-      `SELECT id, merchant_id, header, body, status, scanned, sent, failed,
+      `SELECT id, merchant_id, header, body, audience_filter, status, scanned, sent, failed,
               started_at, finished_at
          FROM broadcasts
         WHERE id = ? AND merchant_id = ?

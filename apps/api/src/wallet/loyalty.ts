@@ -100,6 +100,33 @@ export async function createLoyaltyObject(
   return id;
 }
 
+/**
+ * PATCH a card's LoyaltyObject state — used by the expiry sweep to flip a
+ * card from ACTIVE to EXPIRED in Wallet (Google moves the pass to the
+ * "Inactive passes" tray automatically). Best-effort: false on any failure.
+ */
+export async function setLoyaltyObjectState(
+  cardId: string,
+  state: "ACTIVE" | "EXPIRED" | "INACTIVE" | "COMPLETED"
+): Promise<boolean> {
+  if (!(await walletEnabled())) return false;
+  const id = objectId(cardId);
+  const res = await walletRequest({
+    method: "PATCH",
+    path: `/loyaltyObject/${id}`,
+    body: { state },
+  });
+  if (!res || res.status >= 300) {
+    logger.error(
+      { status: res?.status, data: res?.data, cardId, state },
+      "wallet: failed to PATCH state"
+    );
+    return false;
+  }
+  logger.info({ cardId, state }, "wallet: object state changed");
+  return true;
+}
+
 export async function patchLoyaltyObject(
   program: ProgramForWallet,
   card: CardForWallet

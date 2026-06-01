@@ -97,12 +97,54 @@ export const MerchantPreferencesInput = z.object({
 });
 export type MerchantPreferencesInput = z.infer<typeof MerchantPreferencesInput>;
 
+// ---------- Forgot / reset password ----------
+
+export const ForgotPasswordInput = z.object({
+  email: z.string().email().max(200),
+});
+export type ForgotPasswordInput = z.infer<typeof ForgotPasswordInput>;
+
+export const ForgotPasswordResult = z.object({
+  ok: z.literal(true),
+  // Only present in dev so smoke tests don't need Resend to verify the flow.
+  devResetLink: z.string().url().optional(),
+});
+export type ForgotPasswordResult = z.infer<typeof ForgotPasswordResult>;
+
+export const ResetPasswordInput = z.object({
+  token: z.string().min(32).max(64),
+  password: z.string().min(8).max(200),
+});
+export type ResetPasswordInput = z.infer<typeof ResetPasswordInput>;
+
+// ---------- Staff (team) accounts ----------
+
+export const StaffMember = z.object({
+  id: z.string(),
+  email: z.string().email(),
+  name: z.string().nullable(),
+  role: z.enum(["owner", "staff"]),
+  createdAt: z.string(),
+});
+export type StaffMember = z.infer<typeof StaffMember>;
+
+export const StaffCreateInput = z.object({
+  email: z.string().email().max(200),
+  name: z.string().max(200).optional(),
+  password: z.string().min(8).max(200),
+});
+export type StaffCreateInput = z.infer<typeof StaffCreateInput>;
+
 // ---------- Programs ----------
 
 export const StampProgramCreateInput = z.object({
   name: z.string().min(1).max(200),
   stampsRequired: z.number().int().positive().max(100),
   rewardText: z.string().min(1).max(500),
+  // Optional: card expires after this many days of inactivity (no stamp /
+  // redeem events). The expiry sweep flips status to 'expired' and PATCHes
+  // the Wallet pass to state EXPIRED so it moves to Inactive in Wallet.
+  expiryDays: z.number().int().positive().max(3650).optional(),
 });
 export type StampProgramCreateInput = z.infer<typeof StampProgramCreateInput>;
 
@@ -175,7 +217,7 @@ export const Card = z.object({
   stampsRequired: z.number().int().positive(),
   cardState: z.unknown(), // typed at usage site via the CardState union from index.ts
   qrToken: z.string(),
-  status: z.enum(["active", "blocked"]),
+  status: z.enum(["active", "blocked", "expired"]),
   rewardText: z.string(),
   createdAt: z.string(),
   lastEventAt: z.string().nullable(),
@@ -276,9 +318,21 @@ export type PublicEnrolResult = z.infer<typeof PublicEnrolResult>;
 
 // ---------- Messaging (broadcasts + sweeps) ----------
 
+export const AudienceFilter = z.object({
+  // Send only to cards where total_lifetime stamps is at least this number.
+  minLifetimeStamps: z.number().int().nonnegative().max(10000).optional(),
+  // Send only to customers whose birthday month matches the current
+  // server-side calendar month.
+  withBirthdayThisMonth: z.boolean().optional(),
+  // Send only to cards under this specific program id (must belong to merchant).
+  programId: z.string().optional(),
+});
+export type AudienceFilter = z.infer<typeof AudienceFilter>;
+
 export const BroadcastCreateInput = z.object({
   header: z.string().min(1).max(60),
   body: z.string().min(1).max(200),
+  audienceFilter: AudienceFilter.optional(),
 });
 export type BroadcastCreateInput = z.infer<typeof BroadcastCreateInput>;
 
@@ -290,6 +344,7 @@ export const Broadcast = z.object({
   merchantId: z.string(),
   header: z.string(),
   body: z.string(),
+  audienceFilter: AudienceFilter.nullable().optional(),
   status: RunStatus,
   scanned: z.number().int(),
   sent: z.number().int(),

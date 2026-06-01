@@ -1,23 +1,50 @@
 "use client";
 
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { useState, type FormEvent } from "react";
+import type { Program } from "@stampdeck/shared";
 
 export function BroadcastComposer(): JSX.Element {
   const router = useRouter();
   const [header, setHeader] = useState("");
   const [body, setBody] = useState("");
+  const [filterMode, setFilterMode] = useState<"all" | "filtered">("all");
+  const [minStamps, setMinStamps] = useState<string>("");
+  const [withBirthdayThisMonth, setWithBirthdayThisMonth] = useState(false);
+  const [programId, setProgramId] = useState<string>("");
+  const [programs, setPrograms] = useState<Program[]>([]);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const programsLoaded = useRef(false);
+
+  // Lazy-load programs only when the filtered mode is opened.
+  useEffect(() => {
+    if (filterMode !== "filtered" || programsLoaded.current) return;
+    programsLoaded.current = true;
+    fetch("/api/programs-list")
+      .then((r) => (r.ok ? r.json() : { programs: [] }))
+      .then((data: { programs: Program[] }) => setPrograms(data.programs ?? []))
+      .catch(() => undefined);
+  }, [filterMode]);
 
   async function onSubmit(e: FormEvent<HTMLFormElement>): Promise<void> {
     e.preventDefault();
     setPending(true);
     setError(null);
+    const audienceFilter =
+      filterMode === "all"
+        ? undefined
+        : {
+            ...(minStamps.trim() !== ""
+              ? { minLifetimeStamps: Number(minStamps) }
+              : {}),
+            ...(withBirthdayThisMonth ? { withBirthdayThisMonth: true } : {}),
+            ...(programId !== "" ? { programId } : {}),
+          };
     const res = await fetch("/api/broadcasts", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ header, body }),
+      body: JSON.stringify({ header, body, audienceFilter }),
     });
     setPending(false);
     if (!res.ok) {
@@ -27,7 +54,10 @@ export function BroadcastComposer(): JSX.Element {
     }
     setHeader("");
     setBody("");
-    // Refresh the page so the new broadcast row shows up in the feed below.
+    setMinStamps("");
+    setWithBirthdayThisMonth(false);
+    setProgramId("");
+    setFilterMode("all");
     router.refresh();
   }
 
@@ -65,6 +95,75 @@ export function BroadcastComposer(): JSX.Element {
           placeholder="Show your loyalty card and we'll knock 20% off any drink this Friday."
         />
       </div>
+
+      <fieldset className="border-t border-gray-100 pt-3">
+        <legend className="text-sm font-medium text-gray-800">Audience</legend>
+        <div className="mt-2 space-y-2">
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="radio"
+              checked={filterMode === "all"}
+              onChange={() => setFilterMode("all")}
+            />
+            All active customers
+          </label>
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="radio"
+              checked={filterMode === "filtered"}
+              onChange={() => setFilterMode("filtered")}
+            />
+            Only customers who match…
+          </label>
+        </div>
+        {filterMode === "filtered" ? (
+          <div className="mt-3 space-y-3 pl-6 border-l border-gray-100 ml-1">
+            <div>
+              <label className="block text-xs font-medium text-gray-700">
+                Have collected at least N lifetime stamps
+              </label>
+              <input
+                type="number"
+                min={0}
+                value={minStamps}
+                onChange={(e) => setMinStamps(e.target.value)}
+                placeholder="e.g. 5 — leave blank for no minimum"
+                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+              />
+            </div>
+            <label className="flex items-center gap-2 text-sm text-gray-800">
+              <input
+                type="checkbox"
+                checked={withBirthdayThisMonth}
+                onChange={(e) => setWithBirthdayThisMonth(e.target.checked)}
+              />
+              Have a birthday this month
+            </label>
+            <div>
+              <label className="block text-xs font-medium text-gray-700">
+                Only customers on a specific program
+              </label>
+              <select
+                value={programId}
+                onChange={(e) => setProgramId(e.target.value)}
+                className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm"
+              >
+                <option value="">— any program —</option>
+                {programs.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <p className="text-xs text-gray-500">
+              Filters combine with AND. If you leave them all blank this is the
+              same as sending to all active customers.
+            </p>
+          </div>
+        ) : null}
+      </fieldset>
+
       {error ? (
         <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800">
           {error}

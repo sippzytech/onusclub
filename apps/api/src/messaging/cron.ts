@@ -1,6 +1,10 @@
 import cron from "node-cron";
 import { logger } from "../logger.js";
-import { runBirthdaySweep, runInactivitySweep } from "./operations.js";
+import {
+  runBirthdaySweep,
+  runExpirySweep,
+  runInactivitySweep,
+} from "./operations.js";
 
 const TZ = "Europe/Amsterdam";
 
@@ -36,5 +40,20 @@ export function startMessagingCrons(): void {
     { timezone: TZ }
   );
 
-  logger.info({ tz: TZ }, "messaging crons registered (08:00 birthday, 10:00 inactivity)");
+  // Expiry sweep at 03:00 Europe/Amsterdam (off-hours so daily activity
+  // doesn't race with the per-card status flip).
+  cron.schedule(
+    "0 3 * * *",
+    () => {
+      runExpirySweep().catch((err: unknown) => {
+        logger.error({ err }, "scheduled expiry sweep crashed");
+      });
+    },
+    { timezone: TZ }
+  );
+
+  logger.info(
+    { tz: TZ },
+    "messaging crons registered (03:00 expiry, 08:00 birthday, 10:00 inactivity)"
+  );
 }

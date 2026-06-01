@@ -47,10 +47,13 @@ programsRouter.post(
     const input = StampProgramCreateInput.parse(req.body);
 
     const id = randomUUID();
-    const config: StampProgramConfig = {
+    const config: StampProgramConfig & { expiry_days?: number } = {
       type: "stamp",
       stamps_required: input.stampsRequired,
     };
+    if (input.expiryDays !== undefined) {
+      config.expiry_days = input.expiryDays;
+    }
 
     await pool.execute<ResultSetHeader>(
       `INSERT INTO loyalty_programs

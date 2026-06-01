@@ -16,6 +16,7 @@ import { messagesRouter } from "./routes/messages.js";
 import { programsRouter } from "./routes/programs.js";
 import { publicRouter } from "./routes/public.js";
 import { scanRouter } from "./routes/scan.js";
+import { staffRouter } from "./routes/staff.js";
 import { sweepsRouter } from "./routes/sweeps.js";
 import { walletRouter } from "./routes/wallet.js";
 import { startMessagingCrons } from "./messaging/cron.js";
@@ -40,6 +41,7 @@ app.use("/v1/broadcasts", broadcastsRouter);
 app.use("/v1/sweeps", sweepsRouter);
 app.use("/v1/messages", messagesRouter);
 app.use("/v1/public", publicRouter);
+app.use("/v1/staff", staffRouter);
 app.use("/v1", walletRouter);
 
 app.use(errorHandler);

@@ -10,7 +10,7 @@ import { randomUUID } from "node:crypto";
 import type { ResultSetHeader, RowDataPacket } from "mysql2";
 import { pool } from "../db/pool.js";
 import { logger } from "../logger.js";
-import { sendCustomCardMessage } from "../wallet/loyalty.js";
+import { sendCustomCardMessage, setLoyaltyObjectState } from "../wallet/loyalty.js";
 
 const INACTIVITY_DAYS = 30;
 const SEND_CONCURRENCY = 5;
@@ -120,21 +120,34 @@ async function dispatch(
  * return quickly. Status moves to 'completed' (or 'failed') when the loop
  * finishes.
  */
+export interface AudienceFilter {
+  minLifetimeStamps?: number;
+  withBirthdayThisMonth?: boolean;
+  programId?: string;
+}
+
 export async function startBroadcast(
   merchantId: string,
   header: string,
-  body: string
+  body: string,
+  audienceFilter?: AudienceFilter
 ): Promise<string> {
   const id = randomUUID();
   await pool.execute<ResultSetHeader>(
-    `INSERT INTO broadcasts (id, merchant_id, header, body, status)
-     VALUES (?, ?, ?, ?, 'running')`,
-    [id, merchantId, header, body]
+    `INSERT INTO broadcasts (id, merchant_id, header, body, audience_filter, status)
+     VALUES (?, ?, ?, ?, ?, 'running')`,
+    [
+      id,
+      merchantId,
+      header,
+      body,
+      audienceFilter ? JSON.stringify(audienceFilter) : null,
+    ]
   );
 
   // Fire-and-forget background processing. Errors are caught + logged so the
   // process never unhandled-rejects.
-  void runBroadcast(id, merchantId, header, body).catch((err: unknown) => {
+  void runBroadcast(id, merchantId, header, body, audienceFilter).catch((err: unknown) => {
     logger.error({ err, broadcastId: id }, "broadcast crashed");
   });
 
@@ -145,9 +158,27 @@ async function runBroadcast(
   id: string,
   merchantId: string,
   header: string,
-  body: string
+  body: string,
+  audienceFilter?: AudienceFilter
 ): Promise<void> {
   try {
+    // Build a parametrised candidate query that grows with whatever filters
+    // are set. Always tenant-scoped + active-only at the floor.
+    const where: string[] = ["c.merchant_id = ?", "c.status = 'active'"];
+    const params: (string | number)[] = [merchantId];
+    if (audienceFilter?.minLifetimeStamps !== undefined) {
+      where.push(
+        "JSON_EXTRACT(c.card_state, '$.total_lifetime') >= ?"
+      );
+      params.push(audienceFilter.minLifetimeStamps);
+    }
+    if (audienceFilter?.withBirthdayThisMonth) {
+      where.push("MONTH(cu.birthday) = MONTH(CURDATE())");
+    }
+    if (audienceFilter?.programId) {
+      where.push("c.program_id = ?");
+      params.push(audienceFilter.programId);
+    }
     const [candidates] = await pool.execute<CandidateRow[]>(
       `SELECT c.id AS card_id, c.merchant_id, c.customer_id,
               m.business_name,
@@ -157,8 +188,8 @@ async function runBroadcast(
          JOIN merchants m ON m.id = c.merchant_id
          JOIN customers cu ON cu.id = c.customer_id
          JOIN loyalty_programs p ON p.id = c.program_id
-        WHERE c.merchant_id = ? AND c.status = 'active'`,
-      [merchantId]
+        WHERE ${where.join(" AND ")}`,
+      params
     );
     await pool.execute("UPDATE broadcasts SET scanned = ? WHERE id = ?", [
       candidates.length,
@@ -428,4 +459,64 @@ export async function retrySource(
   }
 
   return { retried: rows.length, sent, failed };
+}
+
+// ---------- Card expiry sweep ----------
+// Daily cron — finds active cards whose program has an expiry_days config and
+// whose last_event_at is older than that. Flips status to 'expired' + writes
+// an 'expire' card event + PATCHes the Google Wallet object to state=EXPIRED
+// (Google moves the pass to "Inactive passes" automatically). All best-effort
+// per-card — a single bad card doesn't stop the rest.
+
+interface ExpiryCandidateRow extends RowDataPacket {
+  card_id: string;
+  merchant_id: string;
+  program_config: unknown;
+  last_event_at: Date | null;
+  created_at: Date;
+}
+
+export async function runExpirySweep(): Promise<{ scanned: number; expired: number }> {
+  // Pull all active cards on programs that have an expiry_days set. We compute
+  // the per-card threshold in JS because expiry_days varies by program — too
+  // ugly to inline into a single SQL WHERE.
+  const [rows] = await pool.execute<ExpiryCandidateRow[]>(
+    `SELECT c.id AS card_id, c.merchant_id, c.last_event_at, c.created_at,
+            p.config_json AS program_config
+       FROM loyalty_cards c
+       JOIN loyalty_programs p ON p.id = c.program_id
+      WHERE c.status = 'active'
+        AND JSON_EXTRACT(p.config_json, '$.expiry_days') IS NOT NULL`
+  );
+
+  const now = Date.now();
+  let expired = 0;
+  for (const row of rows) {
+    const cfg = parseJson<{ expiry_days?: number }>(row.program_config);
+    const days = cfg.expiry_days ?? 0;
+    if (days <= 0) continue;
+    const cutoffMs = days * 24 * 60 * 60 * 1000;
+    const lastActivity = row.last_event_at ?? row.created_at;
+    if (now - new Date(lastActivity).getTime() < cutoffMs) continue;
+
+    try {
+      await pool.execute(
+        "UPDATE loyalty_cards SET status = 'expired' WHERE id = ? AND status = 'active'",
+        [row.card_id]
+      );
+      await pool.execute(
+        `INSERT INTO card_events (merchant_id, card_id, event_type, delta_json, note)
+         VALUES (?, ?, 'expire', ?, NULL)`,
+        [row.merchant_id, row.card_id, JSON.stringify({ via: "expiry_sweep", days })]
+      );
+      // Best-effort wallet PATCH — failures are logged inside the helper.
+      await setLoyaltyObjectState(row.card_id, "EXPIRED");
+      expired += 1;
+    } catch (err) {
+      logger.error({ err, cardId: row.card_id }, "expiry sweep failed for card");
+    }
+  }
+
+  logger.info({ scanned: rows.length, expired }, "expiry sweep complete");
+  return { scanned: rows.length, expired };
 }
