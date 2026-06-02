@@ -32,6 +32,8 @@ export default async function DashboardPage(): Promise<JSX.Element> {
           <ul className="space-y-2">
             {programs.map((p) => {
               const cfg = p.configJson as { stamps_required?: number } | null;
+              const expiry = (p.configJson as { expiry_days?: number } | null)
+                ?.expiry_days;
               return (
                 <li
                   key={p.id}
@@ -41,6 +43,11 @@ export default async function DashboardPage(): Promise<JSX.Element> {
                   <div className="text-gray-600 mt-1">
                     {cfg?.stamps_required ?? "?"} stamps → {p.rewardText}
                   </div>
+                  {expiry ? (
+                    <div className="text-xs text-gray-500 mt-1">
+                      Expires after {expiry} days of inactivity
+                    </div>
+                  ) : null}
                 </li>
               );
             })}

@@ -84,6 +84,13 @@ Each day below corresponds to a git branch + a commit. Run `git log --oneline --
 - METABASE.md runbook with 7 starter SQL queries.
 - Smoke test: 70 assertions.
 
+### Day 10 — polish + infra
+- UI gaps: Create Program form gains an "Expiry (optional)" days input (the API supported it from Day 9, just needed surfacing). Program list shows the expiry policy. Broadcast detail page shows an "Audience:" summary line above the totals.
+- **Customer-facing card page** at `/c/[qrToken]`: branded read-only view a customer can bookmark or share, no auth (qr_token's 32-byte entropy is the access credential). Shows stamps_current / required, reward, status pill, lifetime redeemed count, and an "Add to Google Wallet" link if not yet saved. New endpoint `GET /v1/public/c/:qrToken` — sanitised return (no events, no other customers).
+- **MySQL backup automation**: `scripts/backup-mysql.sh` streams `mysqldump --single-transaction` out of the container, gzips to `/docker/stampdeck/backups/stampdeck-YYYY-MM-DD_HHMMSS.sql.gz`, prunes anything older than 30 days. Wires to host cron at 02:30 UTC. Restore command + retention tunable + future-offsite-backup note documented in DEPLOY.md §9.
+- **CI**: `.github/workflows/ci.yml` runs on every push and PR — pnpm install (frozen lockfile), build shared, typecheck all, build api + web. Cheap safety net.
+- Smoke test: 73 assertions (adds public card view happy + 404 + malformed).
+
 ---
 
 ## Deferred — saved for later (with the why)
@@ -120,20 +127,18 @@ Each day below corresponds to a git branch + a commit. Run `git log --oneline --
 
 ---
 
-## Likely next steps (Day 10+)
+## Likely next steps (Day 11+)
 
 Pick whatever the user finds most valuable next. None are dependencies on each other.
 
 | Idea | Effort | Value |
 |---|---|---|
-| **Expiry input on Program form** + audience filter summary in broadcast detail | 30 min | Closes the small gaps left from Day 9 |
-| **Customer-facing card page** (`/c/[qrToken]`) | half day | Customer can see their stamp count without opening Wallet (e.g., when sharing on iMessage before they save the pass) |
 | **Stripe billing** for the premium gate | 1-2 days | Turn fake unlock into real revenue |
 | **Apple Wallet** (`pkpass`) | 2-3 days | Phase 2. Doubles the addressable market. |
 | **Multi-program type support** (points, membership) | 1-2 days | Schema is already polymorphic — just need the business logic + UI. |
-| **Backup automation** for VPS MySQL | half day | `mysqldump` cron, S3/Backblaze upload, retention. Important before going live. |
-| **CI** (GitHub Action running `pnpm typecheck` + smoke on PRs) | 1-2 h | Cheap insurance. |
+| **Offsite backup upload** (S3 / Backblaze / second VPS) | 2-3 h | Day 10 backs up locally; an offsite copy survives VPS disk failure. |
 | **Owner magic-link email** (re-wire) | 1-2 h | Optional passwordless flow for owners who prefer it. |
+| **Smoke test in CI** | 2-3 h | Day 10 CI runs typecheck + build only. A MySQL service container would let us run the full 73-assertion smoke on every PR. |
 | **Wallet/card visual customization** | TBD | When the user is ready to design properly (see deferred above). |
 
 ---

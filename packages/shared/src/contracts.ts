@@ -316,6 +316,24 @@ export const PublicEnrolResult = z.object({
 });
 export type PublicEnrolResult = z.infer<typeof PublicEnrolResult>;
 
+// Customer-facing read of their own card. Sanitised — only the customer's
+// own name + program/business + state. No event history, no other customer
+// data, no merchant secrets. Access controlled solely by knowledge of the
+// 64-char qr_token (unguessable).
+export const PublicCardView = z.object({
+  businessName: z.string(),
+  brandColor: z.string().nullable(),
+  customerName: z.string().nullable(),
+  programName: z.string(),
+  rewardText: z.string(),
+  stampsCurrent: z.number().int(),
+  stampsRequired: z.number().int(),
+  rewardsRedeemed: z.number().int(),
+  status: z.enum(["active", "blocked", "expired"]),
+  walletSaveUrl: z.string().url().nullable(),
+});
+export type PublicCardView = z.infer<typeof PublicCardView>;
+
 // ---------- Messaging (broadcasts + sweeps) ----------
 
 export const AudienceFilter = z.object({

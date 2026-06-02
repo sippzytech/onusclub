@@ -11,6 +11,7 @@ import { Router, type Request, type Response } from "express";
 import type { ResultSetHeader, RowDataPacket } from "mysql2";
 import {
   PublicEnrolInput,
+  type PublicCardView,
   type PublicEnrolResult,
   type PublicMerchant,
   type StampCardState,
@@ -213,5 +214,76 @@ publicRouter.post(
     } finally {
       conn.release();
     }
+  }
+);
+
+// GET /v1/public/c/:qrToken — customer's own card view. No auth: the qr_token
+// itself is the access credential (32 bytes of crypto-random hex). Returns
+// sanitised data only — no events, no other customers, no merchant secrets.
+interface CardViewRow extends RowDataPacket {
+  card_id: string;
+  qr_token: string;
+  card_state: unknown;
+  google_wallet_object_id: string | null;
+  status: "active" | "blocked" | "expired";
+  business_name: string;
+  brand_color: string | null;
+  customer_name: string | null;
+  program_name: string;
+  reward_text: string;
+  program_config: unknown;
+}
+
+publicRouter.get(
+  "/c/:qrToken",
+  async (req: Request, res: Response<PublicCardView>) => {
+    const qrToken = req.params.qrToken;
+    if (!/^[0-9a-f]{64}$/i.test(qrToken)) {
+      throw ApiError.notFound("card not found");
+    }
+    const [rows] = await pool.execute<CardViewRow[]>(
+      `SELECT c.id AS card_id, c.qr_token, c.card_state,
+              c.google_wallet_object_id, c.status,
+              m.business_name, m.brand_color,
+              cu.name AS customer_name,
+              p.name AS program_name, p.reward_text,
+              p.config_json AS program_config
+         FROM loyalty_cards c
+         JOIN merchants m ON m.id = c.merchant_id
+         JOIN customers cu ON cu.id = c.customer_id
+         JOIN loyalty_programs p ON p.id = c.program_id
+        WHERE c.qr_token = ? LIMIT 1`,
+      [qrToken]
+    );
+    if (rows.length === 0) throw ApiError.notFound("card not found");
+    const row = rows[0];
+    const state =
+      typeof row.card_state === "string"
+        ? (JSON.parse(row.card_state) as StampCardState)
+        : (row.card_state as StampCardState);
+    const cfg =
+      typeof row.program_config === "string"
+        ? (JSON.parse(row.program_config) as { stamps_required?: number })
+        : (row.program_config as { stamps_required?: number });
+
+    // Issue a fresh save URL only if the wallet object exists.
+    let walletSaveUrl: string | null = null;
+    if (row.google_wallet_object_id) {
+      const token = await buildSaveJwt(row.card_id);
+      if (token) walletSaveUrl = saveUrl(token);
+    }
+
+    return res.json({
+      businessName: row.business_name,
+      brandColor: row.brand_color,
+      customerName: row.customer_name,
+      programName: row.program_name,
+      rewardText: row.reward_text,
+      stampsCurrent: state.stamps_current,
+      stampsRequired: cfg.stamps_required ?? 0,
+      rewardsRedeemed: state.rewards_redeemed,
+      status: row.status,
+      walletSaveUrl,
+    });
   }
 );

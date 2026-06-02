@@ -313,3 +313,50 @@ mysql -h 127.0.0.1 -P 33061 -u reporting -p stampdeck
 - Move Metabase behind Traefik on `metabase.sippzy.com` (currently exposed on `0.0.0.0:3000`)
 - Submit Google Wallet issuer for production approval (currently demo-only — passes save only for allowlisted Google accounts)
 - Schedule `mysqldump` cron for backups
+
+---
+
+## 9. MySQL backups (daily, retained 30 days)
+
+The repo ships `scripts/backup-mysql.sh` — a small script that streams `mysqldump` out of the `stampdeck-mysql` container, gzips it, and prunes old backups. Wire it to host cron on the VPS once:
+
+```bash
+# On the VPS, as root:
+mkdir -p /docker/stampdeck/backups
+chmod 700 /docker/stampdeck/backups
+
+# Quick sanity check the script runs end-to-end now
+/docker/stampdeck/scripts/backup-mysql.sh
+ls -lh /docker/stampdeck/backups/  # should show one new .sql.gz
+
+# Install the daily cron (02:30 UTC)
+( crontab -l 2>/dev/null | grep -v 'backup-mysql.sh'; \
+  echo "30 2 * * * /docker/stampdeck/scripts/backup-mysql.sh >> /docker/stampdeck/backups/cron.log 2>&1" \
+) | crontab -
+
+# Verify the schedule
+crontab -l | grep backup-mysql.sh
+```
+
+That schedules a daily backup at 02:30 UTC (~03:30 / 04:30 Amsterdam depending on DST), well before the 03:00 Amsterdam expiry sweep so backups happen on a quiet DB.
+
+### Tune retention
+
+`STAMPDECK_BACKUP_RETENTION_DAYS=60 /docker/stampdeck/scripts/backup-mysql.sh` — overrides the 30-day default.
+
+### Restore from a backup
+
+```bash
+# Pick a backup
+ls -lh /docker/stampdeck/backups/
+BACKUP=/docker/stampdeck/backups/stampdeck-2026-06-05_023000.sql.gz
+
+# Load it into the running container (this OVERWRITES current data — be sure)
+gunzip -c "$BACKUP" | docker exec -i stampdeck-mysql mysql \
+  -uroot -p"$(grep '^MYSQL_ROOT_PASSWORD' /docker/stampdeck/.env | cut -d= -f2-)" \
+  stampdeck
+```
+
+### Offsite copies (not done — track separately)
+
+Backups currently live on the VPS only. If the VPS disk dies, they're gone. Future task: add an rsync / rclone step pushing to S3 / Backblaze / a second VPS.

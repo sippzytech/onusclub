@@ -1,0 +1,44 @@
+name: ci
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  typecheck-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.1.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build shared package
+        # shared has to be built first — apps/api/dist imports it as compiled JS.
+        run: pnpm --filter @stampdeck/shared run build
+
+      - name: Typecheck (all workspaces)
+        run: pnpm -r run typecheck
+
+      - name: Build api
+        run: pnpm --filter @stampdeck/api run build
+
+      - name: Build web (Next.js)
+        run: pnpm --filter @stampdeck/web run build
+        env:
+          # Build-time only — fakes so Next doesn't crash on missing values.
+          # Runtime values come from the container env at boot.
+          NEXT_PUBLIC_API_BASE: http://localhost:4000
+          NEXT_PUBLIC_WEB_BASE: http://localhost:3001
+          NEXTAUTH_SECRET: ci-placeholder-not-used
+          NEXTAUTH_URL: http://localhost:3001

@@ -832,6 +832,40 @@ async function main(): Promise<void> {
   );
   assert(staffListAfter.staff.length === 1, "staff member should be gone after delete");
 
+  // ---------- Day 10: public customer card view ----------
+
+  console.log("→ public card view returns sanitized data by qr_token");
+  const pubCard = await call<{
+    businessName: string;
+    customerName: string | null;
+    programName: string;
+    stampsRequired: number;
+    stampsCurrent: number;
+    status: string;
+  }>("GET", `/v1/public/c/${scanCard.qrToken}`);
+  assert(pubCard.programName, "program name missing in public view");
+  assert(pubCard.stampsRequired > 0, "stampsRequired missing");
+  assert(typeof pubCard.stampsCurrent === "number", "stampsCurrent missing");
+  assert(pubCard.status === "active", `expected active, got ${pubCard.status}`);
+
+  console.log("→ unknown qr_token → 404");
+  let card404 = false;
+  try {
+    await call("GET", `/v1/public/c/${"0".repeat(64)}`);
+  } catch (err) {
+    card404 = String(err).includes("404");
+  }
+  assert(card404, "unknown qr_token should 404");
+
+  console.log("→ malformed qr_token → 404");
+  let cardMalformed = false;
+  try {
+    await call("GET", "/v1/public/c/not-a-real-token");
+  } catch (err) {
+    cardMalformed = String(err).includes("404");
+  }
+  assert(cardMalformed, "malformed qr_token should 404");
+
   console.log("✓ smoke test passed");
 }
 
