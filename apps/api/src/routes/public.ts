@@ -287,3 +287,97 @@ publicRouter.get(
     });
   }
 );
+
+// GET /v1/public/c/:qrToken/apple-pass — returns a signed .pkpass for iOS
+// Wallet. Same access model as /v1/public/c/:qrToken (the 64-char qr_token
+// is the credential). iOS Safari opening this URL prompts to save the pass.
+interface AppleCardRow extends RowDataPacket {
+  card_id: string;
+  qr_token: string;
+  card_state: unknown;
+  status: "active" | "blocked" | "expired";
+  merchant_id: string;
+  business_name: string;
+  brand_color: string | null;
+  customer_name: string | null;
+  program_id: string;
+  program_name: string;
+  reward_text: string;
+  program_config: unknown;
+}
+
+publicRouter.get("/c/:qrToken/apple-pass", async (req: Request, res: Response) => {
+  const qrToken = req.params.qrToken;
+  if (!/^[0-9a-f]{64}$/i.test(qrToken)) {
+    throw ApiError.notFound("card not found");
+  }
+
+  const [rows] = await pool.execute<AppleCardRow[]>(
+    `SELECT c.id AS card_id, c.qr_token, c.card_state, c.status,
+            m.id AS merchant_id, m.business_name, m.brand_color,
+            cu.name AS customer_name,
+            p.id AS program_id, p.name AS program_name, p.reward_text,
+            p.config_json AS program_config
+       FROM loyalty_cards c
+       JOIN merchants m ON m.id = c.merchant_id
+       JOIN customers cu ON cu.id = c.customer_id
+       JOIN loyalty_programs p ON p.id = c.program_id
+      WHERE c.qr_token = ? LIMIT 1`,
+    [qrToken]
+  );
+  if (rows.length === 0) throw ApiError.notFound("card not found");
+  const row = rows[0];
+  if (row.status !== "active") {
+    throw ApiError.badRequest("card is not active");
+  }
+
+  const state =
+    typeof row.card_state === "string"
+      ? (JSON.parse(row.card_state) as StampCardState)
+      : (row.card_state as StampCardState);
+  const cfg =
+    typeof row.program_config === "string"
+      ? (JSON.parse(row.program_config) as { stamps_required?: number })
+      : (row.program_config as { stamps_required?: number });
+
+  // Lazy import — avoids loading passkit-generator at module-init time when
+  // the api is doing other unrelated work (and keeps the cold-start lean).
+  const { buildPkPass } = await import("../wallet-apple/pass-builder.js");
+  const pkPassBuffer = await buildPkPass(
+    {
+      id: row.merchant_id,
+      businessName: row.business_name,
+      brandColor: row.brand_color,
+    },
+    {
+      id: row.program_id,
+      name: row.program_name,
+      rewardText: row.reward_text,
+      stampsRequired: cfg.stamps_required ?? 0,
+    },
+    {
+      id: row.card_id,
+      qrToken: row.qr_token,
+      state,
+      customerName: row.customer_name,
+    }
+  );
+
+  if (!pkPassBuffer) {
+    throw new ApiError(
+      503,
+      "apple_wallet_unavailable",
+      "Apple Wallet is not configured on this server"
+    );
+  }
+
+  res.setHeader("Content-Type", "application/vnd.apple.pkpass");
+  res.setHeader(
+    "Content-Disposition",
+    `attachment; filename="onusclub-${row.card_id}.pkpass"`
+  );
+  // Disable cache so an updated pass isn't served stale by the customer's
+  // browser if they re-tap the link after a stamp.
+  res.setHeader("Cache-Control", "no-store");
+  res.send(pkPassBuffer);
+});

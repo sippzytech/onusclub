@@ -4,6 +4,12 @@ import { ApiCallError, apiFetch } from "@/lib/api";
 
 export const dynamic = "force-dynamic";
 
+function apiBase(): string {
+  return (
+    process.env.NEXT_PUBLIC_API_BASE?.replace(/\/$/, "") ?? "http://localhost:4000"
+  );
+}
+
 export default async function PublicCardPage({
   params,
 }: {
@@ -88,24 +94,33 @@ export default async function PublicCardPage({
           </div>
         )}
 
-        {card.walletSaveUrl && card.status === "active" ? (
+        {card.status === "active" ? (
           <div className="rounded-md border border-gray-200 bg-white p-4 text-sm text-gray-700 space-y-3">
-            <p className="font-medium text-gray-900">Save to Google Wallet</p>
+            <p className="font-medium text-gray-900">Save to your phone</p>
             <p className="text-gray-600">
-              Skip the URL next time — keep the card in your wallet app and we&apos;ll
-              auto-update your stamps as you collect them.
+              Pick your phone and we&apos;ll keep your stamps updated automatically.
             </p>
-            <a
-              href={card.walletSaveUrl}
-              className="inline-block rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800"
-            >
-              Add to Google Wallet
-            </a>
+            <div className="flex flex-col sm:flex-row gap-2">
+              {card.walletSaveUrl ? (
+                <a
+                  href={card.walletSaveUrl}
+                  className="inline-block rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800 text-center"
+                >
+                  Add to Google Wallet
+                </a>
+              ) : null}
+              <a
+                href={`${apiBase()}/v1/public/c/${params.qrToken}/apple-pass`}
+                className="inline-block rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-900 hover:bg-gray-50 text-center"
+              >
+                Add to Apple Wallet
+              </a>
+            </div>
           </div>
         ) : null}
 
         <p className="text-xs text-gray-500 text-center pt-2">
-          Powered by Stampdeck
+          Powered by OnUsClub
         </p>
       </div>
     </main>

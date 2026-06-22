@@ -5,21 +5,23 @@ import { useState } from "react";
 export function WalletSection({
   cardId,
   walletUrl,
+  applePassUrl,
   qrSvg,
   qrToken,
   customerHasEmail,
 }: {
   cardId: string;
   walletUrl: string | null;
+  applePassUrl: string | null;
   qrSvg: string;
   qrToken: string;
   customerHasEmail: boolean;
 }): JSX.Element {
-  const [copied, setCopied] = useState<"link" | "token" | null>(null);
+  const [copied, setCopied] = useState<"link" | "apple" | "token" | null>(null);
   const [resending, setResending] = useState(false);
   const [resendMsg, setResendMsg] = useState<string | null>(null);
 
-  async function copy(text: string, kind: "link" | "token"): Promise<void> {
+  async function copy(text: string, kind: "link" | "apple" | "token"): Promise<void> {
     await navigator.clipboard.writeText(text);
     setCopied(kind);
     setTimeout(() => setCopied(null), 1500);
@@ -40,7 +42,7 @@ export function WalletSection({
   }
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
       <div className="rounded-md border border-gray-200 bg-white p-4 space-y-3">
         <h3 className="text-sm font-medium text-gray-900">Add to Google Wallet</h3>
         {walletUrl ? (
@@ -87,6 +89,37 @@ export function WalletSection({
           <p className="text-xs text-gray-600">
             Google Wallet is not configured yet for this card. The card still
             works — show the QR on the right and stamp from the dashboard.
+          </p>
+        )}
+      </div>
+      <div className="rounded-md border border-gray-200 bg-white p-4 space-y-3">
+        <h3 className="text-sm font-medium text-gray-900">Add to Apple Wallet</h3>
+        {applePassUrl ? (
+          <>
+            <p className="text-xs text-gray-600">
+              For iPhone users. Tapping this link on iOS opens Wallet and saves
+              the pass. Same QR, same stamp count.
+            </p>
+            <div className="flex gap-2">
+              <a
+                href={applePassUrl}
+                className="rounded-md bg-gray-900 px-3 py-2 text-xs font-medium text-white hover:bg-gray-800"
+              >
+                Download pass
+              </a>
+              <button
+                onClick={() => void copy(applePassUrl, "apple")}
+                className="rounded-md border border-gray-300 px-3 py-2 text-xs font-medium text-gray-800 hover:bg-gray-50"
+              >
+                {copied === "apple" ? "Copied!" : "Copy link"}
+              </button>
+            </div>
+            <p className="text-xs text-gray-500 break-all">{applePassUrl}</p>
+          </>
+        ) : (
+          <p className="text-xs text-gray-600">
+            Apple Wallet is not configured yet on this server. iPhone customers
+            can still use the QR on the right for stamping.
           </p>
         )}
       </div>

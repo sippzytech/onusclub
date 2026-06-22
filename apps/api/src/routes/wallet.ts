@@ -3,6 +3,7 @@ import type { RowDataPacket } from "mysql2";
 import type { WalletLink } from "@stampdeck/shared";
 import { pool } from "../db/pool.js";
 import { authContext, requireAuth } from "../auth/middleware.js";
+import { env } from "../config.js";
 import { ApiError } from "../errors.js";
 import { buildSaveJwt, saveUrl } from "../wallet/loyalty.js";
 import { walletEnabled } from "../wallet/client.js";
@@ -18,6 +19,7 @@ interface CardRow extends RowDataPacket {
 
 interface InviteRow extends RowDataPacket {
   id: string;
+  qr_token: string;
   google_wallet_object_id: string | null;
   business_name: string;
   customer_name: string | null;
@@ -74,7 +76,7 @@ walletRouter.post(
     const id = req.params.id;
 
     const [rows] = await pool.execute<InviteRow[]>(
-      `SELECT c.id, c.google_wallet_object_id,
+      `SELECT c.id, c.qr_token, c.google_wallet_object_id,
               m.business_name,
               cu.name AS customer_name, cu.email AS customer_email,
               p.reward_text, p.config_json AS program_config
@@ -106,12 +108,17 @@ walletRouter.post(
         ? (JSON.parse(row.program_config) as { stamps_required?: number })
         : (row.program_config as { stamps_required?: number });
 
+    const { appleWalletEnabled } = await import("../wallet-apple/client.js");
+    const applePassUrl = (await appleWalletEnabled())
+      ? `${env.BASE_URL_API.replace(/\/$/, "")}/v1/public/c/${row.qr_token}/apple-pass`
+      : null;
     const { subject, html, text } = walletInviteEmail({
       businessName: row.business_name,
       customerName: row.customer_name,
       rewardText: row.reward_text,
       stampsRequired: cfg.stamps_required ?? 0,
       walletSaveUrl: saveUrl(token),
+      applePassUrl,
     });
     const result = await sendEmail({
       to: row.customer_email,

@@ -866,6 +866,43 @@ async function main(): Promise<void> {
   }
   assert(cardMalformed, "malformed qr_token should 404");
 
+  // ---------- Day 11: Apple Wallet pkpass endpoint ----------
+
+  console.log("→ Apple pass: malformed qrToken → 404");
+  const malformedApple = await fetch(`${BASE}/v1/public/c/not-a-real-token/apple-pass`);
+  assert(malformedApple.status === 404, `expected 404, got ${malformedApple.status}`);
+
+  console.log("→ Apple pass: unknown valid-format qrToken → 404");
+  const unknownApple = await fetch(`${BASE}/v1/public/c/${"f".repeat(64)}/apple-pass`);
+  assert(unknownApple.status === 404, `expected 404, got ${unknownApple.status}`);
+
+  console.log("→ Apple pass: existing active card returns signed .pkpass");
+  // Reuse scanCard from earlier — known active.
+  const appleRes = await fetch(`${BASE}/v1/public/c/${scanCard.qrToken}/apple-pass`);
+  if (appleRes.status === 503) {
+    console.log(
+      "   ⚠ Apple Wallet not configured (503) — smoke skipped the deep check."
+    );
+    console.log(
+      "   To exercise it, ensure APPLE_PASS_P12_PASSWORD matches the actual .p12."
+    );
+  } else {
+    assert(appleRes.status === 200, `expected 200, got ${appleRes.status}`);
+    const ct = appleRes.headers.get("content-type") ?? "";
+    assert(
+      ct.includes("application/vnd.apple.pkpass"),
+      `wrong content-type: ${ct}`
+    );
+    const buf = Buffer.from(await appleRes.arrayBuffer());
+    // .pkpass is a ZIP archive — magic bytes 50 4B 03 04 (PK\x03\x04).
+    assert(
+      buf[0] === 0x50 && buf[1] === 0x4b && buf[2] === 0x03 && buf[3] === 0x04,
+      "buffer doesn't start with PK ZIP magic bytes"
+    );
+    assert(buf.length > 1000, `pkpass suspiciously small: ${buf.length} bytes`);
+    console.log(`   pkpass buffer ${buf.length} bytes, starts with PK magic ✓`);
+  }
+
   console.log("✓ smoke test passed");
 }
 

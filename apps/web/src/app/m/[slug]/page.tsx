@@ -52,7 +52,7 @@ export default async function PublicMerchantPage({
           )}
 
           <p className="text-xs text-gray-500 text-center">
-            Powered by Stampdeck · No app needed — the card lives in your Google Wallet.
+            Powered by OnUsClub · No app needed — the card lives in your Google Wallet.
           </p>
         </div>
       </div>

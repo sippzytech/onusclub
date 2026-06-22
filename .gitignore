@@ -33,3 +33,4 @@ secrets/
 .vscode/
 .idea/
 *.swp
+raw_files/

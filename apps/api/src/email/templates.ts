@@ -4,6 +4,9 @@ export interface WalletInviteInput {
   rewardText: string;
   stampsRequired: number;
   walletSaveUrl: string;
+  // Apple Wallet `.pkpass` URL. Optional — when null the email shows only the
+  // Google Wallet button, matching environments where Apple isn't configured.
+  applePassUrl: string | null;
 }
 
 function escapeHtml(s: string): string {
@@ -30,9 +33,11 @@ export function walletInviteEmail(input: WalletInviteInput): {
     `${input.customerName ? `Hi ${input.customerName},` : "Hello,"}\n\n` +
     `${input.businessName} just set up your digital loyalty card.\n\n` +
     `Collect ${input.stampsRequired} stamps and earn: ${input.rewardText}.\n\n` +
-    `Add the card to your Google Wallet now (single tap):\n${input.walletSaveUrl}\n\n` +
-    `Show this pass at the till on your next visit and we'll stamp it for you.\n\n` +
-    `— ${input.businessName}, powered by Stampdeck`;
+    `Save it to your phone:\n` +
+    `• Google Wallet (Android): ${input.walletSaveUrl}\n` +
+    (input.applePassUrl ? `• Apple Wallet (iPhone): ${input.applePassUrl}\n` : "") +
+    `\nShow this pass at the till on your next visit and we'll stamp it for you.\n\n` +
+    `— ${input.businessName}, powered by OnUsClub`;
 
   const html = `<!doctype html>
 <html><head><meta charset="utf-8"><title>${escapeHtml(subject)}</title></head>
@@ -53,15 +58,23 @@ export function walletInviteEmail(input: WalletInviteInput): {
           <p style="margin:0;">Tap below to save the card to Google Wallet:</p>
         </td></tr>
         <tr><td align="center" style="padding:24px 32px 8px;">
-          <a href="${input.walletSaveUrl}" style="display:inline-block;background:#111;color:#fff;text-decoration:none;font-weight:500;font-size:15px;padding:14px 24px;border-radius:8px;">
+          <a href="${input.walletSaveUrl}" style="display:inline-block;background:#111;color:#fff;text-decoration:none;font-weight:500;font-size:15px;padding:14px 24px;border-radius:8px;margin:0 4px 8px;">
             Add to Google Wallet
           </a>
+          ${
+            input.applePassUrl
+              ? `<a href="${input.applePassUrl}" style="display:inline-block;background:#000;color:#fff;text-decoration:none;font-weight:500;font-size:15px;padding:14px 24px;border-radius:8px;margin:0 4px 8px;">Add to Apple Wallet</a>`
+              : ""
+          }
+        </td></tr>
+        <tr><td align="center" style="padding:0 32px 8px;font-size:12px;color:#9ca3af;">
+          Android phones use Google Wallet, iPhones use Apple Wallet.
         </td></tr>
         <tr><td style="padding:8px 32px 24px;font-size:13px;color:#6b7280;line-height:1.5;">
           <p style="margin:0;">Show this pass at the till on your next visit and we'll stamp it for you. Your card updates automatically — no app to download.</p>
         </td></tr>
         <tr><td style="padding:16px 32px;background:#fafaf9;font-size:12px;color:#9ca3af;border-top:1px solid #e7e5e4;">
-          Sent by ${business} · Powered by Stampdeck
+          Sent by ${business} · Powered by OnUsClub
         </td></tr>
       </table>
     </td></tr>

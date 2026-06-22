@@ -44,7 +44,7 @@ export function objectId(cardId: string): string {
 // hosts, redirects, etc.). placehold.co serves a real direct PNG with no such
 // quirks and is fine as a placeholder until merchants upload a real logo.
 const FALLBACK_LOGO =
-  "https://placehold.co/240x240/111111/FFFFFF/png?text=Stampdeck";
+  "https://placehold.co/240x240/111111/FFFFFF/png?text=OnUsClub";
 
 /**
  * Pure mapping from our domain types into a Google Wallet LoyaltyClass body.

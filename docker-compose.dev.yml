@@ -35,6 +35,7 @@ services:
       GOOGLE_WALLET_SA_KEY_PATH: /secrets/wallet-sa.json
       JWT_SECRET: dev_jwt_secret_change_me
       BASE_URL_WEB: http://localhost:3001
+      BASE_URL_API: http://localhost:4000
     ports:
       - "4000:4000"
     volumes:

@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Sippzy — Stampdeck",
+  title: "OnUsClub",
   description: "Digital loyalty cards for cafés, salons, and small businesses.",
 };
 

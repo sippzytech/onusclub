@@ -144,21 +144,21 @@ authRouter.post(
       // Best-effort welcome email. Failure does not block signup.
       void sendEmail({
         to: input.ownerEmail,
-        subject: `Welcome to Stampdeck, ${input.businessName}`,
+        subject: `Welcome to OnUsClub, ${input.businessName}`,
         text:
           `Hi ${input.ownerName ?? "there"},\n\n` +
-          `Your Stampdeck account for ${input.businessName} is ready.\n\n` +
+          `Your OnUsClub account for ${input.businessName} is ready.\n\n` +
           `Sign in: ${env.BASE_URL_WEB}/login\n\n` +
           `Your public signup link for customers (use it as a QR code on your counter):\n` +
           `${env.BASE_URL_WEB}/m/${publicSlug}\n\n` +
-          `— Stampdeck`,
+          `— OnUsClub`,
         html:
           `<p>Hi ${input.ownerName ?? "there"},</p>` +
-          `<p>Your Stampdeck account for <strong>${input.businessName}</strong> is ready.</p>` +
+          `<p>Your OnUsClub account for <strong>${input.businessName}</strong> is ready.</p>` +
           `<p><a href="${env.BASE_URL_WEB}/login">Sign in</a></p>` +
           `<p>Your public signup link for customers:<br>` +
           `<a href="${env.BASE_URL_WEB}/m/${publicSlug}">${env.BASE_URL_WEB}/m/${publicSlug}</a></p>` +
-          `<p>— Stampdeck</p>`,
+          `<p>— OnUsClub</p>`,
       }).catch((err: unknown) =>
         logger.warn({ err, ownerEmail: input.ownerEmail }, "welcome email failed")
       );
@@ -331,13 +331,13 @@ authRouter.post(
     // Best-effort email — Resend test mode caveats still apply.
     void sendEmail({
       to: email,
-      subject: "Reset your Stampdeck password",
+      subject: "Reset your OnUsClub password",
       text:
-        `We received a request to reset your Stampdeck password.\n\n` +
+        `We received a request to reset your OnUsClub password.\n\n` +
         `Click this link to choose a new password:\n${resetUrl}\n\n` +
         `If you didn't request this, ignore this email. The link expires in 1 hour.`,
       html:
-        `<p>We received a request to reset your Stampdeck password.</p>` +
+        `<p>We received a request to reset your OnUsClub password.</p>` +
         `<p><a href="${resetUrl}">Choose a new password</a></p>` +
         `<p>If you didn't request this, ignore this email. The link expires in 1 hour.</p>`,
     }).catch((err: unknown) => logger.warn({ err, email }, "reset email failed"));

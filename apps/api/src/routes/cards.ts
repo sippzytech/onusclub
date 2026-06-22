@@ -9,6 +9,7 @@ import {
 } from "@stampdeck/shared";
 import { pool } from "../db/pool.js";
 import { authContext, requireAuth } from "../auth/middleware.js";
+import { env } from "../config.js";
 import { ApiError } from "../errors.js";
 import { logger } from "../logger.js";
 import {
@@ -132,12 +133,17 @@ async function sendWalletInviteEmail(
       return false;
     }
     const cfg = parseJson<{ stamps_required?: number }>(row.program_config);
+    const { appleWalletEnabled } = await import("../wallet-apple/client.js");
+    const applePassUrl = (await appleWalletEnabled())
+      ? `${env.BASE_URL_API.replace(/\/$/, "")}/v1/public/c/${row.qr_token}/apple-pass`
+      : null;
     const { subject, html, text } = walletInviteEmail({
       businessName: row.business_name,
       customerName: row.customer_name,
       rewardText: row.reward_text,
       stampsRequired: cfg.stamps_required ?? 0,
       walletSaveUrl: saveUrl(token),
+      applePassUrl,
     });
     const result = await sendEmail({
       to: row.customer_email,

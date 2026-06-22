@@ -17,10 +17,10 @@ COPY apps/api ./apps/api
 # dist/index.js — see packages/shared/package.json).
 RUN pnpm --filter @stampdeck/shared run build
 RUN pnpm --filter @stampdeck/api run build
-# tsc only compiles .ts files. Copy the SQL migrations alongside the compiled
-# migrate.js so that `node dist/db/migrate.js` can find them at runtime
-# (migrate.ts resolves the migrations dir relative to its own location).
+# tsc only compiles .ts files. Copy non-TS asset folders into the matching
+# dist/ paths so that runtime resolution (which is dist-relative) finds them.
 RUN cp -r apps/api/src/db/migrations apps/api/dist/db/migrations
+RUN cp -r apps/api/src/wallet-apple/assets apps/api/dist/wallet-apple/assets
 
 FROM base AS runtime
 ENV NODE_ENV=production

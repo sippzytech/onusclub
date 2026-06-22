@@ -8,9 +8,20 @@ const EnvSchema = z.object({
   GOOGLE_WALLET_SA_KEY_PATH: z.string().min(1),
   JWT_SECRET: z.string().min(8),
   BASE_URL_WEB: z.string().url(),
+  // Public URL of this api (where iOS / customer browsers hit us directly,
+  // e.g. for the Apple Wallet .pkpass download). Defaults to localhost:4000
+  // for local dev. In prod set to https://api.<domain>.
+  BASE_URL_API: z.string().url().default("http://localhost:4000"),
   // Empty string → degrade to console-only email (matches the wallet pattern).
   RESEND_API_KEY: z.string().optional().default(""),
-  EMAIL_FROM: z.string().default("Stampdeck <onboarding@resend.dev>"),
+  EMAIL_FROM: z.string().default("OnUsClub <onboarding@resend.dev>"),
+  // Apple Wallet. All empty → endpoint returns 503 "not configured".
+  // P12_PASSWORD empty is the canonical "wallet offline" signal.
+  APPLE_TEAM_ID: z.string().optional().default(""),
+  APPLE_PASS_TYPE_ID: z.string().optional().default(""),
+  APPLE_PASS_P12_PATH: z.string().optional().default(""),
+  APPLE_PASS_P12_PASSWORD: z.string().optional().default(""),
+  APPLE_WWDR_PATH: z.string().optional().default(""),
 });
 
 export type Env = z.infer<typeof EnvSchema>;

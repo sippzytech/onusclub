@@ -11,6 +11,12 @@ import { WalletSection } from "./wallet-section";
 
 export const dynamic = "force-dynamic";
 
+function publicWebBase(): string {
+  return (
+    process.env.NEXT_PUBLIC_API_BASE?.replace(/\/$/, "") ?? "http://localhost:4000"
+  );
+}
+
 export default async function CardDetailPage({
   params,
 }: {
@@ -87,6 +93,7 @@ export default async function CardDetailPage({
           <WalletSection
             cardId={detail.card.id}
             walletUrl={walletLink.available ? walletLink.url : null}
+            applePassUrl={`${publicWebBase()}/c/${detail.card.qrToken}/apple-pass`}
             qrSvg={qrSvg}
             qrToken={detail.card.qrToken}
             customerHasEmail={!!customer?.email}
