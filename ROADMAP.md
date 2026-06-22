@@ -84,6 +84,15 @@ Each day below corresponds to a git branch + a commit. Run `git log --oneline --
 - METABASE.md runbook with 7 starter SQL queries.
 - Smoke test: 70 assertions.
 
+### Day 11 — Apple Wallet end-to-end + OnUsClub branding rename (Phase A)
+- Phase A rename: Stampdeck → OnUsClub in user-visible strings only (page titles, emails, dashboard headings, wallet placeholder logo text). Internal package / container / repo / DB names still `stampdeck` until VPS migration.
+- New module `apps/api/src/wallet-apple/`: lazy-loading client (extracts PEM cert + key from `.p12` via node-forge), state mapper, passkit-generator-based pass builder. Apple Wallet vars empty → 503 gracefully.
+- New endpoint `GET /v1/public/c/:qrToken/apple-pass` — no auth, signed `.pkpass` download. Content-Type `application/vnd.apple.pkpass`, no-store.
+- "Add to Apple Wallet" button on `/dashboard/cards/[id]`, `/c/[qrToken]`, and the invite email (alongside Google Wallet).
+- `BASE_URL_API` env var added so the api can build its own public URLs for email links.
+- Verified on real iPhone via LAN: signed pass downloaded in Safari → saved to Wallet → renders storeCard layout with QR + member ID + stamp count.
+- Smoke 76/76 (3 new Apple-pass assertions: malformed qr_token 404, unknown qr_token 404, active card returns 7-8 KB pkpass with PK magic bytes).
+
 ### Day 10 — polish + infra
 - UI gaps: Create Program form gains an "Expiry (optional)" days input (the API supported it from Day 9, just needed surfacing). Program list shows the expiry policy. Broadcast detail page shows an "Audience:" summary line above the totals.
 - **Customer-facing card page** at `/c/[qrToken]`: branded read-only view a customer can bookmark or share, no auth (qr_token's 32-byte entropy is the access credential). Shows stamps_current / required, reward, status pill, lifetime redeemed count, and an "Add to Google Wallet" link if not yet saved. New endpoint `GET /v1/public/c/:qrToken` — sanitised return (no events, no other customers).
@@ -127,18 +136,19 @@ Each day below corresponds to a git branch + a commit. Run `git log --oneline --
 
 ---
 
-## Likely next steps (Day 11+)
+## Likely next steps (Day 12+)
 
 Pick whatever the user finds most valuable next. None are dependencies on each other.
 
 | Idea | Effort | Value |
 |---|---|---|
+| **Apple Wallet live updates** (web service + APNs push) | 1-2 days | Pairs with Day 11's static pass — adds real-time stamp updates on iPhone. Same effect as Google Wallet PATCH today. |
+| **VPS migration + Phase B rename** (`stampdeck` → `onusclub` in code/infra) | half day | Required before pointing onusclub.com DNS. Quick once we commit to a date. |
 | **Stripe billing** for the premium gate | 1-2 days | Turn fake unlock into real revenue |
-| **Apple Wallet** (`pkpass`) | 2-3 days | Phase 2. Doubles the addressable market. |
 | **Multi-program type support** (points, membership) | 1-2 days | Schema is already polymorphic — just need the business logic + UI. |
 | **Offsite backup upload** (S3 / Backblaze / second VPS) | 2-3 h | Day 10 backs up locally; an offsite copy survives VPS disk failure. |
 | **Owner magic-link email** (re-wire) | 1-2 h | Optional passwordless flow for owners who prefer it. |
-| **Smoke test in CI** | 2-3 h | Day 10 CI runs typecheck + build only. A MySQL service container would let us run the full 73-assertion smoke on every PR. |
+| **Smoke test in CI** | 2-3 h | Day 10 CI runs typecheck + build only. A MySQL service container would let us run the full 76-assertion smoke on every PR. |
 | **Wallet/card visual customization** | TBD | When the user is ready to design properly (see deferred above). |
 
 ---
