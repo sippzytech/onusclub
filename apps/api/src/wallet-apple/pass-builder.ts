@@ -99,22 +99,23 @@ export async function buildPkPass(
       label: "Stamps",
       value: `${card.state.stamps_current} / ${program.stampsRequired}`,
     });
+    // Primary field renders huge and bold but truncates ~14 chars mid-word.
+    // The reward is short and is what the customer cares about; program name
+    // moves to a secondary field where it ellipsises cleanly.
     pass.primaryFields.push({
-      key: "program",
-      label: "Program",
-      value: program.name,
+      key: "reward",
+      label: "Reward",
+      value: program.rewardText,
     });
-    pass.secondaryFields.push({
-      key: "member",
-      label: "Member",
-      value: card.customerName ?? "Member",
-    });
+    pass.secondaryFields.push(
+      { key: "program", label: "Program", value: program.name },
+      { key: "member", label: "Member", value: card.customerName ?? "Member" }
+    );
     pass.auxiliaryFields.push(
       { key: "remaining", label: "To go", value: String(remaining) },
       { key: "memberId", label: "Member ID", value: memberId(card.id) }
     );
     pass.backFields.push(
-      { key: "reward", label: "Reward", value: program.rewardText },
       {
         key: "progress",
         label: "Progress",
