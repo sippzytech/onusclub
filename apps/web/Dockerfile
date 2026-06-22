@@ -15,8 +15,8 @@ COPY apps/web ./apps/web
 # Next.js transpilePackages handles .ts at build time, but we build shared
 # anyway for consistency with the api image and so the d.ts files exist for
 # downstream tooling.
-RUN pnpm --filter @stampdeck/shared run build
-RUN pnpm --filter @stampdeck/web run build
+RUN pnpm --filter @onusclub/shared run build
+RUN pnpm --filter @onusclub/web run build
 
 FROM base AS runtime
 ENV NODE_ENV=production
