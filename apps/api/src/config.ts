@@ -22,6 +22,12 @@ const EnvSchema = z.object({
   APPLE_PASS_P12_PATH: z.string().optional().default(""),
   APPLE_PASS_P12_PASSWORD: z.string().optional().default(""),
   APPLE_WWDR_PATH: z.string().optional().default(""),
+  // APNs push cert for Apple Wallet live updates (Day 12). Different from the
+  // pass signing cert above — Apple issues this as a separate certificate
+  // tied to the same Pass Type ID. Empty → push silently disabled, passes
+  // still download but won't auto-update on the device.
+  APPLE_APNS_P12_PATH: z.string().optional().default(""),
+  APPLE_APNS_P12_PASSWORD: z.string().optional().default(""),
 });
 
 export type Env = z.infer<typeof EnvSchema>;

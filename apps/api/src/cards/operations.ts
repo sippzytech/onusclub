@@ -7,6 +7,7 @@ import type { ResultSetHeader, RowDataPacket } from "mysql2";
 import type { PoolConnection } from "mysql2/promise";
 import type { CardDetail, CardEvent, StampCardState } from "@stampdeck/shared";
 import { pool } from "../db/pool.js";
+import { env } from "../config.js";
 import { ApiError } from "../errors.js";
 import { logger } from "../logger.js";
 import { sendCardMessage } from "../wallet/loyalty.js";
@@ -16,6 +17,7 @@ import {
   patchLoyaltyObject,
 } from "../wallet/loyalty.js";
 import type { WalletEvent } from "../wallet/state.js";
+import { sendApnsPushBatch } from "../wallet-apple/apns.js";
 
 interface CardRow extends RowDataPacket {
   id: string;
@@ -213,6 +215,13 @@ export async function syncCardToWallet(
     } else {
       await patchLoyaltyObject(programForWallet, cardForWallet);
     }
+    // Best-effort fan-out: nudge Apple Wallet on every registered device so
+    // the pass updates in place. Independent of Google Wallet — separate
+    // ecosystem, separate failure mode.
+    void pushAppleWalletUpdate(cardId).catch((err) => {
+      logger.error({ err, cardId }, "apple wallet push failed");
+    });
+
     await sendCardMessage({
       event,
       businessName: row.business_name,
@@ -224,6 +233,58 @@ export async function syncCardToWallet(
   } catch (err) {
     logger.error({ err, cardId, event }, "wallet sync failed");
   }
+}
+
+interface ApnsRegRow extends RowDataPacket {
+  id: string;
+  push_token: string;
+}
+
+/**
+ * Fan out a wallet-update push to every registered Apple Wallet device for
+ * this card. Wallet on the device wakes up, calls our get-latest-pass
+ * endpoint, and the pass refreshes in place.
+ *
+ * Cleans up stale registrations whose tokens APNs reports as 410 (the user
+ * deleted the pass — no point keeping the row).
+ */
+export async function pushAppleWalletUpdate(cardId: string): Promise<void> {
+  if (!env.APPLE_PASS_TYPE_ID) return;
+  const [rows] = await pool.execute<ApnsRegRow[]>(
+    "SELECT id, push_token FROM apple_pass_registrations WHERE card_id = ?",
+    [cardId]
+  );
+  if (rows.length === 0) return;
+
+  const results = await sendApnsPushBatch(
+    rows.map((r) => r.push_token),
+    env.APPLE_PASS_TYPE_ID
+  );
+
+  let delivered = 0;
+  const staleIds: string[] = [];
+  results.forEach((r, idx) => {
+    if (r.ok) {
+      delivered++;
+    } else if (r.status === 410) {
+      staleIds.push(rows[idx].id);
+    } else {
+      logger.warn(
+        { cardId, status: r.status, reason: r.reason },
+        "apple wallet push failed for one device"
+      );
+    }
+  });
+  if (staleIds.length > 0) {
+    await pool.execute(
+      `DELETE FROM apple_pass_registrations WHERE id IN (${staleIds.map(() => "?").join(",")})`,
+      staleIds
+    );
+  }
+  logger.info(
+    { cardId, total: rows.length, delivered, removedStale: staleIds.length },
+    "apple wallet push fan-out"
+  );
 }
 
 export async function stampCardById(

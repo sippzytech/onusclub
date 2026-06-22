@@ -19,6 +19,7 @@ import { scanRouter } from "./routes/scan.js";
 import { staffRouter } from "./routes/staff.js";
 import { sweepsRouter } from "./routes/sweeps.js";
 import { walletRouter } from "./routes/wallet.js";
+import { appleWalletRouter } from "./routes/apple-wallet.js";
 import { startMessagingCrons } from "./messaging/cron.js";
 
 const app = express();
@@ -43,6 +44,7 @@ app.use("/v1/messages", messagesRouter);
 app.use("/v1/public", publicRouter);
 app.use("/v1/staff", staffRouter);
 app.use("/v1", walletRouter);
+app.use("/v1/apple-wallet", appleWalletRouter);
 
 app.use(errorHandler);
 

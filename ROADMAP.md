@@ -84,6 +84,17 @@ Each day below corresponds to a git branch + a commit. Run `git log --oneline --
 - METABASE.md runbook with 7 starter SQL queries.
 - Smoke test: 70 assertions.
 
+### Day 12 — Apple Wallet live updates via APNs push
+- Static pass from Day 11 becomes live: every stamp / redeem now shows a lock-screen notification on the iPhone and updates the pass in-place, matching the Google Wallet UX.
+- Migration `006_apple_wallet_registrations`: per-card `apple_auth_token` for the `Authorization: ApplePass <token>` header that Wallet sends on every web-service call, plus `apple_pass_registrations` (device⇄pass mappings, push tokens, last-updated for stale-cleanup).
+- 5 Apple Web Service endpoints under `/v1/apple-wallet`: register (POST), unregister (DELETE), list-updated-serials (GET), get-latest-pass (GET, returns fresh signed `.pkpass` with `Last-Modified` header), log sink (POST).
+- APNs client (`wallet-apple/apns.ts`) — raw Node `http2`, lazy-loads the Pass Type ID push cert via the same node-forge PKCS#12 dance as the pass signer. No extra npm dep. Stale registrations auto-pruned when APNs returns 410.
+- `pushAppleWalletUpdate()` wires into `syncCardToWallet()` so every stamp/redeem fans out push notifications to all registered devices for that card. Best-effort, off-the-critical-path.
+- Pass.json now emits `webServiceURL` + `authenticationToken` — but only when `BASE_URL_API` is HTTPS (iOS rejects HTTP), so dev over plain HTTP gracefully falls back to a Day-11-style static pass.
+- `changeMessage` on the stamps + remaining fields so Wallet shows the actual notification text ("You have 5/6 stamps — keep going!") instead of silently swapping.
+- Smoke 82/82 (6 new Day 12 web-service assertions: 401 without auth, 401 with wrong token, 404 with bogus passType, 401 on get-latest-pass without auth, 204 on list-updated for unknown device, 200 on log endpoint).
+- Verified end-to-end on real iPhone: stamp on dashboard → ~3s later, lock-screen banner + Wallet count updates from 4/6 → 5/6 → 6/6 with no manual interaction.
+
 ### Day 11 — Apple Wallet end-to-end + OnUsClub branding rename (Phase A)
 - Phase A rename: Stampdeck → OnUsClub in user-visible strings only (page titles, emails, dashboard headings, wallet placeholder logo text). Internal package / container / repo / DB names still `stampdeck` until VPS migration.
 - New module `apps/api/src/wallet-apple/`: lazy-loading client (extracts PEM cert + key from `.p12` via node-forge), state mapper, passkit-generator-based pass builder. Apple Wallet vars empty → 503 gracefully.
@@ -136,13 +147,12 @@ Each day below corresponds to a git branch + a commit. Run `git log --oneline --
 
 ---
 
-## Likely next steps (Day 12+)
+## Likely next steps (Day 13+)
 
 Pick whatever the user finds most valuable next. None are dependencies on each other.
 
 | Idea | Effort | Value |
 |---|---|---|
-| **Apple Wallet live updates** (web service + APNs push) | 1-2 days | Pairs with Day 11's static pass — adds real-time stamp updates on iPhone. Same effect as Google Wallet PATCH today. |
 | **VPS migration + Phase B rename** (`stampdeck` → `onusclub` in code/infra) | half day | Required before pointing onusclub.com DNS. Quick once we commit to a date. |
 | **Stripe billing** for the premium gate | 1-2 days | Turn fake unlock into real revenue |
 | **Multi-program type support** (points, membership) | 1-2 days | Schema is already polymorphic — just need the business logic + UI. |

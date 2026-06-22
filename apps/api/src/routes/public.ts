@@ -17,6 +17,7 @@ import {
   type StampCardState,
 } from "@stampdeck/shared";
 import { pool } from "../db/pool.js";
+import { env } from "../config.js";
 import { ApiError } from "../errors.js";
 import { syncCardToWallet } from "../cards/operations.js";
 import { buildSaveJwt, saveUrl } from "../wallet/loyalty.js";
@@ -294,6 +295,7 @@ publicRouter.get(
 interface AppleCardRow extends RowDataPacket {
   card_id: string;
   qr_token: string;
+  apple_auth_token: string | null;
   card_state: unknown;
   status: "active" | "blocked" | "expired";
   merchant_id: string;
@@ -313,7 +315,7 @@ publicRouter.get("/c/:qrToken/apple-pass", async (req: Request, res: Response) =
   }
 
   const [rows] = await pool.execute<AppleCardRow[]>(
-    `SELECT c.id AS card_id, c.qr_token, c.card_state, c.status,
+    `SELECT c.id AS card_id, c.qr_token, c.apple_auth_token, c.card_state, c.status,
             m.id AS merchant_id, m.business_name, m.brand_color,
             cu.name AS customer_name,
             p.id AS program_id, p.name AS program_name, p.reward_text,
@@ -329,6 +331,18 @@ publicRouter.get("/c/:qrToken/apple-pass", async (req: Request, res: Response) =
   const row = rows[0];
   if (row.status !== "active") {
     throw ApiError.badRequest("card is not active");
+  }
+
+  // Lazy-generate per-card Apple Wallet auth token. Stable across downloads
+  // (a re-add of the same pass must keep the same authenticationToken or
+  // Wallet's web-service calls won't match).
+  let appleAuthToken = row.apple_auth_token;
+  if (!appleAuthToken) {
+    appleAuthToken = randomBytes(32).toString("hex");
+    await pool.execute(
+      "UPDATE loyalty_cards SET apple_auth_token = ? WHERE id = ?",
+      [appleAuthToken, row.card_id]
+    );
   }
 
   const state =
@@ -360,7 +374,19 @@ publicRouter.get("/c/:qrToken/apple-pass", async (req: Request, res: Response) =
       qrToken: row.qr_token,
       state,
       customerName: row.customer_name,
-    }
+    },
+    // iOS Wallet rejects any pass whose webServiceURL isn't HTTPS — and the
+    // device must be able to reach the host. localhost / plain HTTP would
+    // make Safari refuse to open the pass entirely. So we only opt-in to
+    // live updates when BASE_URL_API is HTTPS; otherwise emit a static
+    // pass (Day 11 behavior) and the customer still gets a working pass,
+    // just without auto-refresh.
+    env.BASE_URL_API.startsWith("https://")
+      ? {
+          webServiceURL: `${env.BASE_URL_API.replace(/\/$/, "")}/v1/apple-wallet`,
+          authenticationToken: appleAuthToken,
+        }
+      : undefined
   );
 
   if (!pkPassBuffer) {

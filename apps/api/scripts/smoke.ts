@@ -903,6 +903,78 @@ async function main(): Promise<void> {
     console.log(`   pkpass buffer ${buf.length} bytes, starts with PK magic ✓`);
   }
 
+  // ---------- Day 12: Apple Wallet web service endpoints ----------
+  //
+  // Deep end-to-end of the registration loop needs the per-card auth token,
+  // which lives inside the signed .pkpass ZIP. Verifying it would mean
+  // unzipping the pass — out of scope for a 100-line-friendly smoke. Real
+  // device test (task #65) covers that path. Here we verify the contract:
+  // unauthenticated reads/writes are rejected, the log endpoint accepts
+  // payloads, and an empty registration list returns 204.
+
+  const PASS_TYPE = process.env.APPLE_PASS_TYPE_ID ?? "pass.com.onusclub.loyalty";
+  const FAKE_DEVICE = "smoke-device-" + Date.now();
+  const FAKE_SERIAL = scanCard.id;
+
+  console.log("→ Apple WS: register without Authorization → 401");
+  const regNoAuth = await fetch(
+    `${BASE}/v1/apple-wallet/v1/devices/${FAKE_DEVICE}/registrations/${PASS_TYPE}/${FAKE_SERIAL}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pushToken: "deadbeef" }),
+    }
+  );
+  assert(regNoAuth.status === 401, `expected 401, got ${regNoAuth.status}`);
+
+  console.log("→ Apple WS: register with wrong token → 401");
+  const regBadAuth = await fetch(
+    `${BASE}/v1/apple-wallet/v1/devices/${FAKE_DEVICE}/registrations/${PASS_TYPE}/${FAKE_SERIAL}`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: "ApplePass not-the-real-token",
+      },
+      body: JSON.stringify({ pushToken: "deadbeef" }),
+    }
+  );
+  assert(regBadAuth.status === 401, `expected 401, got ${regBadAuth.status}`);
+
+  console.log("→ Apple WS: register with bogus passType → 404");
+  const regBadPass = await fetch(
+    `${BASE}/v1/apple-wallet/v1/devices/${FAKE_DEVICE}/registrations/pass.com.fake/${FAKE_SERIAL}`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: "ApplePass deadbeef",
+      },
+      body: JSON.stringify({ pushToken: "x" }),
+    }
+  );
+  assert(regBadPass.status === 404, `expected 404, got ${regBadPass.status}`);
+
+  console.log("→ Apple WS: get-latest-pass without auth → 401");
+  const passNoAuth = await fetch(
+    `${BASE}/v1/apple-wallet/v1/passes/${PASS_TYPE}/${FAKE_SERIAL}`
+  );
+  assert(passNoAuth.status === 401, `expected 401, got ${passNoAuth.status}`);
+
+  console.log("→ Apple WS: list-updated for unknown device → 204");
+  const listUnknown = await fetch(
+    `${BASE}/v1/apple-wallet/v1/devices/no-such-device/registrations/${PASS_TYPE}`
+  );
+  assert(listUnknown.status === 204, `expected 204, got ${listUnknown.status}`);
+
+  console.log("→ Apple WS: log endpoint accepts payloads");
+  const logRes = await fetch(`${BASE}/v1/apple-wallet/v1/log`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ logs: ["smoke test entry"] }),
+  });
+  assert(logRes.status === 200, `expected 200, got ${logRes.status}`);
+
   console.log("✓ smoke test passed");
 }
 

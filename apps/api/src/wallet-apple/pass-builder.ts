@@ -58,11 +58,21 @@ function memberId(cardId: string): string {
  *   - Fields (headerFields, primaryFields, etc.) are pushed onto array
  *     getters AFTER type is set
  *   - barcodes, locations, etc. have dedicated setter methods
+ *
+ * If `liveUpdate` is provided, the pass emits a `webServiceURL` +
+ * `authenticationToken` so iPhone Wallet will register for push updates and
+ * call back when it receives an APNs nudge. Omit it for a "static" pass.
  */
+export interface LiveUpdateConfig {
+  webServiceURL: string;
+  authenticationToken: string;
+}
+
 export async function buildPkPass(
   merchant: AppleMerchantBranding,
   program: AppleProgramForWallet,
-  card: AppleCardForWallet
+  card: AppleCardForWallet,
+  liveUpdate?: LiveUpdateConfig
 ): Promise<Buffer | null> {
   const creds = await appleWalletCredentials();
   if (!creds) return null;
@@ -90,14 +100,24 @@ export async function buildPkPass(
         foregroundColor: "rgb(255, 255, 255)",
         backgroundColor: hexToRgb(merchant.brandColor ?? "#111111"),
         labelColor: "rgb(255, 255, 255)",
+        ...(liveUpdate
+          ? {
+              webServiceURL: liveUpdate.webServiceURL,
+              authenticationToken: liveUpdate.authenticationToken,
+            }
+          : {}),
       }
     );
 
     pass.type = "storeCard";
+    // changeMessage drives the lock-screen notification: Wallet detects when
+    // this field's value differs from the on-device copy after a pass
+    // refresh and shows the message. `%@` is substituted with the new value.
     pass.headerFields.push({
       key: "stamps",
       label: "Stamps",
       value: `${card.state.stamps_current} / ${program.stampsRequired}`,
+      changeMessage: "You have %@ stamps — keep going!",
     });
     // Primary field renders huge and bold but truncates ~14 chars mid-word.
     // The reward is short and is what the customer cares about; program name
@@ -112,7 +132,13 @@ export async function buildPkPass(
       { key: "member", label: "Member", value: card.customerName ?? "Member" }
     );
     pass.auxiliaryFields.push(
-      { key: "remaining", label: "To go", value: String(remaining) },
+      {
+        key: "remaining",
+        label: "To go",
+        value: String(remaining),
+        // Fires when the customer hits the reward (remaining → 0).
+        changeMessage: "%@ stamps to your reward",
+      },
       { key: "memberId", label: "Member ID", value: memberId(card.id) }
     );
     pass.backFields.push(

@@ -54,6 +54,8 @@ services:
       APPLE_PASS_P12_PATH: ${APPLE_PASS_P12_PATH:-/secrets/apple/onusclub-pass.p12}
       APPLE_PASS_P12_PASSWORD: ${APPLE_PASS_P12_PASSWORD:-}
       APPLE_WWDR_PATH: ${APPLE_WWDR_PATH:-/secrets/apple/AppleWWDRCAG4.pem}
+      APPLE_APNS_P12_PATH: ${APPLE_APNS_P12_PATH:-/secrets/apple/onusclub-push.p12}
+      APPLE_APNS_P12_PASSWORD: ${APPLE_APNS_P12_PASSWORD:-}
     volumes:
       - /docker/stampdeck/secrets:/secrets:ro
     depends_on:
