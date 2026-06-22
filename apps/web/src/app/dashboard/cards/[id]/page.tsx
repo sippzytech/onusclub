@@ -93,7 +93,7 @@ export default async function CardDetailPage({
           <WalletSection
             cardId={detail.card.id}
             walletUrl={walletLink.available ? walletLink.url : null}
-            applePassUrl={`${publicWebBase()}/c/${detail.card.qrToken}/apple-pass`}
+            applePassUrl={`${publicWebBase()}/v1/public/c/${detail.card.qrToken}/apple-pass`}
             qrSvg={qrSvg}
             qrToken={detail.card.qrToken}
             customerHasEmail={!!customer?.email}
