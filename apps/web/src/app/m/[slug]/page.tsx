@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import type { PublicMerchant } from "@stampdeck/shared";
+import type { PublicMerchant } from "@onusclub/shared";
 import { ApiCallError, apiFetch } from "@/lib/api";
 import { PublicEnrolForm } from "./enrol-form";
 

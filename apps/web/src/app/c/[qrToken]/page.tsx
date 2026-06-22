@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import type { PublicCardView } from "@stampdeck/shared";
+import type { PublicCardView } from "@onusclub/shared";
 import { ApiCallError, apiFetch } from "@/lib/api";
 
 export const dynamic = "force-dynamic";

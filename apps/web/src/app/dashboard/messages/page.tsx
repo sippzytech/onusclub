@@ -1,4 +1,4 @@
-import type { MessageFeedItem } from "@stampdeck/shared";
+import type { MessageFeedItem } from "@onusclub/shared";
 import { apiFetch } from "@/lib/api";
 import { requireSession } from "@/lib/session";
 import { DashboardShell } from "../dashboard-shell";

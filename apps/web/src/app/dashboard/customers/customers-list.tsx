@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import type { Customer } from "@stampdeck/shared";
+import type { Customer } from "@onusclub/shared";
 
 export function CustomersList({ customers }: { customers: Customer[] }): JSX.Element {
   const [query, setQuery] = useState("");

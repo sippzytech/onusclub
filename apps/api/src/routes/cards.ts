@@ -6,7 +6,7 @@ import {
   type Card,
   type CardDetail,
   type StampCardState,
-} from "@stampdeck/shared";
+} from "@onusclub/shared";
 import { pool } from "../db/pool.js";
 import { authContext, requireAuth } from "../auth/middleware.js";
 import { env } from "../config.js";

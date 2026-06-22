@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
-import type { PublicEnrolResult, PublicProgram } from "@stampdeck/shared";
+import type { PublicEnrolResult, PublicProgram } from "@onusclub/shared";
 
 interface SuccessState {
   walletSaveUrl: string | null;

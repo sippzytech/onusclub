@@ -1,4 +1,4 @@
-# Stampdeck
+# OnUsClub
 
 Multi-tenant SaaS for digital loyalty cards (stamp cards, points, memberships, etc.) for cafés, salons, and small businesses. Customers add cards to Google Wallet (Phase 1) and later Apple Wallet (Phase 2). Owners stamp/redeem by scanning the customer's QR after billing.
 

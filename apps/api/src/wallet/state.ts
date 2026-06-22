@@ -1,4 +1,4 @@
-import type { StampCardState } from "@stampdeck/shared";
+import type { StampCardState } from "@onusclub/shared";
 import { WALLET_ISSUER_ID } from "./client.js";
 
 export interface MerchantBranding {

@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
-import type { Customer, Program } from "@stampdeck/shared";
+import type { Customer, Program } from "@onusclub/shared";
 
 export function EnrolCardForm({
   customers,

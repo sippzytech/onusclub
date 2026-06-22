@@ -14,7 +14,7 @@ importers:
 
   apps/api:
     dependencies:
-      '@stampdeck/shared':
+      '@onusclub/shared':
         specifier: workspace:*
         version: link:../../packages/shared
       bcryptjs:
@@ -81,7 +81,7 @@ importers:
 
   apps/web:
     dependencies:
-      '@stampdeck/shared':
+      '@onusclub/shared':
         specifier: workspace:*
         version: link:../../packages/shared
       html5-qrcode:

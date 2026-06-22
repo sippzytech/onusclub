@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import type { AudienceFilter, Broadcast, MessageDelivery } from "@stampdeck/shared";
+import type { AudienceFilter, Broadcast, MessageDelivery } from "@onusclub/shared";
 import { ApiCallError, apiFetch } from "@/lib/api";
 import { requireSession } from "@/lib/session";
 import { DashboardShell } from "../../../dashboard-shell";

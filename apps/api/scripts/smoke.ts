@@ -1,5 +1,5 @@
 // End-to-end smoke test against a running api. Fails loud on any deviation.
-// Run with: pnpm --filter @stampdeck/api run smoke
+// Run with: pnpm --filter @onusclub/api run smoke
 const BASE = process.env.SMOKE_BASE ?? "http://localhost:4000";
 
 interface ErrBody {

@@ -1,4 +1,4 @@
-import type { StampCardState } from "@stampdeck/shared";
+import type { StampCardState } from "@onusclub/shared";
 
 export interface AppleMerchantBranding {
   id: string;

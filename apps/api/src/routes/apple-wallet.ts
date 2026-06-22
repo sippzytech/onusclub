@@ -17,7 +17,7 @@
 import { randomUUID } from "node:crypto";
 import { Router, type Request, type Response } from "express";
 import type { ResultSetHeader, RowDataPacket } from "mysql2";
-import type { StampCardState } from "@stampdeck/shared";
+import type { StampCardState } from "@onusclub/shared";
 import { pool } from "../db/pool.js";
 import { env } from "../config.js";
 import { logger } from "../logger.js";

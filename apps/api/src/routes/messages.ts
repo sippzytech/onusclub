@@ -1,6 +1,6 @@
 import { Router, type Request, type Response } from "express";
 import type { RowDataPacket } from "mysql2";
-import type { MessageFeedItem } from "@stampdeck/shared";
+import type { MessageFeedItem } from "@onusclub/shared";
 import { pool } from "../db/pool.js";
 import { authContext, requireAuth } from "../auth/middleware.js";
 

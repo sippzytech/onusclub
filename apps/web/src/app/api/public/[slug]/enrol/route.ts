@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import type { PublicEnrolInput, PublicEnrolResult } from "@stampdeck/shared";
+import type { PublicEnrolInput, PublicEnrolResult } from "@onusclub/shared";
 import { ApiCallError, apiFetch } from "@/lib/api";
 
 // No auth — this is the customer-facing QR signup path.

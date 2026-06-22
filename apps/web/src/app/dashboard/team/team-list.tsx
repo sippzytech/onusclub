@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
-import type { StaffMember } from "@stampdeck/shared";
+import type { StaffMember } from "@onusclub/shared";
 
 export function TeamList({
   staff,

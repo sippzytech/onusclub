@@ -14,7 +14,7 @@ import {
   type Merchant,
   type PasswordAuthResult,
   type SessionUser,
-} from "@stampdeck/shared";
+} from "@onusclub/shared";
 import { pool } from "../db/pool.js";
 import { ApiError } from "../errors.js";
 import { env } from "../config.js";

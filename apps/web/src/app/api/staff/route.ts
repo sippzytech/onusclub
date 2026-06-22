@@ -1,6 +1,6 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import type { StaffCreateInput, StaffMember } from "@stampdeck/shared";
+import type { StaffCreateInput, StaffMember } from "@onusclub/shared";
 import { ApiCallError, apiFetch, SESSION_COOKIE } from "@/lib/api";
 
 export async function POST(req: Request): Promise<NextResponse> {

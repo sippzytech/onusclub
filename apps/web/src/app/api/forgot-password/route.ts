@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import type { ForgotPasswordInput, ForgotPasswordResult } from "@stampdeck/shared";
+import type { ForgotPasswordInput, ForgotPasswordResult } from "@onusclub/shared";
 import { ApiCallError, apiFetch } from "@/lib/api";
 
 export async function POST(req: Request): Promise<NextResponse> {

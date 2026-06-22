@@ -1,5 +1,5 @@
 import { Router, type Request, type Response } from "express";
-import { ScanInput, type ScanResult } from "@stampdeck/shared";
+import { ScanInput, type ScanResult } from "@onusclub/shared";
 import { authContext, requireAuth } from "../auth/middleware.js";
 import { ApiError } from "../errors.js";
 import {

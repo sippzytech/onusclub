@@ -1,6 +1,6 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import type { MessageFeedItem } from "@stampdeck/shared";
+import type { MessageFeedItem } from "@onusclub/shared";
 import { ApiCallError, apiFetch, SESSION_COOKIE } from "@/lib/api";
 
 // Polled by the live feed while broadcasts / sweeps are in flight.

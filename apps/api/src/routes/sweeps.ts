@@ -4,7 +4,7 @@ import {
   type MessageDelivery,
   type SweepRun,
   type SweepType,
-} from "@stampdeck/shared";
+} from "@onusclub/shared";
 import { pool } from "../db/pool.js";
 import { authContext, requireAuth } from "../auth/middleware.js";
 import { ApiError } from "../errors.js";

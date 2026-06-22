@@ -1,4 +1,4 @@
-import type { StaffMember } from "@stampdeck/shared";
+import type { StaffMember } from "@onusclub/shared";
 import { apiFetch } from "@/lib/api";
 import { requireSession } from "@/lib/session";
 import { DashboardShell } from "../dashboard-shell";

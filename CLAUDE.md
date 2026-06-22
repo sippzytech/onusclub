@@ -1,4 +1,4 @@
-# Stampdeck — Project Context
+# OnUsClub — Project Context
 
 This file is the canonical context for Claude Code sessions on this repo. Keep it tight and accurate.
 
@@ -50,9 +50,9 @@ Subdomains already pointed at the VPS:
 
 In `docker-compose.prod.yml`:
 
-- All stampdeck services join the external `n8n_default` network so Traefik can reach them.
+- All OnUsClub services join the external `n8n_default` network so Traefik can reach them.
 - We do **not** publish api/web ports to the host (Traefik handles ingress).
-- MySQL has no published port and is reachable only on the internal stampdeck network.
+- MySQL has no published port and is reachable only on the project-internal Docker network.
 - Traefik labels use `certresolver=mytlschallenge`.
 
 ### How to deploy (stub)
@@ -127,5 +127,5 @@ Read ROADMAP.md before planning anything new.
 ## Other key docs
 
 - **[DEPLOY.md](./DEPLOY.md)** — first-time VPS deploy + day-to-day deploy commands.
-- **[METABASE.md](./METABASE.md)** — wire the existing VPS Metabase to Stampdeck data, with 7 starter SQL queries.
+- **[METABASE.md](./METABASE.md)** — wire the existing VPS Metabase to OnUsClub data, with 7 starter SQL queries.
 - **[README.md](./README.md)** — local-dev quickstart.

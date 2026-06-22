@@ -1,5 +1,5 @@
 {
-  "name": "@stampdeck/api",
+  "name": "@onusclub/api",
   "version": "0.0.1",
   "private": true,
   "type": "module",
@@ -13,7 +13,7 @@
     "smoke": "tsx scripts/smoke.ts"
   },
   "dependencies": {
-    "@stampdeck/shared": "workspace:*",
+    "@onusclub/shared": "workspace:*",
     "bcryptjs": "^2.4.3",
     "express": "^4.19.2",
     "express-async-errors": "^3.1.1",

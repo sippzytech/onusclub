@@ -1,6 +1,6 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import type { Merchant, MerchantPreferences, SessionUser } from "@stampdeck/shared";
+import type { Merchant, MerchantPreferences, SessionUser } from "@onusclub/shared";
 import { apiFetch, SESSION_COOKIE } from "./api";
 
 export async function requireSession(): Promise<{

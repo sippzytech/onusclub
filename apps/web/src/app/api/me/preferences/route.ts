@@ -1,6 +1,6 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import type { MerchantPreferences, MerchantPreferencesInput } from "@stampdeck/shared";
+import type { MerchantPreferences, MerchantPreferencesInput } from "@onusclub/shared";
 import { ApiCallError, apiFetch, SESSION_COOKIE } from "@/lib/api";
 
 export async function PATCH(req: Request): Promise<NextResponse> {

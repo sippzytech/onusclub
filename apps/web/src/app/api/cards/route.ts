@@ -1,6 +1,6 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import type { Card, CardCreateInput } from "@stampdeck/shared";
+import type { Card, CardCreateInput } from "@onusclub/shared";
 import { ApiCallError, apiFetch, SESSION_COOKIE } from "@/lib/api";
 
 export async function POST(req: Request): Promise<NextResponse> {

@@ -1,6 +1,6 @@
-# Stampdeck — Features
+# OnUsClub — Features
 
-What Stampdeck does, grouped by who it serves and what it actually delivers. Use this as a brief for designers, marketers, copywriters, or AI tools building the Stampdeck marketing website.
+What OnUsClub does, grouped by who it serves and what it actually delivers. Use this as a brief for designers, marketers, copywriters, or AI tools building the OnUsClub marketing website.
 
 For day-by-day implementation history, see [ROADMAP.md](./ROADMAP.md). For deployment, see [DEPLOY.md](./DEPLOY.md). For analytics setup, see [METABASE.md](./METABASE.md).
 
@@ -8,7 +8,7 @@ For day-by-day implementation history, see [ROADMAP.md](./ROADMAP.md). For deplo
 
 ## What it is, in one line
 
-**Stampdeck is a multi-tenant SaaS that gives cafés, salons, and other small businesses digital loyalty cards their customers actually keep on their phone — via Google Wallet today, Apple Wallet tomorrow. No app, no plastic card, no carrying around a paper card with seventeen ink stamps.**
+**OnUsClub is a multi-tenant SaaS that gives cafés, salons, and other small businesses digital loyalty cards their customers actually keep on their phone — via Google Wallet today, Apple Wallet tomorrow. No app, no plastic card, no carrying around a paper card with seventeen ink stamps.**
 
 Positioned as the Netherlands-first, SMB-friendly alternative to Perkstar (UK) and Tap2 (NL).
 
@@ -140,7 +140,7 @@ Positioned as the Netherlands-first, SMB-friendly alternative to Perkstar (UK) a
 
 - Read-only `reporting` MySQL user is provisioned automatically on first deploy.
 - [METABASE.md](./METABASE.md) ships seven starter SQL queries: top cafés by active customers, stamps per day, redemption rate per merchant, cards by status, most engaged customers, broadcast success rate, daily merchant signups.
-- Read access is scoped to Stampdeck's database only — no other databases on the VPS are visible to the analytics user.
+- Read access is scoped to OnUsClub's database only — no other databases on the VPS are visible to the analytics user.
 
 ---
 
@@ -158,7 +158,7 @@ Positioned as the Netherlands-first, SMB-friendly alternative to Perkstar (UK) a
 - **Multi-tenant by design**. Every database query in the api is filtered by `merchant_id` derived from the authenticated user's JWT — staff at one café cannot read another café's customer list, ever.
 - **bcrypt** for owner / staff passwords (cost 12). **No plaintext credentials** anywhere.
 - **JWT-signed sessions** with strong, env-driven HS256 secrets. Cookies are httpOnly + Secure + SameSite=Lax in production.
-- **Customer data minimisation** — we never ask customers to create a Stampdeck account. The pass on their phone IS their identity. No customer password DB to breach.
+- **Customer data minimisation** — we never ask customers to create a OnUsClub account. The pass on their phone IS their identity. No customer password DB to breach.
 - **Token-based customer URLs** — the public `/c/<qr-token>` route relies on 32 bytes (256 bits) of cryptographic randomness as the access credential. Effectively unguessable.
 - **Google Wallet is the storage of record** for the pass-side data — Google handles biometric unlock, device encryption, and remote wipe if the customer loses their phone.
 - **Service account key for Google Wallet** lives in a chmod-600 file on the VPS, mounted read-only into the api container. Never committed.
@@ -198,7 +198,7 @@ These are intentional gaps — see [ROADMAP.md](./ROADMAP.md) for the why-deferr
 
 ## Suggested website framing
 
-For a website AI building the Stampdeck marketing site, here's how the value props ladder up:
+For a website AI building the OnUsClub marketing site, here's how the value props ladder up:
 
 1. **Headline value**: "Your loyalty card, on your customer's phone. No app required."
 2. **For the customer**: scan a QR, save to Google Wallet, watch stamps appear as they collect them, get notified about offers and birthdays.

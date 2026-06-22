@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import type { Program } from "@stampdeck/shared";
+import type { Program } from "@onusclub/shared";
 
 export function BroadcastComposer(): JSX.Element {
   const router = useRouter();

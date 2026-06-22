@@ -5,7 +5,7 @@
 
 import type { ResultSetHeader, RowDataPacket } from "mysql2";
 import type { PoolConnection } from "mysql2/promise";
-import type { CardDetail, CardEvent, StampCardState } from "@stampdeck/shared";
+import type { CardDetail, CardEvent, StampCardState } from "@onusclub/shared";
 import { pool } from "../db/pool.js";
 import { env } from "../config.js";
 import { ApiError } from "../errors.js";

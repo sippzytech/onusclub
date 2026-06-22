@@ -6,7 +6,7 @@
 import { randomUUID } from "node:crypto";
 import { Router, type Request, type Response } from "express";
 import type { ResultSetHeader, RowDataPacket } from "mysql2";
-import { StaffCreateInput, type StaffMember } from "@stampdeck/shared";
+import { StaffCreateInput, type StaffMember } from "@onusclub/shared";
 import { pool } from "../db/pool.js";
 import { authContext, requireAuth } from "../auth/middleware.js";
 import { ApiError } from "../errors.js";

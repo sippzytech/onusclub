@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
-import type { Card } from "@stampdeck/shared";
+import type { Card } from "@onusclub/shared";
 
 interface StampState {
   busy: boolean;

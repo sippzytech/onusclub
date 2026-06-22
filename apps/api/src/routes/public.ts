@@ -15,7 +15,7 @@ import {
   type PublicEnrolResult,
   type PublicMerchant,
   type StampCardState,
-} from "@stampdeck/shared";
+} from "@onusclub/shared";
 import { pool } from "../db/pool.js";
 import { env } from "../config.js";
 import { ApiError } from "../errors.js";

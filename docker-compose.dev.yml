@@ -1,7 +1,7 @@
 services:
   mysql:
     image: mysql:8.0
-    container_name: stampdeck-mysql-dev
+    container_name: onusclub-mysql-dev
     restart: unless-stopped
     environment:
       MYSQL_ROOT_PASSWORD: rootpass_dev
@@ -20,9 +20,9 @@ services:
 
   api:
     image: node:20-alpine
-    container_name: stampdeck-api-dev
+    container_name: onusclub-api-dev
     working_dir: /repo
-    command: sh -c "corepack enable && corepack prepare pnpm@9.1.0 --activate && pnpm install && pnpm --filter @stampdeck/shared run build && pnpm --filter @stampdeck/api run dev"
+    command: sh -c "corepack enable && corepack prepare pnpm@9.1.0 --activate && pnpm install && pnpm --filter @onusclub/shared run build && pnpm --filter @onusclub/api run dev"
     # Pull anything in apps/api/.env (e.g. RESEND_API_KEY) into the container.
     # The explicit `environment:` block below still overrides per-key.
     env_file:
@@ -53,9 +53,9 @@ services:
 
   web:
     image: node:20-alpine
-    container_name: stampdeck-web-dev
+    container_name: onusclub-web-dev
     working_dir: /repo
-    command: sh -c "corepack enable && corepack prepare pnpm@9.1.0 --activate && pnpm install && pnpm --filter @stampdeck/shared run build && pnpm --filter @stampdeck/web run dev"
+    command: sh -c "corepack enable && corepack prepare pnpm@9.1.0 --activate && pnpm install && pnpm --filter @onusclub/shared run build && pnpm --filter @onusclub/web run dev"
     environment:
       NODE_ENV: development
       NEXT_PUBLIC_API_BASE: http://localhost:4000

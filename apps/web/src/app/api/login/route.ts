@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import type { PasswordAuthResult, PasswordLoginInput } from "@stampdeck/shared";
+import type { PasswordAuthResult, PasswordLoginInput } from "@onusclub/shared";
 import { ApiCallError, apiFetch, SESSION_COOKIE } from "@/lib/api";
 
 const SEVEN_DAYS = 60 * 60 * 24 * 7;

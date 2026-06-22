@@ -8,7 +8,7 @@ I'm enrolling in the **Apple Developer Program as an Individual** (not Organizat
 
 ## My context
 
-I'm building **Stampdeck**, a multi-tenant SaaS for digital loyalty cards for cafés and small businesses in the Netherlands. The product already has Google Wallet integration live in production at `app.sippzy.com`. I now want to add **Apple Wallet (`.pkpass`) support** so customers on iPhone can save their loyalty cards too.
+I'm building **OnUsClub**, a multi-tenant SaaS for digital loyalty cards for cafés and small businesses in the Netherlands. The product already has Google Wallet integration live in production at `app.sippzy.com`. I now want to add **Apple Wallet (`.pkpass`) support** so customers on iPhone can save their loyalty cards too.
 
 Each customer of a café gets their own loyalty card pass, signed by my Apple Pass Type ID, but the pass *visually* shows the café's name, logo, and brand color — not mine. The Apple Developer signature is invisible to end users; it's just used to verify the pass authenticity.
 

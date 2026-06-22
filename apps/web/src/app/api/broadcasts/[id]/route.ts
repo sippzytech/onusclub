@@ -1,6 +1,6 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import type { Broadcast, MessageDelivery } from "@stampdeck/shared";
+import type { Broadcast, MessageDelivery } from "@onusclub/shared";
 import { ApiCallError, apiFetch, SESSION_COOKIE } from "@/lib/api";
 
 export async function GET(

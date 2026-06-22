@@ -1,8 +1,8 @@
-# Stampdeck — Deploy Runbook
+# OnUsClub — Deploy Runbook
 
 First-time deploy from a clean VPS to `api.sippzy.com` + `app.sippzy.com`. After that, day-to-day deploys are 3 commands at the bottom.
 
-The VPS is already running Traefik (network `n8n_default`, cert resolver `mytlschallenge`), n8n, and Metabase. Stampdeck slots in alongside them.
+The VPS is already running Traefik (network `n8n_default`, cert resolver `mytlschallenge`), n8n, and Metabase. OnUsClub slots in alongside them.
 
 ---
 
@@ -88,7 +88,7 @@ NEXTAUTH_SECRET=<from openssl rand>
 GOOGLE_WALLET_ISSUER_ID=3388000000023150410
 
 RESEND_API_KEY=<paste your real Resend key here>
-EMAIL_FROM=Stampdeck <onboarding@resend.dev>
+EMAIL_FROM=OnUsClub <onboarding@resend.dev>
 ```
 
 Then lock it down so nobody else on the box can read it:
@@ -99,7 +99,7 @@ chmod 600 .env
 
 ---
 
-## 3. Pre-flight: Metabase needs to be on `n8n_default` so it can reach Stampdeck's MySQL
+## 3. Pre-flight: Metabase needs to be on `n8n_default` so it can reach OnUsClub's MySQL
 
 One-time, takes a second:
 
@@ -114,7 +114,7 @@ docker inspect metabase --format '{{range $k, $v := .NetworkSettings.Networks}}{
 # Should now list:  bridge n8n_default
 ```
 
-This doesn't touch Metabase's existing functionality — it just adds a second network so it can reach Stampdeck's MySQL by container name later.
+This doesn't touch Metabase's existing functionality — it just adds a second network so it can reach OnUsClub's MySQL by container name later.
 
 ---
 
@@ -173,7 +173,7 @@ curl -sI https://app.sippzy.com/ | head -1
 # Expect: HTTP/2 200
 ```
 
-If both return as expected, **Stampdeck is live**.
+If both return as expected, **OnUsClub is live**.
 
 Open <https://app.sippzy.com/signup> in your browser and walk through the full flow:
 
@@ -217,7 +217,7 @@ Click **Verify** on each row. They flip to ✓ Verified as DNS propagates.
 ```bash
 cd /docker/stampdeck
 nano .env
-# Change EMAIL_FROM to: Stampdeck <noreply@sippzy.com>
+# Change EMAIL_FROM to: OnUsClub <noreply@sippzy.com>
 # Save.
 
 docker compose -f docker-compose.prod.yml up -d  # picks up the new env var
@@ -227,9 +227,9 @@ Test by enrolling a card with any email — should now deliver to any address, n
 
 ---
 
-## 8. Wire Metabase to Stampdeck's MySQL (optional)
+## 8. Wire Metabase to OnUsClub's MySQL (optional)
 
-When you want dashboards on Stampdeck data:
+When you want dashboards on OnUsClub data:
 
 1. Open Metabase (your existing instance).
 2. **Admin → Databases → Add database**.

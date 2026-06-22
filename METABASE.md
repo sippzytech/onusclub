@@ -1,11 +1,11 @@
-# Wiring Metabase to Stampdeck
+# Wiring Metabase to OnUsClub
 
-Stampdeck's prod MySQL container is already accessible to Metabase via Docker DNS — no SSH tunneling, no host port hopping. This runbook gets dashboards live in ~10 minutes.
+OnUsClub's prod MySQL container is already accessible to Metabase via Docker DNS — no SSH tunneling, no host port hopping. This runbook gets dashboards live in ~10 minutes.
 
 ## Prerequisites (one-time, done in DEPLOY.md)
 
 - ✅ Metabase container is on the `n8n_default` Docker network.
-- ✅ Stampdeck MySQL container (`stampdeck-mysql`) is on the same network.
+- ✅ OnUsClub MySQL container (`stampdeck-mysql`) is on the same network.
 - ✅ A read-only `reporting` user exists, granted `SELECT ON stampdeck.*`.
   The password is the `REPORTING_PASSWORD` value in `/docker/stampdeck/.env`.
 
@@ -15,7 +15,7 @@ In Metabase (your existing instance):
 
 1. **Admin → Databases → Add database**.
 2. Database type: **MySQL**.
-3. Display name: `Stampdeck`.
+3. Display name: `OnUsClub`.
 4. Connection:
    - **Host**: `stampdeck-mysql` (Docker DNS — works because Metabase is on `n8n_default`)
    - **Port**: `3306`
@@ -138,7 +138,7 @@ ORDER BY day ASC;
 
 ## 3. Wire into a dashboard
 
-In Metabase: **+ New → Dashboard → "Stampdeck overview"**. Drag each saved question onto the grid. Set the dashboard to auto-refresh every 5 minutes if you want it on a wall display.
+In Metabase: **+ New → Dashboard → "OnUsClub overview"**. Drag each saved question onto the grid. Set the dashboard to auto-refresh every 5 minutes if you want it on a wall display.
 
 ## Troubleshooting
 
@@ -156,4 +156,4 @@ In Metabase: **+ New → Dashboard → "Stampdeck overview"**. Drag each saved q
   ```
 
 **Schema doesn't show new tables added by recent migrations**
-- In Metabase, go to **Admin → Databases → Stampdeck → Sync database schema now**. Picks up new tables within a minute.
+- In Metabase, go to **Admin → Databases → OnUsClub → Sync database schema now**. Picks up new tables within a minute.

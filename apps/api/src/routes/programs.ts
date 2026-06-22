@@ -5,7 +5,7 @@ import {
   StampProgramCreateInput,
   type Program,
   type StampProgramConfig,
-} from "@stampdeck/shared";
+} from "@onusclub/shared";
 import { pool } from "../db/pool.js";
 import { authContext, requireAuth } from "../auth/middleware.js";
 

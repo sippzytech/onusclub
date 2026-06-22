@@ -1,6 +1,6 @@
 import { Router, type Request, type Response } from "express";
 import type { RowDataPacket } from "mysql2";
-import type { WalletLink } from "@stampdeck/shared";
+import type { WalletLink } from "@onusclub/shared";
 import { pool } from "../db/pool.js";
 import { authContext, requireAuth } from "../auth/middleware.js";
 import { env } from "../config.js";

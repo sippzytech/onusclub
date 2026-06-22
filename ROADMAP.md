@@ -1,4 +1,4 @@
-# Stampdeck Roadmap
+# OnUsClub Roadmap
 
 The durable plan. Any Claude session (or human) opening this repo cold should be able to read this file and know exactly what's done, what's coming, and what's deliberately on hold.
 
@@ -96,7 +96,7 @@ Each day below corresponds to a git branch + a commit. Run `git log --oneline --
 - Verified end-to-end on real iPhone: stamp on dashboard → ~3s later, lock-screen banner + Wallet count updates from 4/6 → 5/6 → 6/6 with no manual interaction.
 
 ### Day 11 — Apple Wallet end-to-end + OnUsClub branding rename (Phase A)
-- Phase A rename: Stampdeck → OnUsClub in user-visible strings only (page titles, emails, dashboard headings, wallet placeholder logo text). Internal package / container / repo / DB names still `stampdeck` until VPS migration.
+- Phase A rename: Stampdeck → OnUsClub in user-visible strings only (page titles, emails, dashboard headings, wallet placeholder logo text). Internal package / container / repo / DB names still `stampdeck` until the Day 13 Phase B rename.
 - New module `apps/api/src/wallet-apple/`: lazy-loading client (extracts PEM cert + key from `.p12` via node-forge), state mapper, passkit-generator-based pass builder. Apple Wallet vars empty → 503 gracefully.
 - New endpoint `GET /v1/public/c/:qrToken/apple-pass` — no auth, signed `.pkpass` download. Content-Type `application/vnd.apple.pkpass`, no-store.
 - "Add to Apple Wallet" button on `/dashboard/cards/[id]`, `/c/[qrToken]`, and the invite email (alongside Google Wallet).
@@ -118,11 +118,11 @@ Each day below corresponds to a git branch + a commit. Run `git log --oneline --
 ### Wallet production approval *(blocker on real customer launch)*
 - Issuer `3388000000023150410` is still in Google's demo mode.
 - Until approved, only Google accounts on the test users allowlist can save passes.
-- **Gated on**: Stampdeck marketing site with a privacy policy + ToS URL + business logo.
+- **Gated on**: OnUsClub marketing site with a privacy policy + ToS URL + business logo.
 - Process: submit at <https://pay.google.com/business/console/> → Google reviews in 1-2 business days.
 
 ### Resend sender domain verification *(blocker on real customer email)*
-- Currently `EMAIL_FROM=Stampdeck <onboarding@resend.dev>` (Resend's onboarding domain).
+- Currently `EMAIL_FROM=OnUsClub <onboarding@resend.dev>` (Resend's onboarding domain).
 - Resend test mode only delivers to the account-owner email (`sippzy.official@gmail.com`).
 - **Gated on**: ownership of DNS for sippzy.com (we have it) + a verified domain in Resend → add 3 TXT records → minutes later flip `EMAIL_FROM` env on the VPS.
 - **Zero code change required.**

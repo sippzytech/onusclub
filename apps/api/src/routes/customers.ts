@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { Router, type Request, type Response } from "express";
 import type { ResultSetHeader, RowDataPacket } from "mysql2";
-import { CustomerCreateInput, type Customer } from "@stampdeck/shared";
+import { CustomerCreateInput, type Customer } from "@onusclub/shared";
 import { pool } from "../db/pool.js";
 import { authContext, requireAuth } from "../auth/middleware.js";
 

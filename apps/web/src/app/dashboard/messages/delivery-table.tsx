@@ -1,4 +1,4 @@
-import type { MessageDelivery } from "@stampdeck/shared";
+import type { MessageDelivery } from "@onusclub/shared";
 
 function statusBadge(status: MessageDelivery["status"]): JSX.Element {
   if (status === "sent") {

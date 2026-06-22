@@ -1,7 +1,7 @@
 import express, { type Request, type Response } from "express";
 import { pinoHttp } from "pino-http";
 import "express-async-errors";
-import type { HealthResponse } from "@stampdeck/shared";
+import type { HealthResponse } from "@onusclub/shared";
 import { env, SERVICE_NAME, SERVICE_VERSION } from "./config.js";
 import { logger } from "./logger.js";
 import { ensureDbConnection, pool } from "./db/pool.js";

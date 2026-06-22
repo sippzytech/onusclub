@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { Merchant, SessionUser } from "@stampdeck/shared";
+import type { Merchant, SessionUser } from "@onusclub/shared";
 import { DashboardNav } from "./dashboard-nav";
 import { LogoutButton } from "./logout-button";
 

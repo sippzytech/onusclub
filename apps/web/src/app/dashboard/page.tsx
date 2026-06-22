@@ -1,4 +1,4 @@
-import type { Program } from "@stampdeck/shared";
+import type { Program } from "@onusclub/shared";
 import { apiFetch } from "@/lib/api";
 import { requireSession } from "@/lib/session";
 import { CreateProgramForm } from "./create-program-form";

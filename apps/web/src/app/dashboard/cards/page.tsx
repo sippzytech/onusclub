@@ -1,5 +1,5 @@
 import Link from "next/link";
-import type { Card, Customer, Program } from "@stampdeck/shared";
+import type { Card, Customer, Program } from "@onusclub/shared";
 import { apiFetch } from "@/lib/api";
 import { requireSession } from "@/lib/session";
 import { DashboardShell } from "../dashboard-shell";

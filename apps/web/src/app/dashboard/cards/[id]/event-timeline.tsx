@@ -1,4 +1,4 @@
-import type { CardEvent } from "@stampdeck/shared";
+import type { CardEvent } from "@onusclub/shared";
 
 function describe(e: CardEvent): string {
   const d = e.deltaJson as Record<string, unknown> | null;

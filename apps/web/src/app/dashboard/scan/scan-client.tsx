@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { Html5Qrcode } from "html5-qrcode";
-import type { ScanResult } from "@stampdeck/shared";
+import type { ScanResult } from "@onusclub/shared";
 
 const SAME_TOKEN_COOLDOWN_MS = 30_000;
 

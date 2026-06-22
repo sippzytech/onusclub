@@ -5,7 +5,7 @@ import {
   type Merchant,
   type MerchantPreferences,
   type SessionUser,
-} from "@stampdeck/shared";
+} from "@onusclub/shared";
 import { pool } from "../db/pool.js";
 import { authContext, requireAuth } from "../auth/middleware.js";
 import { ApiError } from "../errors.js";

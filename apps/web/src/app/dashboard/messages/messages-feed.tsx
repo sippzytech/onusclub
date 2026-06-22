@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import type { MessageFeedItem } from "@stampdeck/shared";
+import type { MessageFeedItem } from "@onusclub/shared";
 
 const POLL_INTERVAL_MS = 2500;
 
