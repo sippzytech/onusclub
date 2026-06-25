@@ -50,8 +50,11 @@ jobs:
     # imports config.ts via db/pool.js) needs them set. Empty Apple / Google
     # Wallet creds = endpoints 503 gracefully and smoke takes its documented
     # "skipped deep check" branch.
+    #
+    # NOTE: NODE_ENV is intentionally NOT job-level — pnpm install skips
+    # devDependencies when NODE_ENV=production, which would drop @types/node
+    # + tsc + tsx and break the build. Set it only on the api-start step.
     env:
-      NODE_ENV: production
       PORT: 4000
       DATABASE_URL: mysql://stampdeck:ci_smoke_pass@127.0.0.1:3306/stampdeck
       GOOGLE_WALLET_ISSUER_ID: "0"
@@ -113,6 +116,8 @@ jobs:
 
       - name: Start api (background)
         working-directory: apps/api
+        env:
+          NODE_ENV: production
         run: |
           node dist/index.js > /tmp/api.log 2>&1 &
           echo $! > /tmp/api.pid
