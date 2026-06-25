@@ -2,8 +2,9 @@ import { randomUUID } from "node:crypto";
 import { Router, type Request, type Response } from "express";
 import type { ResultSetHeader, RowDataPacket } from "mysql2";
 import {
-  StampProgramCreateInput,
+  ProgramCreateInput,
   type Program,
+  type PointsProgramConfig,
   type StampProgramConfig,
 } from "@onusclub/shared";
 import { pool } from "../db/pool.js";
@@ -44,29 +45,55 @@ programsRouter.post(
   requireAuth,
   async (req: Request, res: Response<Program>) => {
     const ctx = authContext(req);
-    const input = StampProgramCreateInput.parse(req.body);
+    // Legacy callers (Day 1-13 dashboard, smoke pre-Day 14) didn't send
+    // programType. Default to 'stamp' to keep them working.
+    const rawBody = (req.body ?? {}) as Record<string, unknown>;
+    if (rawBody.programType === undefined) rawBody.programType = "stamp";
+    const input = ProgramCreateInput.parse(rawBody);
 
     const id = randomUUID();
-    const config: StampProgramConfig & { expiry_days?: number } = {
-      type: "stamp",
-      stamps_required: input.stampsRequired,
-    };
-    if (input.expiryDays !== undefined) {
-      config.expiry_days = input.expiryDays;
+    let config: StampProgramConfig | PointsProgramConfig;
+
+    if (input.programType === "points") {
+      const cfg: PointsProgramConfig = {
+        type: "points",
+        points_per_euro: input.pointsPerEuro,
+        points_for_reward: input.pointsForReward,
+      };
+      if (input.batchExpiryDays !== undefined) {
+        cfg.batch_expiry_days = input.batchExpiryDays;
+      }
+      config = cfg;
+    } else {
+      const cfg: StampProgramConfig = {
+        type: "stamp",
+        stamps_required: input.stampsRequired,
+      };
+      if (input.expiryDays !== undefined) {
+        cfg.expiry_days = input.expiryDays;
+      }
+      config = cfg;
     }
 
     await pool.execute<ResultSetHeader>(
       `INSERT INTO loyalty_programs
          (id, merchant_id, name, program_type, config_json, reward_text, active)
-       VALUES (?, ?, ?, 'stamp', ?, ?, TRUE)`,
-      [id, ctx.merchantId, input.name, JSON.stringify(config), input.rewardText]
+       VALUES (?, ?, ?, ?, ?, ?, TRUE)`,
+      [
+        id,
+        ctx.merchantId,
+        input.name,
+        input.programType,
+        JSON.stringify(config),
+        input.rewardText,
+      ]
     );
 
     return res.status(201).json({
       id,
       merchantId: ctx.merchantId,
       name: input.name,
-      programType: "stamp",
+      programType: input.programType,
       configJson: config,
       rewardText: input.rewardText,
       active: true,

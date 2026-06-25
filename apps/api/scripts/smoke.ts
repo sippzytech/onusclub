@@ -990,6 +990,165 @@ async function main(): Promise<void> {
   });
   assert(logRes.status === 200, `expected 200, got ${logRes.status}`);
 
+  // ---------- Day 14: points-type programs ----------
+
+  console.log("→ create a points-type program (€1 = 10 points, reward at 100, 7-day batch expiry)");
+  const ptsProgram = await call<{ id: string; programType: string }>(
+    "POST",
+    "/v1/programs",
+    {
+      programType: "points",
+      name: "Brunch Points",
+      rewardText: "A free pastry",
+      pointsPerEuro: 10,
+      pointsForReward: 100,
+      batchExpiryDays: 7,
+    },
+    jwt
+  );
+  assert(ptsProgram.id, "no points program id");
+  assert(ptsProgram.programType === "points", `wrong programType: ${ptsProgram.programType}`);
+
+  console.log("→ create a customer for the points program");
+  const ptsCustomer = await call<{ id: string }>(
+    "POST",
+    "/v1/customers",
+    { name: "Points Pete", phone: "+31611111199" },
+    jwt
+  );
+
+  console.log("→ enrol a card on the points program");
+  const ptsCard = await call<{
+    id: string;
+    qrToken: string;
+    programType: string;
+    pointsForReward: number | null;
+    pointsPerEuro: number | null;
+    cardState: { type: string; points_current: number };
+  }>("POST", "/v1/cards", { customerId: ptsCustomer.id, programId: ptsProgram.id }, jwt);
+  assert(ptsCard.programType === "points", `card programType wrong: ${ptsCard.programType}`);
+  assert(ptsCard.pointsForReward === 100, `pointsForReward wrong: ${ptsCard.pointsForReward}`);
+  assert(ptsCard.pointsPerEuro === 10, `pointsPerEuro wrong: ${ptsCard.pointsPerEuro}`);
+  assert(ptsCard.cardState.type === "points", `cardState.type wrong: ${ptsCard.cardState.type}`);
+  assert(
+    ptsCard.cardState.points_current === 0,
+    `initial points_current should be 0, got ${ptsCard.cardState.points_current}`
+  );
+
+  console.log("→ add transaction €5 → +50 points");
+  const afterFirst = await call<{ card: { cardState: { points_current: number; total_lifetime: number } } }>(
+    "POST",
+    `/v1/cards/${ptsCard.id}/add-points`,
+    { amount: 5 },
+    jwt
+  );
+  assert(
+    afterFirst.card.cardState.points_current === 50,
+    `after +50: expected balance 50, got ${afterFirst.card.cardState.points_current}`
+  );
+
+  console.log("→ add transaction €10 → +100 points (balance 150)");
+  const afterSecond = await call<{ card: { cardState: { points_current: number } } }>(
+    "POST",
+    `/v1/cards/${ptsCard.id}/add-points`,
+    { amount: 10 },
+    jwt
+  );
+  assert(
+    afterSecond.card.cardState.points_current === 150,
+    `expected 150, got ${afterSecond.card.cardState.points_current}`
+  );
+
+  console.log("→ add transaction €15 → +150 points (balance 300, three batches)");
+  const afterThird = await call<{ card: { cardState: { points_current: number } } }>(
+    "POST",
+    `/v1/cards/${ptsCard.id}/add-points`,
+    { amount: 15 },
+    jwt
+  );
+  assert(
+    afterThird.card.cardState.points_current === 300,
+    `expected 300, got ${afterThird.card.cardState.points_current}`
+  );
+
+  console.log("→ redeem points reward (deducts 100 FIFO → balance 200)");
+  const afterRedeem1 = await call<{ card: { cardState: { points_current: number; rewards_redeemed: number } } }>(
+    "POST",
+    `/v1/cards/${ptsCard.id}/redeem`,
+    undefined,
+    jwt
+  );
+  assert(
+    afterRedeem1.card.cardState.points_current === 200,
+    `expected 200, got ${afterRedeem1.card.cardState.points_current}`
+  );
+  assert(
+    afterRedeem1.card.cardState.rewards_redeemed === 1,
+    `expected rewards_redeemed=1, got ${afterRedeem1.card.cardState.rewards_redeemed}`
+  );
+
+  console.log("→ redeem again (200 - 100 = 100)");
+  const afterRedeem2 = await call<{ card: { cardState: { points_current: number } } }>(
+    "POST",
+    `/v1/cards/${ptsCard.id}/redeem`,
+    undefined,
+    jwt
+  );
+  assert(
+    afterRedeem2.card.cardState.points_current === 100,
+    `expected 100, got ${afterRedeem2.card.cardState.points_current}`
+  );
+
+  console.log("→ redeem a 3rd time (100 - 100 = 0)");
+  const afterRedeem3 = await call<{ card: { cardState: { points_current: number } } }>(
+    "POST",
+    `/v1/cards/${ptsCard.id}/redeem`,
+    undefined,
+    jwt
+  );
+  assert(
+    afterRedeem3.card.cardState.points_current === 0,
+    `expected 0, got ${afterRedeem3.card.cardState.points_current}`
+  );
+
+  console.log("→ redeem a 4th time → 400 (insufficient balance)");
+  let ptsBelow = false;
+  try {
+    await call("POST", `/v1/cards/${ptsCard.id}/redeem`, undefined, jwt);
+  } catch (err) {
+    ptsBelow = String(err).includes("400");
+  }
+  assert(ptsBelow, "redeem with zero balance should 400");
+
+  console.log("→ add-points with amount=0 should 400");
+  let pts400 = false;
+  try {
+    await call("POST", `/v1/cards/${ptsCard.id}/add-points`, { amount: 0 }, jwt);
+  } catch (err) {
+    pts400 = String(err).includes("400");
+  }
+  assert(pts400, "add-points with amount=0 should 400");
+
+  console.log("→ points-expiry sweep with nothing to expire → expired: 0");
+  const ptsExpire1 = await call<{ scanned: number; expired: number }>(
+    "POST",
+    "/v1/sweeps/run/points-expiry",
+    undefined,
+    jwt
+  );
+  assert(ptsExpire1.expired === 0, `clean run should expire 0, got ${ptsExpire1.expired}`);
+
+  console.log("→ public card view shows points (unitLabel='points', targetValue=100)");
+  const ptsView = await call<{
+    programType: string;
+    unitLabel: string;
+    targetValue: number;
+    currentValue: number;
+  }>("GET", `/v1/public/c/${ptsCard.qrToken}`);
+  assert(ptsView.programType === "points", `public view programType wrong: ${ptsView.programType}`);
+  assert(ptsView.unitLabel === "points", `public view unitLabel wrong: ${ptsView.unitLabel}`);
+  assert(ptsView.targetValue === 100, `public view targetValue wrong: ${ptsView.targetValue}`);
+
   console.log("✓ smoke test passed");
 }
 

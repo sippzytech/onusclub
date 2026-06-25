@@ -4,6 +4,7 @@ import {
   runBirthdaySweep,
   runExpirySweep,
   runInactivitySweep,
+  runPointsExpirySweep,
 } from "./operations.js";
 
 const TZ = "Europe/Amsterdam";
@@ -52,8 +53,22 @@ export function startMessagingCrons(): void {
     { timezone: TZ }
   );
 
+  // Points-batch expiry at 04:00 Europe/Amsterdam, immediately after the
+  // card-level expiry sweep (cards that just expired wholesale won't get
+  // their batches double-processed because card_state writes are best-effort
+  // either way).
+  cron.schedule(
+    "0 4 * * *",
+    () => {
+      runPointsExpirySweep().catch((err: unknown) => {
+        logger.error({ err }, "scheduled points-expiry sweep crashed");
+      });
+    },
+    { timezone: TZ }
+  );
+
   logger.info(
     { tz: TZ },
-    "messaging crons registered (03:00 expiry, 08:00 birthday, 10:00 inactivity)"
+    "messaging crons registered (03:00 expiry, 04:00 points-expiry, 08:00 birthday, 10:00 inactivity)"
   );
 }

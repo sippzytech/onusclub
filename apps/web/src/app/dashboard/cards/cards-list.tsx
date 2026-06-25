@@ -61,11 +61,19 @@ export function CardsList({ cards }: { cards: Card[] }): JSX.Element {
       ) : (
         <ul className="space-y-2">
           {filtered.map((c) => {
+            const isPoints = c.programType === "points";
             const state = c.cardState as
-              | { stamps_current?: number; rewards_redeemed?: number }
+              | {
+                  stamps_current?: number;
+                  points_current?: number;
+                  rewards_redeemed?: number;
+                }
               | null;
-            const cur = state?.stamps_current ?? 0;
-            const eligible = cur >= c.stampsRequired;
+            const cur = isPoints
+              ? state?.points_current ?? 0
+              : state?.stamps_current ?? 0;
+            const target = isPoints ? c.pointsForReward ?? 0 : c.stampsRequired;
+            const eligible = target > 0 && cur >= target;
             const expired = c.status === "expired";
             const s = stampState[c.id] ?? { busy: false, err: null };
             return (
@@ -87,32 +95,49 @@ export function CardsList({ cards }: { cards: Card[] }): JSX.Element {
                           Expired
                         </span>
                       ) : null}
+                      {isPoints ? (
+                        <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-xs text-indigo-700">
+                          Points
+                        </span>
+                      ) : null}
                     </div>
                     <div className="text-gray-600 mt-1">{c.programName}</div>
                   </Link>
                   <div className="text-right shrink-0 mr-2">
                     <div className="text-2xl font-semibold tabular-nums text-gray-900">
                       {cur}
-                      <span className="text-gray-400">/{c.stampsRequired}</span>
+                      <span className="text-gray-400">/{target}</span>
                     </div>
                     <div className="text-xs text-gray-500 mt-1">
                       {state?.rewards_redeemed ?? 0} redeemed
                     </div>
                   </div>
-                  <button
-                    onClick={() => void quickStamp(c)}
-                    disabled={s.busy || eligible || expired}
-                    title={
-                      expired
-                        ? "Card is expired"
-                        : eligible
-                        ? "At threshold — open the card to redeem"
-                        : "Add one stamp"
-                    }
-                    className="rounded-md bg-gray-900 px-3 py-2 text-xs font-medium text-white hover:bg-gray-800 disabled:opacity-40 shrink-0"
-                  >
-                    {s.busy ? "…" : "+1 stamp"}
-                  </button>
+                  {isPoints ? (
+                    // Points cards can't be incremented with a single click —
+                    // the merchant needs to enter the transaction amount. Send
+                    // them to the card detail page instead.
+                    <Link
+                      href={`/dashboard/cards/${c.id}`}
+                      className="rounded-md border border-gray-300 px-3 py-2 text-xs font-medium text-gray-800 hover:bg-gray-50 shrink-0"
+                    >
+                      Open
+                    </Link>
+                  ) : (
+                    <button
+                      onClick={() => void quickStamp(c)}
+                      disabled={s.busy || eligible || expired}
+                      title={
+                        expired
+                          ? "Card is expired"
+                          : eligible
+                          ? "At threshold — open the card to redeem"
+                          : "Add one stamp"
+                      }
+                      className="rounded-md bg-gray-900 px-3 py-2 text-xs font-medium text-white hover:bg-gray-800 disabled:opacity-40 shrink-0"
+                    >
+                      {s.busy ? "…" : "+1 stamp"}
+                    </button>
+                  )}
                 </div>
                 {s.err ? (
                   <div className="mt-2 text-xs text-red-700">{s.err}</div>

@@ -68,6 +68,61 @@ export interface LiveUpdateConfig {
   authenticationToken: string;
 }
 
+// Compute the type-specific labels + numbers in one place so the field
+// pushes below stay short and the two type branches don't drift apart.
+interface PassBits {
+  headerLabel: string;          // "Stamps" / "Points"
+  headerValue: string;          // "4 / 6" / "420 / 1000"
+  headerChangeMsg: string;      // notification text on change
+  remainingValue: string;       // "2"  / "580"
+  remainingChangeMsg: string;
+  progressBody: string;
+  lifetimeBody: string;
+  termsBody: string;
+}
+
+function renderBits(
+  program: AppleProgramForWallet,
+  card: AppleCardForWallet
+): PassBits {
+  if (program.programType === "points" && card.state.type === "points") {
+    const remaining = Math.max(0, program.pointsForReward - card.state.points_current);
+    return {
+      headerLabel: "Points",
+      headerValue: `${card.state.points_current} / ${program.pointsForReward}`,
+      headerChangeMsg: "You have %@ points — keep going!",
+      remainingValue: String(remaining),
+      remainingChangeMsg: "%@ points to your reward",
+      progressBody: `${card.state.points_current} of ${program.pointsForReward} points · ${remaining} to go`,
+      lifetimeBody: `${card.state.total_lifetime} points earned · ${card.state.rewards_redeemed} rewards redeemed${
+        card.state.total_expired > 0 ? ` · ${card.state.total_expired} expired` : ""
+      }`,
+      termsBody:
+        "Earn points on every purchase. Reward at the threshold above. Points may expire — see your earliest expiring batch on the activity page.",
+    };
+  }
+  // Default: stamps. Treat anything that isn't a clean (points, points) pair
+  // as stamps and let the runtime gracefully degrade.
+  const stampState =
+    card.state.type === "stamp"
+      ? card.state
+      : { stamps_current: 0, total_lifetime: 0, rewards_redeemed: 0 };
+  const stampsRequired =
+    program.programType === "stamp" ? program.stampsRequired : 0;
+  const remaining = Math.max(0, stampsRequired - stampState.stamps_current);
+  return {
+    headerLabel: "Stamps",
+    headerValue: `${stampState.stamps_current} / ${stampsRequired}`,
+    headerChangeMsg: "You have %@ stamps — keep going!",
+    remainingValue: String(remaining),
+    remainingChangeMsg: "%@ stamps to your reward",
+    progressBody: `${stampState.stamps_current} of ${stampsRequired} stamps · ${remaining} to go`,
+    lifetimeBody: `${stampState.total_lifetime} stamps collected · ${stampState.rewards_redeemed} rewards redeemed`,
+    termsBody:
+      "Show this pass at the counter to earn a stamp. One stamp per visit. Reward at the threshold above. Cards may expire after extended inactivity.",
+  };
+}
+
 export async function buildPkPass(
   merchant: AppleMerchantBranding,
   program: AppleProgramForWallet,
@@ -78,7 +133,7 @@ export async function buildPkPass(
   if (!creds) return null;
 
   const icons = await loadIcons();
-  const remaining = Math.max(0, program.stampsRequired - card.state.stamps_current);
+  const bits = renderBits(program, card);
 
   try {
     const pass = new PKPass(
@@ -114,10 +169,10 @@ export async function buildPkPass(
     // this field's value differs from the on-device copy after a pass
     // refresh and shows the message. `%@` is substituted with the new value.
     pass.headerFields.push({
-      key: "stamps",
-      label: "Stamps",
-      value: `${card.state.stamps_current} / ${program.stampsRequired}`,
-      changeMessage: "You have %@ stamps — keep going!",
+      key: "balance",
+      label: bits.headerLabel,
+      value: bits.headerValue,
+      changeMessage: bits.headerChangeMsg,
     });
     // Primary field renders huge and bold but truncates ~14 chars mid-word.
     // The reward is short and is what the customer cares about; program name
@@ -135,29 +190,15 @@ export async function buildPkPass(
       {
         key: "remaining",
         label: "To go",
-        value: String(remaining),
-        // Fires when the customer hits the reward (remaining → 0).
-        changeMessage: "%@ stamps to your reward",
+        value: bits.remainingValue,
+        changeMessage: bits.remainingChangeMsg,
       },
       { key: "memberId", label: "Member ID", value: memberId(card.id) }
     );
     pass.backFields.push(
-      {
-        key: "progress",
-        label: "Progress",
-        value: `${card.state.stamps_current} of ${program.stampsRequired} stamps · ${remaining} to go`,
-      },
-      {
-        key: "lifetime",
-        label: "Lifetime",
-        value: `${card.state.total_lifetime} stamps collected · ${card.state.rewards_redeemed} rewards redeemed`,
-      },
-      {
-        key: "terms",
-        label: "Terms",
-        value:
-          "Show this pass at the counter to earn a stamp. One stamp per visit. Reward at the threshold above. Cards may expire after extended inactivity.",
-      }
+      { key: "progress", label: "Progress", value: bits.progressBody },
+      { key: "lifetime", label: "Lifetime", value: bits.lifetimeBody },
+      { key: "terms", label: "Terms", value: bits.termsBody }
     );
 
     pass.setBarcodes({

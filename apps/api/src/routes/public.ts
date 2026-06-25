@@ -11,11 +11,16 @@ import { Router, type Request, type Response } from "express";
 import type { ResultSetHeader, RowDataPacket } from "mysql2";
 import {
   PublicEnrolInput,
+  type PointsCardState,
   type PublicCardView,
   type PublicEnrolResult,
   type PublicMerchant,
   type StampCardState,
 } from "@onusclub/shared";
+import type {
+  AppleCardForWallet,
+  AppleProgramForWallet,
+} from "../wallet-apple/state.js";
 import { pool } from "../db/pool.js";
 import { env } from "../config.js";
 import { ApiError } from "../errors.js";
@@ -36,6 +41,7 @@ interface MerchantRow extends RowDataPacket {
 interface ProgramRow extends RowDataPacket {
   id: string;
   name: string;
+  program_type: "stamp" | "points";
   config_json: unknown;
   reward_text: string;
 }
@@ -66,7 +72,7 @@ publicRouter.get(
     if (m.status === "suspended") throw ApiError.notFound("merchant not found");
 
     const [programs] = await pool.execute<ProgramRow[]>(
-      `SELECT id, name, config_json, reward_text
+      `SELECT id, name, program_type, config_json, reward_text
          FROM loyalty_programs
         WHERE merchant_id = ? AND active = TRUE AND program_type = 'stamp'
         ORDER BY created_at DESC`,
@@ -109,7 +115,7 @@ publicRouter.post(
 
     // Verify the selected program belongs to this merchant.
     const [programs] = await pool.execute<ProgramRow[]>(
-      `SELECT id, name, config_json, reward_text
+      `SELECT id, name, program_type, config_json, reward_text
          FROM loyalty_programs
         WHERE id = ? AND merchant_id = ? AND active = TRUE LIMIT 1`,
       [input.programId, merchantId]
@@ -172,12 +178,21 @@ publicRouter.post(
       } else {
         cardId = randomUUID();
         const qrToken = randomBytes(32).toString("hex");
-        const initialState: StampCardState = {
-          type: "stamp",
-          stamps_current: 0,
-          total_lifetime: 0,
-          rewards_redeemed: 0,
-        };
+        const initialState =
+          programs[0].program_type === "points"
+            ? {
+                type: "points" as const,
+                points_current: 0,
+                total_lifetime: 0,
+                rewards_redeemed: 0,
+                total_expired: 0,
+              }
+            : {
+                type: "stamp" as const,
+                stamps_current: 0,
+                total_lifetime: 0,
+                rewards_redeemed: 0,
+              };
         await conn.execute<ResultSetHeader>(
           `INSERT INTO loyalty_cards
              (id, merchant_id, customer_id, program_id, card_state, qr_token, status)
@@ -231,6 +246,7 @@ interface CardViewRow extends RowDataPacket {
   brand_color: string | null;
   customer_name: string | null;
   program_name: string;
+  program_type: "stamp" | "points";
   reward_text: string;
   program_config: unknown;
 }
@@ -247,8 +263,8 @@ publicRouter.get(
               c.google_wallet_object_id, c.status,
               m.business_name, m.brand_color,
               cu.name AS customer_name,
-              p.name AS program_name, p.reward_text,
-              p.config_json AS program_config
+              p.name AS program_name, p.program_type,
+              p.reward_text, p.config_json AS program_config
          FROM loyalty_cards c
          JOIN merchants m ON m.id = c.merchant_id
          JOIN customers cu ON cu.id = c.customer_id
@@ -258,14 +274,34 @@ publicRouter.get(
     );
     if (rows.length === 0) throw ApiError.notFound("card not found");
     const row = rows[0];
-    const state =
-      typeof row.card_state === "string"
-        ? (JSON.parse(row.card_state) as StampCardState)
-        : (row.card_state as StampCardState);
-    const cfg =
+    const cfgRaw =
       typeof row.program_config === "string"
-        ? (JSON.parse(row.program_config) as { stamps_required?: number })
-        : (row.program_config as { stamps_required?: number });
+        ? (JSON.parse(row.program_config) as Record<string, unknown>)
+        : (row.program_config as Record<string, unknown>);
+
+    let currentValue: number;
+    let targetValue: number;
+    let unitLabel: "stamps" | "points";
+    let rewardsRedeemed: number;
+    if (row.program_type === "points") {
+      const state =
+        typeof row.card_state === "string"
+          ? (JSON.parse(row.card_state) as PointsCardState)
+          : (row.card_state as PointsCardState);
+      currentValue = state.points_current;
+      targetValue = Number(cfgRaw.points_for_reward ?? 0);
+      unitLabel = "points";
+      rewardsRedeemed = state.rewards_redeemed;
+    } else {
+      const state =
+        typeof row.card_state === "string"
+          ? (JSON.parse(row.card_state) as StampCardState)
+          : (row.card_state as StampCardState);
+      currentValue = state.stamps_current;
+      targetValue = Number(cfgRaw.stamps_required ?? 0);
+      unitLabel = "stamps";
+      rewardsRedeemed = state.rewards_redeemed;
+    }
 
     // Issue a fresh save URL only if the wallet object exists.
     let walletSaveUrl: string | null = null;
@@ -279,10 +315,15 @@ publicRouter.get(
       brandColor: row.brand_color,
       customerName: row.customer_name,
       programName: row.program_name,
+      programType: row.program_type,
       rewardText: row.reward_text,
-      stampsCurrent: state.stamps_current,
-      stampsRequired: cfg.stamps_required ?? 0,
-      rewardsRedeemed: state.rewards_redeemed,
+      currentValue,
+      targetValue,
+      unitLabel,
+      // Legacy aliases kept populated for any pre-Day-14 callers.
+      stampsCurrent: currentValue,
+      stampsRequired: targetValue,
+      rewardsRedeemed,
       status: row.status,
       walletSaveUrl,
     });
@@ -304,6 +345,7 @@ interface AppleCardRow extends RowDataPacket {
   customer_name: string | null;
   program_id: string;
   program_name: string;
+  program_type: "stamp" | "points";
   reward_text: string;
   program_config: unknown;
 }
@@ -318,8 +360,8 @@ publicRouter.get("/c/:qrToken/apple-pass", async (req: Request, res: Response) =
     `SELECT c.id AS card_id, c.qr_token, c.apple_auth_token, c.card_state, c.status,
             m.id AS merchant_id, m.business_name, m.brand_color,
             cu.name AS customer_name,
-            p.id AS program_id, p.name AS program_name, p.reward_text,
-            p.config_json AS program_config
+            p.id AS program_id, p.name AS program_name, p.program_type,
+            p.reward_text, p.config_json AS program_config
        FROM loyalty_cards c
        JOIN merchants m ON m.id = c.merchant_id
        JOIN customers cu ON cu.id = c.customer_id
@@ -345,14 +387,50 @@ publicRouter.get("/c/:qrToken/apple-pass", async (req: Request, res: Response) =
     );
   }
 
-  const state =
-    typeof row.card_state === "string"
-      ? (JSON.parse(row.card_state) as StampCardState)
-      : (row.card_state as StampCardState);
-  const cfg =
+  const cfgRaw =
     typeof row.program_config === "string"
-      ? (JSON.parse(row.program_config) as { stamps_required?: number })
-      : (row.program_config as { stamps_required?: number });
+      ? (JSON.parse(row.program_config) as Record<string, unknown>)
+      : (row.program_config as Record<string, unknown>);
+
+  let programForApple: AppleProgramForWallet;
+  let cardForApple: AppleCardForWallet;
+  if (row.program_type === "points") {
+    const state =
+      typeof row.card_state === "string"
+        ? (JSON.parse(row.card_state) as PointsCardState)
+        : (row.card_state as PointsCardState);
+    programForApple = {
+      programType: "points",
+      id: row.program_id,
+      name: row.program_name,
+      rewardText: row.reward_text,
+      pointsForReward: Number(cfgRaw.points_for_reward ?? 0),
+    };
+    cardForApple = {
+      id: row.card_id,
+      qrToken: row.qr_token,
+      state,
+      customerName: row.customer_name,
+    };
+  } else {
+    const state =
+      typeof row.card_state === "string"
+        ? (JSON.parse(row.card_state) as StampCardState)
+        : (row.card_state as StampCardState);
+    programForApple = {
+      programType: "stamp",
+      id: row.program_id,
+      name: row.program_name,
+      rewardText: row.reward_text,
+      stampsRequired: Number(cfgRaw.stamps_required ?? 0),
+    };
+    cardForApple = {
+      id: row.card_id,
+      qrToken: row.qr_token,
+      state,
+      customerName: row.customer_name,
+    };
+  }
 
   // Lazy import — avoids loading passkit-generator at module-init time when
   // the api is doing other unrelated work (and keeps the cold-start lean).
@@ -363,18 +441,8 @@ publicRouter.get("/c/:qrToken/apple-pass", async (req: Request, res: Response) =
       businessName: row.business_name,
       brandColor: row.brand_color,
     },
-    {
-      id: row.program_id,
-      name: row.program_name,
-      rewardText: row.reward_text,
-      stampsRequired: cfg.stamps_required ?? 0,
-    },
-    {
-      id: row.card_id,
-      qrToken: row.qr_token,
-      state,
-      customerName: row.customer_name,
-    },
+    programForApple,
+    cardForApple,
     // iOS Wallet rejects any pass whose webServiceURL isn't HTTPS — and the
     // device must be able to reach the host. localhost / plain HTTP would
     // make Safari refuse to open the pass entirely. So we only opt-in to

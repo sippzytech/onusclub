@@ -145,7 +145,16 @@ export async function patchLoyaltyObject(
     );
     return false;
   }
-  logger.info({ cardId: card.id, stamps: card.state.stamps_current }, "wallet: object patched");
+  logger.info(
+    {
+      cardId: card.id,
+      balance:
+        card.state.type === "points"
+          ? card.state.points_current
+          : card.state.stamps_current,
+    },
+    "wallet: object patched"
+  );
   return true;
 }
 

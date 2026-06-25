@@ -520,3 +520,155 @@ export async function runExpirySweep(): Promise<{ scanned: number; expired: numb
   logger.info({ scanned: rows.length, expired }, "expiry sweep complete");
   return { scanned: rows.length, expired };
 }
+
+// ---------- Points-batch expiry sweep (Day 14) ----------
+// Daily cron — finds points_batches whose expires_at has passed (with
+// remaining points still on them), zeroes their remainders, recomputes the
+// owning card's balance, persists, PATCHes the wallet, and pushes a
+// customer-visible "X points expired" notification.
+
+interface ExpiredBatchRow extends RowDataPacket {
+  id: string;
+  card_id: string;
+  merchant_id: string;
+  points_remaining: number;
+}
+
+interface PointsCardInfoRow extends RowDataPacket {
+  card_id: string;
+  merchant_id: string;
+  card_state: unknown;
+  business_name: string;
+}
+
+export async function runPointsExpirySweep(): Promise<{
+  scanned: number;
+  expired: number;
+}> {
+  // One pass: gather all batches whose expiry has just passed but that still
+  // have value on them. We process each in its own try/catch so a single bad
+  // card doesn't stop the rest.
+  const [rows] = await pool.execute<ExpiredBatchRow[]>(
+    `SELECT id, card_id, merchant_id, points_remaining
+       FROM points_batches
+      WHERE points_remaining > 0
+        AND expires_at IS NOT NULL
+        AND expires_at <= NOW()
+      ORDER BY card_id ASC`
+  );
+
+  if (rows.length === 0) {
+    logger.info({ scanned: 0, expired: 0 }, "points-expiry sweep complete (nothing to do)");
+    return { scanned: 0, expired: 0 };
+  }
+
+  // Group expired batches by card so we update card_state + notify once per
+  // card rather than once per batch.
+  const byCard = new Map<string, { merchantId: string; pointsLost: number; batchIds: string[] }>();
+  for (const row of rows) {
+    const entry = byCard.get(row.card_id) ?? {
+      merchantId: row.merchant_id,
+      pointsLost: 0,
+      batchIds: [],
+    };
+    entry.pointsLost += Number(row.points_remaining);
+    entry.batchIds.push(row.id);
+    byCard.set(row.card_id, entry);
+  }
+
+  let totalExpired = 0;
+  for (const [cardId, info] of byCard) {
+    try {
+      // Zero out the batch remainders.
+      await pool.execute(
+        `UPDATE points_batches SET points_remaining = 0 WHERE id IN (${info.batchIds
+          .map(() => "?")
+          .join(",")})`,
+        info.batchIds
+      );
+
+      // Recompute the card's balance from the surviving (non-expired,
+      // non-empty) batches, then update card_state.
+      const [balRows] = await pool.execute<RowDataPacket[]>(
+        `SELECT COALESCE(SUM(points_remaining), 0) AS bal
+           FROM points_batches
+          WHERE card_id = ?
+            AND points_remaining > 0
+            AND (expires_at IS NULL OR expires_at > NOW())`,
+        [cardId]
+      );
+      const newBalance = Number(balRows[0]?.bal ?? 0);
+
+      const [cardRows] = await pool.execute<PointsCardInfoRow[]>(
+        `SELECT c.id AS card_id, c.merchant_id, c.card_state,
+                m.business_name
+           FROM loyalty_cards c
+           JOIN merchants m ON m.id = c.merchant_id
+          WHERE c.id = ? LIMIT 1`,
+        [cardId]
+      );
+      if (cardRows.length === 0) continue;
+      const cardRow = cardRows[0];
+      const state = parseJson<{
+        type: "points";
+        points_current: number;
+        total_lifetime: number;
+        rewards_redeemed: number;
+        total_expired: number;
+      }>(cardRow.card_state);
+      if (state.type !== "points") continue;
+
+      const newState = {
+        type: "points" as const,
+        points_current: newBalance,
+        total_lifetime: state.total_lifetime,
+        rewards_redeemed: state.rewards_redeemed,
+        total_expired: state.total_expired + info.pointsLost,
+      };
+
+      await pool.execute(
+        "UPDATE loyalty_cards SET card_state = ? WHERE id = ?",
+        [JSON.stringify(newState), cardId]
+      );
+      await pool.execute(
+        `INSERT INTO card_events (merchant_id, card_id, event_type, delta_json, note)
+         VALUES (?, ?, 'expire', ?, NULL)`,
+        [
+          info.merchantId,
+          cardId,
+          JSON.stringify({
+            via: "points_expiry_sweep",
+            points_expired: info.pointsLost,
+            balance_before: state.points_current,
+            balance_after: newState.points_current,
+            batches: info.batchIds.length,
+          }),
+        ]
+      );
+
+      // Wallet refresh + customer-visible notification. Best-effort, errors
+      // logged inside the helper.
+      const { syncCardToWallet } = await import("../cards/operations.js");
+      await syncCardToWallet(cardId, info.merchantId, "stamp");
+      const { sendCustomCardMessage } = await import("../wallet/loyalty.js");
+      await sendCustomCardMessage({
+        cardId,
+        header: `${info.pointsLost} points expired at ${cardRow.business_name}`,
+        body: `You now have ${newBalance} points. Visit again to start earning fresh!`,
+      });
+
+      totalExpired += 1;
+    } catch (err) {
+      logger.error(
+        { err, cardId, pointsLost: info.pointsLost },
+        "points-expiry sweep failed for card"
+      );
+    }
+  }
+
+  logger.info(
+    { scanned: rows.length, expired: totalExpired },
+    "points-expiry sweep complete"
+  );
+  return { scanned: rows.length, expired: totalExpired };
+}

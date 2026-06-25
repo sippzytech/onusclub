@@ -47,13 +47,20 @@ export default async function CardDetailPage({
   const { customers } = await apiFetch<{ customers: Customer[] }>("/v1/customers", { jwt });
   const customer = customers.find((c) => c.id === detail.card.customerId) ?? null;
 
-  const state = detail.card.cardState as {
-    stamps_current: number;
-    total_lifetime: number;
-    rewards_redeemed: number;
-  };
-  const required = detail.card.stampsRequired;
-  const eligible = state.stamps_current >= required;
+  // Type-branched view-model: same UI shell, different labels + numbers per
+  // program type. The CardActions component below switches its button set
+  // off `programType` too.
+  const isPoints = detail.card.programType === "points";
+  const rawState = detail.card.cardState as Record<string, number | string>;
+  const current = isPoints ? Number(rawState.points_current ?? 0) : Number(rawState.stamps_current ?? 0);
+  const required = isPoints
+    ? Number(detail.card.pointsForReward ?? 0)
+    : detail.card.stampsRequired;
+  const totalLifetime = Number(rawState.total_lifetime ?? 0);
+  const rewardsRedeemed = Number(rawState.rewards_redeemed ?? 0);
+  const totalExpired = isPoints ? Number(rawState.total_expired ?? 0) : 0;
+  const eligible = current >= required && required > 0;
+  const unitLabel = isPoints ? "points" : "stamps";
 
   return (
     <DashboardShell user={user} merchant={merchant}>
@@ -75,16 +82,25 @@ export default async function CardDetailPage({
             </div>
             <div className="text-right shrink-0">
               <div className="text-5xl font-semibold tabular-nums text-gray-900">
-                {state.stamps_current}
+                {current}
                 <span className="text-gray-400 text-3xl">/{required}</span>
               </div>
+              <p className="text-xs uppercase tracking-wide text-gray-400 mt-1">
+                {unitLabel}
+              </p>
               <p className="text-xs text-gray-500 mt-2">
-                lifetime {state.total_lifetime} · redeemed {state.rewards_redeemed}
+                lifetime {totalLifetime} · redeemed {rewardsRedeemed}
+                {isPoints && totalExpired > 0 ? ` · expired ${totalExpired}` : ""}
               </p>
             </div>
           </div>
           <div className="mt-6 border-t border-gray-100 pt-4">
-            <CardActions cardId={detail.card.id} eligible={eligible} />
+            <CardActions
+              cardId={detail.card.id}
+              eligible={eligible}
+              programType={detail.card.programType}
+              pointsPerEuro={detail.card.pointsPerEuro}
+            />
           </div>
         </header>
 

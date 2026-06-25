@@ -14,6 +14,7 @@ import {
   runBirthdaySweep,
   runExpirySweep,
   runInactivitySweep,
+  runPointsExpirySweep,
 } from "../messaging/operations.js";
 
 export const sweepsRouter: Router = Router();
@@ -168,6 +169,7 @@ sweepsRouter.post(
     if (type === "birthday") return res.json(await runBirthdaySweep());
     if (type === "inactivity") return res.json(await runInactivitySweep());
     if (type === "expiry") return res.json(await runExpirySweep());
+    if (type === "points-expiry") return res.json(await runPointsExpirySweep());
     throw ApiError.badRequest("unknown sweep type");
   }
 );

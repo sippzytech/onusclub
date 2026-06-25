@@ -138,6 +138,7 @@ export type StaffCreateInput = z.infer<typeof StaffCreateInput>;
 // ---------- Programs ----------
 
 export const StampProgramCreateInput = z.object({
+  programType: z.literal("stamp"),
   name: z.string().min(1).max(200),
   stampsRequired: z.number().int().positive().max(100),
   rewardText: z.string().min(1).max(500),
@@ -147,6 +148,30 @@ export const StampProgramCreateInput = z.object({
   expiryDays: z.number().int().positive().max(3650).optional(),
 });
 export type StampProgramCreateInput = z.infer<typeof StampProgramCreateInput>;
+
+export const PointsProgramCreateInput = z.object({
+  programType: z.literal("points"),
+  name: z.string().min(1).max(200),
+  rewardText: z.string().min(1).max(500),
+  // 1 € spent → N points. Defaults to 1 client-side but the API requires it
+  // explicitly so there's no ambiguity about a merchant's rule.
+  pointsPerEuro: z.number().positive().max(1000),
+  // Threshold for the reward (1000 = "1000 points = free coffee").
+  pointsForReward: z.number().int().positive().max(1_000_000),
+  // Per-batch expiry. Each "add points" transaction gets its own expires_at
+  // = NOW + batchExpiryDays. Omit for batches that never expire.
+  batchExpiryDays: z.number().int().positive().max(3650).optional(),
+});
+export type PointsProgramCreateInput = z.infer<typeof PointsProgramCreateInput>;
+
+// Discriminated union so the create endpoint can switch on programType.
+// Clients legacy enough to omit programType default to "stamp" via a
+// preprocessor in routes/programs.ts (keeps Day 1-13 callers working).
+export const ProgramCreateInput = z.discriminatedUnion("programType", [
+  StampProgramCreateInput,
+  PointsProgramCreateInput,
+]);
+export type ProgramCreateInput = z.infer<typeof ProgramCreateInput>;
 
 export const Program = z.object({
   id: z.string(),
@@ -214,7 +239,12 @@ export const Card = z.object({
   programId: z.string(),
   customerName: z.string().nullable(),
   programName: z.string(),
-  stampsRequired: z.number().int().positive(),
+  programType: z.enum(["stamp", "points"]),
+  // For stamp programs: the threshold number of stamps. 0 for points programs.
+  stampsRequired: z.number().int().nonnegative(),
+  // For points programs: threshold + euro→points rate. Null for stamp programs.
+  pointsForReward: z.number().int().positive().nullable(),
+  pointsPerEuro: z.number().positive().nullable(),
   cardState: z.unknown(), // typed at usage site via the CardState union from index.ts
   qrToken: z.string(),
   status: z.enum(["active", "blocked", "expired"]),
@@ -223,6 +253,13 @@ export const Card = z.object({
   lastEventAt: z.string().nullable(),
 });
 export type Card = z.infer<typeof Card>;
+
+// Body for POST /v1/cards/:id/add-points. Merchant enters the transaction
+// amount; the api computes points = amount * program.pointsPerEuro (floored).
+export const AddPointsInput = z.object({
+  amount: z.number().positive().max(100_000),
+});
+export type AddPointsInput = z.infer<typeof AddPointsInput>;
 
 export const CardEvent = z.object({
   id: z.number(),
@@ -325,7 +362,17 @@ export const PublicCardView = z.object({
   brandColor: z.string().nullable(),
   customerName: z.string().nullable(),
   programName: z.string(),
+  programType: z.enum(["stamp", "points"]),
   rewardText: z.string(),
+  // For stamp programs: `currentValue` = stamps_current, `targetValue` =
+  // stamps_required, `unitLabel` = "stamps".
+  // For points programs: `currentValue` = points_current (sum of non-expired
+  // batches), `targetValue` = points_for_reward, `unitLabel` = "points".
+  // Old `stampsCurrent` / `stampsRequired` retained for legacy clients but
+  // populated with the points equivalents when programType=points.
+  currentValue: z.number().int(),
+  targetValue: z.number().int(),
+  unitLabel: z.enum(["stamps", "points"]),
   stampsCurrent: z.number().int(),
   stampsRequired: z.number().int(),
   rewardsRedeemed: z.number().int(),

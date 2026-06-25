@@ -2,10 +2,10 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { Router, type Request, type Response } from "express";
 import type { ResultSetHeader, RowDataPacket } from "mysql2";
 import {
+  AddPointsInput,
   CardCreateInput,
   type Card,
   type CardDetail,
-  type StampCardState,
 } from "@onusclub/shared";
 import { pool } from "../db/pool.js";
 import { authContext, requireAuth } from "../auth/middleware.js";
@@ -13,6 +13,7 @@ import { env } from "../config.js";
 import { ApiError } from "../errors.js";
 import { logger } from "../logger.js";
 import {
+  addPointsToCard,
   getCardDetail,
   redeemCardById,
   stampCardById,
@@ -36,6 +37,7 @@ interface CardRow extends RowDataPacket {
   last_event_at: Date | null;
   customer_name: string | null;
   program_name: string;
+  program_type: "stamp" | "points";
   program_config: unknown;
   reward_text: string;
 }
@@ -63,8 +65,27 @@ function parseJson<T>(value: unknown): T {
   return typeof value === "string" ? (JSON.parse(value) as T) : (value as T);
 }
 
+function programFields(
+  programType: "stamp" | "points",
+  configJson: unknown
+): { stampsRequired: number; pointsForReward: number | null; pointsPerEuro: number | null } {
+  if (programType === "points") {
+    const cfg = parseJson<{ points_for_reward?: number; points_per_euro?: number }>(configJson);
+    return {
+      stampsRequired: 0,
+      pointsForReward: cfg.points_for_reward ?? null,
+      pointsPerEuro: cfg.points_per_euro ?? null,
+    };
+  }
+  const cfg = parseJson<{ stamps_required?: number }>(configJson);
+  return {
+    stampsRequired: cfg.stamps_required ?? 0,
+    pointsForReward: null,
+    pointsPerEuro: null,
+  };
+}
+
 function rowToCard(row: CardRow): Card {
-  const cfg = parseJson<{ stamps_required?: number }>(row.program_config);
   return {
     id: row.id,
     merchantId: row.merchant_id,
@@ -72,7 +93,8 @@ function rowToCard(row: CardRow): Card {
     programId: row.program_id,
     customerName: row.customer_name,
     programName: row.program_name,
-    stampsRequired: cfg.stamps_required ?? 0,
+    programType: row.program_type,
+    ...programFields(row.program_type, row.program_config),
     cardState: parseJson(row.card_state),
     qrToken: row.qr_token,
     status: row.status,
@@ -87,6 +109,7 @@ const CARD_SELECT = `
          c.qr_token, c.status, c.created_at, c.last_event_at,
          cu.name AS customer_name,
          p.name AS program_name,
+         p.program_type,
          p.config_json AS program_config,
          p.reward_text
     FROM loyalty_cards c
@@ -180,8 +203,8 @@ cardsRouter.post("/", requireAuth, async (req: Request, res: Response<Card>) => 
     );
     if (programRows.length === 0) throw ApiError.notFound("program not found");
     const prog = programRows[0];
-    if (prog.program_type !== "stamp") {
-      throw ApiError.badRequest("only stamp programs are supported in Phase 1");
+    if (prog.program_type !== "stamp" && prog.program_type !== "points") {
+      throw ApiError.badRequest(`program type '${prog.program_type}' is not supported yet`);
     }
 
     const [dupRows] = await conn.execute<CountRow[]>(
@@ -195,12 +218,21 @@ cardsRouter.post("/", requireAuth, async (req: Request, res: Response<Card>) => 
 
     const id = randomUUID();
     const qrToken = randomBytes(32).toString("hex");
-    const initialState: StampCardState = {
-      type: "stamp",
-      stamps_current: 0,
-      total_lifetime: 0,
-      rewards_redeemed: 0,
-    };
+    const initialState =
+      prog.program_type === "points"
+        ? {
+            type: "points" as const,
+            points_current: 0,
+            total_lifetime: 0,
+            rewards_redeemed: 0,
+            total_expired: 0,
+          }
+        : {
+            type: "stamp" as const,
+            stamps_current: 0,
+            total_lifetime: 0,
+            rewards_redeemed: 0,
+          };
 
     await conn.execute<ResultSetHeader>(
       `INSERT INTO loyalty_cards
@@ -277,6 +309,9 @@ cardsRouter.post(
 );
 
 // ---------- redeem ----------
+//
+// Single redeem endpoint for both stamp and points cards. redeemCardById
+// dispatches by program_type internally.
 
 cardsRouter.post(
   "/:id/redeem",
@@ -284,5 +319,17 @@ cardsRouter.post(
   async (req: Request, res: Response<CardDetail>) => {
     const ctx = authContext(req);
     return res.json(await redeemCardById(req.params.id, ctx.merchantId));
+  }
+);
+
+// ---------- add points (points programs only) ----------
+
+cardsRouter.post(
+  "/:id/add-points",
+  requireAuth,
+  async (req: Request, res: Response<CardDetail>) => {
+    const ctx = authContext(req);
+    const input = AddPointsInput.parse(req.body);
+    return res.json(await addPointsToCard(req.params.id, ctx.merchantId, input.amount));
   }
 );

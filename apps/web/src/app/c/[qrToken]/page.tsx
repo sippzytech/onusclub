@@ -24,8 +24,15 @@ export default async function PublicCardPage({
   }
 
   const brand = card.brandColor ?? "#111111";
-  const remaining = card.stampsRequired - card.stampsCurrent;
-  const eligible = card.stampsCurrent >= card.stampsRequired;
+  // The api populates `currentValue` / `targetValue` / `unitLabel` for both
+  // program types. Legacy `stampsCurrent` / `stampsRequired` are still
+  // populated as aliases so older snapshots of this page keep rendering.
+  const current = card.currentValue ?? card.stampsCurrent;
+  const target = card.targetValue ?? card.stampsRequired;
+  const unit = card.unitLabel ?? "stamps";
+  const unitSingular = unit === "points" ? "point" : "stamp";
+  const remaining = Math.max(0, target - current);
+  const eligible = target > 0 && current >= target;
 
   return (
     <main className="min-h-screen px-6 py-12">
@@ -42,10 +49,10 @@ export default async function PublicCardPage({
           <div className="mt-6 flex items-end justify-between">
             <div>
               <p className="text-5xl font-semibold tabular-nums">
-                {card.stampsCurrent}
-                <span className="text-3xl opacity-70">/{card.stampsRequired}</span>
+                {current}
+                <span className="text-3xl opacity-70">/{target}</span>
               </p>
-              <p className="text-sm opacity-80 mt-1">stamps</p>
+              <p className="text-sm opacity-80 mt-1">{unit}</p>
             </div>
             <div className="text-right">
               <p className="text-xs uppercase tracking-wide opacity-80">Reward</p>
@@ -78,7 +85,7 @@ export default async function PublicCardPage({
           <div className="rounded-md border border-gray-200 bg-white p-4 text-sm text-gray-700">
             <p>
               <strong>{remaining}</strong>{" "}
-              {remaining === 1 ? "stamp" : "stamps"} to go.
+              {remaining === 1 ? unitSingular : unit} to go.
               Visit {card.businessName} on your next coffee run!
             </p>
             <p className="text-xs text-gray-500 mt-2">
@@ -88,7 +95,7 @@ export default async function PublicCardPage({
                   {card.rewardsRedeemed === 1 ? "reward" : "rewards"} on this card.
                 </>
               ) : (
-                "First reward coming up — your stamps are saved across visits."
+                `First reward coming up — your ${unit} are saved across visits.`
               )}
             </p>
           </div>

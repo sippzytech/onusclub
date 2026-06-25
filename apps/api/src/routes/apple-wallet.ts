@@ -17,10 +17,14 @@
 import { randomUUID } from "node:crypto";
 import { Router, type Request, type Response } from "express";
 import type { ResultSetHeader, RowDataPacket } from "mysql2";
-import type { StampCardState } from "@onusclub/shared";
+import type { PointsCardState, StampCardState } from "@onusclub/shared";
 import { pool } from "../db/pool.js";
 import { env } from "../config.js";
 import { logger } from "../logger.js";
+import type {
+  AppleCardForWallet,
+  AppleProgramForWallet,
+} from "../wallet-apple/state.js";
 
 export const appleWalletRouter: Router = Router();
 
@@ -38,6 +42,7 @@ interface CardAuthRow extends RowDataPacket {
   customer_name: string | null;
   program_id: string;
   program_name: string;
+  program_type: "stamp" | "points";
   reward_text: string;
   program_config: unknown;
 }
@@ -89,8 +94,8 @@ async function authenticatePass(
             c.last_event_at, c.created_at,
             m.id AS merchant_id, m.business_name, m.brand_color,
             cu.name AS customer_name,
-            p.id AS program_id, p.name AS program_name, p.reward_text,
-            p.config_json AS program_config
+            p.id AS program_id, p.name AS program_name, p.program_type,
+            p.reward_text, p.config_json AS program_config
        FROM loyalty_cards c
        JOIN merchants m ON m.id = c.merchant_id
        JOIN customers cu ON cu.id = c.customer_id
@@ -272,14 +277,50 @@ appleWalletRouter.get(
       return;
     }
 
-    const state =
-      typeof card.card_state === "string"
-        ? (JSON.parse(card.card_state) as StampCardState)
-        : (card.card_state as StampCardState);
-    const cfg =
+    const cfgRaw =
       typeof card.program_config === "string"
-        ? (JSON.parse(card.program_config) as { stamps_required?: number })
-        : (card.program_config as { stamps_required?: number });
+        ? (JSON.parse(card.program_config) as Record<string, unknown>)
+        : (card.program_config as Record<string, unknown>);
+
+    let programForApple: AppleProgramForWallet;
+    let cardForApple: AppleCardForWallet;
+    if (card.program_type === "points") {
+      const state =
+        typeof card.card_state === "string"
+          ? (JSON.parse(card.card_state) as PointsCardState)
+          : (card.card_state as PointsCardState);
+      programForApple = {
+        programType: "points",
+        id: card.program_id,
+        name: card.program_name,
+        rewardText: card.reward_text,
+        pointsForReward: Number(cfgRaw.points_for_reward ?? 0),
+      };
+      cardForApple = {
+        id: card.card_id,
+        qrToken: card.qr_token,
+        state,
+        customerName: card.customer_name,
+      };
+    } else {
+      const state =
+        typeof card.card_state === "string"
+          ? (JSON.parse(card.card_state) as StampCardState)
+          : (card.card_state as StampCardState);
+      programForApple = {
+        programType: "stamp",
+        id: card.program_id,
+        name: card.program_name,
+        rewardText: card.reward_text,
+        stampsRequired: Number(cfgRaw.stamps_required ?? 0),
+      };
+      cardForApple = {
+        id: card.card_id,
+        qrToken: card.qr_token,
+        state,
+        customerName: card.customer_name,
+      };
+    }
 
     const { buildPkPass } = await import("../wallet-apple/pass-builder.js");
     const buf = await buildPkPass(
@@ -288,18 +329,8 @@ appleWalletRouter.get(
         businessName: card.business_name,
         brandColor: card.brand_color,
       },
-      {
-        id: card.program_id,
-        name: card.program_name,
-        rewardText: card.reward_text,
-        stampsRequired: cfg.stamps_required ?? 0,
-      },
-      {
-        id: card.card_id,
-        qrToken: card.qr_token,
-        state,
-        customerName: card.customer_name,
-      },
+      programForApple,
+      cardForApple,
       env.BASE_URL_API.startsWith("https://")
         ? {
             webServiceURL: `${env.BASE_URL_API.replace(/\/$/, "")}/v1/apple-wallet`,
