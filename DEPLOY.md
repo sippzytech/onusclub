@@ -318,7 +318,7 @@ mysql -h 127.0.0.1 -P 33061 -u reporting -p stampdeck
 
 ## 9. MySQL backups (daily, retained 30 days)
 
-The repo ships `scripts/backup-mysql.sh` — a small script that streams `mysqldump` out of the `stampdeck-mysql` container, gzips it, and prunes old backups. Wire it to host cron on the VPS once:
+The repo ships `scripts/backup-mysql.sh` — a small script that streams `mysqldump` out of the `onusclub-mysql` container, gzips it, prunes old backups, and (if configured) uploads to Backblaze B2 for offsite resilience. Wire it to host cron on the VPS once:
 
 ```bash
 # On the VPS, as root:
@@ -342,21 +342,49 @@ That schedules a daily backup at 02:30 UTC (~03:30 / 04:30 Amsterdam depending o
 
 ### Tune retention
 
-`STAMPDECK_BACKUP_RETENTION_DAYS=60 /docker/stampdeck/scripts/backup-mysql.sh` — overrides the 30-day default.
+`ONUSCLUB_BACKUP_RETENTION_DAYS=60 /docker/stampdeck/scripts/backup-mysql.sh` — overrides the 30-day default.
 
 ### Restore from a backup
 
 ```bash
 # Pick a backup
 ls -lh /docker/stampdeck/backups/
-BACKUP=/docker/stampdeck/backups/stampdeck-2026-06-05_023000.sql.gz
+BACKUP=/docker/stampdeck/backups/onusclub-2026-06-25_023000.sql.gz
 
 # Load it into the running container (this OVERWRITES current data — be sure)
-gunzip -c "$BACKUP" | docker exec -i stampdeck-mysql mysql \
+gunzip -c "$BACKUP" | docker exec -i onusclub-mysql mysql \
   -uroot -p"$(grep '^MYSQL_ROOT_PASSWORD' /docker/stampdeck/.env | cut -d= -f2-)" \
   stampdeck
 ```
 
-### Offsite copies (not done — track separately)
+### Offsite upload to Backblaze B2
 
-Backups currently live on the VPS only. If the VPS disk dies, they're gone. Future task: add an rsync / rclone step pushing to S3 / Backblaze / a second VPS.
+Local backups survive a disk full but not a disk failure / VPS loss. Backblaze B2 gives 10 GB free + S3-compatible storage; pennies per GB after.
+
+**One-time setup** (Day 13 polish):
+
+1. Create a B2 account at <https://www.backblaze.com/cloud-storage/b2-cloud-storage>
+2. Create a bucket: `onusclub-backups` (Private, SSE-B2 encryption)
+3. Create an Application Key scoped to that bucket (Read+Write). Copy the `keyID` + `applicationKey` (shown ONCE).
+4. On the VPS, install the `b2` CLI:
+   ```bash
+   curl -sL https://github.com/Backblaze/B2_Command_Line_Tool/releases/latest/download/b2-linux \
+     -o /usr/local/bin/b2 && chmod +x /usr/local/bin/b2
+   b2 version  # sanity check
+   ```
+5. Append three lines to `/docker/stampdeck/.env`:
+   ```
+   B2_KEY_ID=<keyID from step 3>
+   B2_APP_KEY=<applicationKey from step 3>
+   B2_BUCKET=onusclub-backups
+   ```
+6. Run a manual backup to verify the upload works:
+   ```bash
+   /docker/stampdeck/scripts/backup-mysql.sh
+   tail -n 5 /docker/stampdeck/backups/backup.log
+   # should show: OK offsite b2://onusclub-backups/onusclub-...sql.gz
+   ```
+
+The daily cron picks up the new behaviour automatically — no further action.
+
+**If B2 isn't configured**: the script just logs a warning and skips the upload. Local backups still complete. This keeps offsite truly optional and prevents a B2 outage from breaking your local backup safety net.
