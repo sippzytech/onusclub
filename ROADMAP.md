@@ -84,6 +84,28 @@ Each day below corresponds to a git branch + a commit. Run `git log --oneline --
 - METABASE.md runbook with 7 starter SQL queries.
 - Smoke test: 70 assertions.
 
+### Day 14 — Multi-program type: points programs with per-batch expiry
+- Second program type alongside stamps. Customer earns N points per €1 spent; threshold of points = free reward. Each "add transaction" creates its own batch row with an optional expiry timer (Starbucks-style). Redemptions deduct FIFO from oldest non-expired batches.
+- **Zero DB migration on existing tables** — Day 1's polymorphic columns (`loyalty_programs.program_type`, `loyalty_programs.config_json`, `loyalty_cards.card_state`) already handled this. Migration `007_points_batches` only adds the new ledger table.
+- Shared types: `PointsProgramConfig` + `PointsCardState` as discriminated unions; `ProgramCreateInput` unifies stamp + points via `z.discriminatedUnion("programType")`. Legacy `POST /v1/programs` callers (no `programType`) default to stamp.
+- New endpoint `POST /v1/cards/:id/add-points` (body `{amount}`) — computes `points = floor(amount × points_per_euro)`, writes a batch row, recomputes cached balance, emits a `points_add` card_event. `POST /v1/cards/:id/redeem` now dispatches by program_type — calls `redeemPointsCard` which FIFO-deducts the reward threshold from oldest non-expired batches under `FOR UPDATE`.
+- Wallet rendering (Google + Apple) is now type-aware via discriminated `ProgramForWallet`/`CardForWallet`. Apple pass shows `POINTS 420 / 1000` header with notification `"You have 420 points — keep going!"` on add-transaction. Falls back gracefully if type ↔ state mismatch.
+- New daily cron at 04:00 Europe/Amsterdam: `runPointsExpirySweep` finds batches with `expires_at < NOW` + `points_remaining > 0`, zeroes their remainders, recomputes card balance, increments `card_state.total_expired`, PATCHes wallet, sends customer "X points expired" message. Manual trigger at `POST /v1/sweeps/run/points-expiry`.
+- Dashboard create-program form gains a Stamps/Points type selector with conditional config inputs (points-per-euro default 1, points-for-reward, optional batch-expiry days). Card detail page shows correct unit + an "Add transaction (€)" input with live "= N points" preview instead of "+1 stamp". Cards list shows indigo "Points" pill + the right unit. Public `/c/[qrToken]` page renders points or stamps based on `unitLabel`. Scan flow not yet updated for points (deferred — needs amount-capture UX).
+- Smoke 95 assertions (13 new for points: create program, enrol, three add-transactions with varied €, three FIFO redemptions, insufficient-balance 400, amount=0 400, points-expiry sweep, public view shape).
+
+### Day 13 — Polish bundle (repo rename, smoke in CI, B2 backup code)
+- GitHub repo renamed `sippzytech/stampdeck` → `sippzytech/onusclub`. Local remote URLs updated on Mac + VPS (GitHub auto-redirects old URLs as a safety net).
+- `.github/workflows/ci.yml` gains a `smoke` job alongside `typecheck-and-build`: spins up a MySQL 8.0 service container, applies migrations, starts the api in background, runs the 82-assertion (now 95-assertion) smoke. Gates every PR on full end-to-end behavior instead of just `tsc`. Catches: `NODE_ENV=production` dropped pnpm devDeps, missing config env vars at module-import time, smoke dev-mode assertions colliding with prod-mode api, wallet-unconfigured paths returning 'failed' deliveries.
+- `scripts/backup-mysql.sh` extended with optional Backblaze B2 upload after gzip. Reads `B2_KEY_ID` / `B2_APP_KEY` / `B2_BUCKET` from `.env`; missing creds / missing `b2` CLI = WARN+skip (local backup still completes; B2 outage doesn't break local safety net). Container default renamed `stampdeck-mysql` → `onusclub-mysql`. Backup filenames `stampdeck-...sql.gz` → `onusclub-...sql.gz` (prune step still matches both for transition). DEPLOY.md §9 expanded with B2 signup + `b2` CLI install + `.env` lines + manual verification runbook.
+
+### Day 13 — VPS migration + Phase B rename (`stampdeck` → `onusclub`)
+- Code-level rename across pnpm package names (`@stampdeck/*` → `@onusclub/*`, 67 .ts/.tsx/.json files), Docker container + image names (`stampdeck-api` → `onusclub-api`, etc.), Traefik router/service labels, Dockerfile build filters, and human-readable docs.
+- **Deliberately NOT renamed**: MySQL DB name (`stampdeck`), MySQL user (`stampdeck`), Docker volume (`stampdeck_mysql`), VPS deploy dir (`/docker/stampdeck/`), GitHub org (`sippzytech`), Google Wallet issuer (`sippzy-wallet`). Renaming any of these risks data loss or breaks existing scripts for zero user-visible benefit. Customers never see these names.
+- `docker-compose.prod.yml` gains optional `DOMAIN_API_LEGACY` / `DOMAIN_WEB_LEGACY` env vars for a no-downtime migration window — primary router serves the new domain, legacy router serves the old. Default `_disabled_` sentinel keeps the legacy router inert when unset.
+- DNS cutover via Netlify (NS1 manages onusclub.com): `onusclub.com` apex + `www` → Netlify marketing site (separate repo, not in scope here); `api.onusclub.com` + `app.onusclub.com` → VPS. Both `api.sippzy.com` (legacy) and `api.onusclub.com` (primary) route to the same containers during transition.
+- Verified end-to-end on iPhone via `https://api.onusclub.com`: pass downloads + adds to Wallet + live-updates on stamp via APNs, same flow as the sippzy.com setup. Legacy sippzy.com routes confirmed still working.
+
 ### Day 12 — Apple Wallet live updates via APNs push
 - Static pass from Day 11 becomes live: every stamp / redeem now shows a lock-screen notification on the iPhone and updates the pass in-place, matching the Google Wallet UX.
 - Migration `006_apple_wallet_registrations`: per-card `apple_auth_token` for the `Authorization: ApplePass <token>` header that Wallet sends on every web-service call, plus `apple_pass_registrations` (device⇄pass mappings, push tokens, last-updated for stale-cleanup).
@@ -147,19 +169,21 @@ Each day below corresponds to a git branch + a commit. Run `git log --oneline --
 
 ---
 
-## Likely next steps (Day 13+)
+## Likely next steps (Day 15+)
 
 Pick whatever the user finds most valuable next. None are dependencies on each other.
 
 | Idea | Effort | Value |
 |---|---|---|
-| **VPS migration + Phase B rename** (`stampdeck` → `onusclub` in code/infra) | half day | Required before pointing onusclub.com DNS. Quick once we commit to a date. |
-| **Stripe billing** for the premium gate | 1-2 days | Turn fake unlock into real revenue |
-| **Multi-program type support** (points, membership) | 1-2 days | Schema is already polymorphic — just need the business logic + UI. |
-| **Offsite backup upload** (S3 / Backblaze / second VPS) | 2-3 h | Day 10 backs up locally; an offsite copy survives VPS disk failure. |
+| **Stripe billing** for the premium gate | 1-2 days | Turn fake unlock into real revenue. User flagged this as the *"last part"* to do — Day 14 was the last feature before this. |
+| **Google Wallet production approval** (submit issuer to Google) | half day setup + 1-3 day Google review | Unlocks **any Google account** to save passes (not just allowlisted). Apple already production-ready. Blocked on marketing site privacy + ToS + logo (friend working on it). |
+| **Resend domain verification** for `sippzy.com` or `onusclub.com` | ~30 min setup + DNS propagation | Required to email real customers. Currently `EMAIL_FROM` is on Resend's test domain → only delivers to `sippzy.official@gmail.com`. |
+| **Backblaze B2 offsite backup** (code already ready, just needs setup) | 10 min user-side | Just sign up + 3 env lines on VPS. See `HANDOFF.md` for the recipe; deferred earlier on lack of business email. |
+| **Scan flow for points programs** | 2-3 h | Day 14 deferred this — scan + add-points currently needs amount-capture. Reusable form, just needs the input step in the scanner state machine. |
+| **Membership program type** (third type, paid subscription) | 2-3 days | Pairs naturally with Stripe — membership is essentially a subscription with a paid pass. Defer until billing is done. |
+| **Drop sippzy.com legacy Traefik routes** | 5 min code, 10 min deploy | Wait ~1-2 weeks of onusclub.com stability first. Old saved wallet passes still point at sippzy.com. |
 | **Owner magic-link email** (re-wire) | 1-2 h | Optional passwordless flow for owners who prefer it. |
-| **Smoke test in CI** | 2-3 h | Day 10 CI runs typecheck + build only. A MySQL service container would let us run the full 76-assertion smoke on every PR. |
-| **Wallet/card visual customization** | TBD | When the user is ready to design properly (see deferred above). |
+| **Wallet/card visual customization** | TBD | Deliberately deferred for a focused "designed properly with AI" project. |
 
 ---
 
