@@ -45,9 +45,28 @@ jobs:
 
   smoke:
     runs-on: ubuntu-latest
-    # A MySQL service runs alongside the job. Empty Apple / Google Wallet env
-    # = smoke gracefully degrades (the relevant endpoints 503 and the assertion
-    # block has a documented "skipped deep check" branch).
+    # Job-level env applies to every step. config.ts validates required vars
+    # at module-import time, so even the migration step (which transitively
+    # imports config.ts via db/pool.js) needs them set. Empty Apple / Google
+    # Wallet creds = endpoints 503 gracefully and smoke takes its documented
+    # "skipped deep check" branch.
+    env:
+      NODE_ENV: production
+      PORT: 4000
+      DATABASE_URL: mysql://stampdeck:ci_smoke_pass@127.0.0.1:3306/stampdeck
+      GOOGLE_WALLET_ISSUER_ID: "0"
+      GOOGLE_WALLET_SA_KEY_PATH: /tmp/nonexistent.json
+      JWT_SECRET: ci-jwt-secret-not-used-anywhere-real
+      BASE_URL_WEB: http://localhost:3001
+      BASE_URL_API: http://localhost:4000
+      RESEND_API_KEY: ""
+      EMAIL_FROM: OnUsClub <ci@example.com>
+      # APPLE_PASS_TYPE_ID needs to match what the smoke script sends
+      # (`pass.com.onusclub.loyalty`) so the auth-required Day 12 routes
+      # 401 (as smoke asserts) instead of 404'ing on the passType mismatch.
+      # The actual .p12 / WWDR are absent → buildPkPass returns null and
+      # the GET /apple-pass endpoint 503s. Smoke handles that branch.
+      APPLE_PASS_TYPE_ID: pass.com.onusclub.loyalty
     services:
       mysql:
         image: mysql:8.0
@@ -90,31 +109,10 @@ jobs:
 
       - name: Run migrations
         working-directory: apps/api
-        env:
-          DATABASE_URL: mysql://stampdeck:ci_smoke_pass@127.0.0.1:3306/stampdeck
         run: node dist/db/migrate.js
 
       - name: Start api (background)
         working-directory: apps/api
-        env:
-          NODE_ENV: production
-          PORT: 4000
-          DATABASE_URL: mysql://stampdeck:ci_smoke_pass@127.0.0.1:3306/stampdeck
-          # Wallet integrations left empty — smoke degrades to documented
-          # "skipped deep check" branches when credentials are absent.
-          GOOGLE_WALLET_ISSUER_ID: "0"
-          GOOGLE_WALLET_SA_KEY_PATH: /tmp/nonexistent.json
-          JWT_SECRET: ci-jwt-secret-not-used-anywhere-real
-          BASE_URL_WEB: http://localhost:3001
-          BASE_URL_API: http://localhost:4000
-          RESEND_API_KEY: ""
-          EMAIL_FROM: OnUsClub <ci@example.com>
-          # APPLE_PASS_TYPE_ID needs to match what the smoke script sends
-          # (`pass.com.onusclub.loyalty`) so the auth-required Day 12 routes
-          # 401 (as smoke asserts) instead of 404'ing on the passType mismatch.
-          # The actual .p12 / WWDR are absent → buildPkPass returns null and
-          # the GET /apple-pass endpoint 503s. Smoke handles that branch.
-          APPLE_PASS_TYPE_ID: pass.com.onusclub.loyalty
         run: |
           node dist/index.js > /tmp/api.log 2>&1 &
           echo $! > /tmp/api.pid
