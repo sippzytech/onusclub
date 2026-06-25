@@ -116,8 +116,10 @@ jobs:
 
       - name: Start api (background)
         working-directory: apps/api
-        env:
-          NODE_ENV: production
+        # NODE_ENV intentionally left unset → defaults to "development" in
+        # config.ts. The smoke script depends on dev-only behaviour like the
+        # magic link being returned inline in the auth response (gated on
+        # NODE_ENV != "production").
         run: |
           node dist/index.js > /tmp/api.log 2>&1 &
           echo $! > /tmp/api.pid
