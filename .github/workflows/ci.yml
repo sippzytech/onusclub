@@ -25,16 +25,16 @@ jobs:
 
       - name: Build shared package
         # shared has to be built first — apps/api/dist imports it as compiled JS.
-        run: pnpm --filter @stampdeck/shared run build
+        run: pnpm --filter @onusclub/shared run build
 
       - name: Typecheck (all workspaces)
         run: pnpm -r run typecheck
 
       - name: Build api
-        run: pnpm --filter @stampdeck/api run build
+        run: pnpm --filter @onusclub/api run build
 
       - name: Build web (Next.js)
-        run: pnpm --filter @stampdeck/web run build
+        run: pnpm --filter @onusclub/web run build
         env:
           # Build-time only — fakes so Next doesn't crash on missing values.
           # Runtime values come from the container env at boot.
@@ -42,3 +42,105 @@ jobs:
           NEXT_PUBLIC_WEB_BASE: http://localhost:3001
           NEXTAUTH_SECRET: ci-placeholder-not-used
           NEXTAUTH_URL: http://localhost:3001
+
+  smoke:
+    runs-on: ubuntu-latest
+    # A MySQL service runs alongside the job. Empty Apple / Google Wallet env
+    # = smoke gracefully degrades (the relevant endpoints 503 and the assertion
+    # block has a documented "skipped deep check" branch).
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: ci_root_pass
+          MYSQL_DATABASE: stampdeck
+          MYSQL_USER: stampdeck
+          MYSQL_PASSWORD: ci_smoke_pass
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -pci_root_pass"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.1.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build shared + api
+        # tsc only compiles .ts files. Copy non-TS asset folders into the
+        # matching dist/ paths so runtime resolution (which is dist-relative)
+        # finds them — same trick as the prod Dockerfile.
+        run: |
+          pnpm --filter @onusclub/shared run build
+          pnpm --filter @onusclub/api run build
+          cp -r apps/api/src/db/migrations apps/api/dist/db/migrations
+          cp -r apps/api/src/wallet-apple/assets apps/api/dist/wallet-apple/assets
+
+      - name: Run migrations
+        working-directory: apps/api
+        env:
+          DATABASE_URL: mysql://stampdeck:ci_smoke_pass@127.0.0.1:3306/stampdeck
+        run: node dist/db/migrate.js
+
+      - name: Start api (background)
+        working-directory: apps/api
+        env:
+          NODE_ENV: production
+          PORT: 4000
+          DATABASE_URL: mysql://stampdeck:ci_smoke_pass@127.0.0.1:3306/stampdeck
+          # Wallet integrations left empty — smoke degrades to documented
+          # "skipped deep check" branches when credentials are absent.
+          GOOGLE_WALLET_ISSUER_ID: "0"
+          GOOGLE_WALLET_SA_KEY_PATH: /tmp/nonexistent.json
+          JWT_SECRET: ci-jwt-secret-not-used-anywhere-real
+          BASE_URL_WEB: http://localhost:3001
+          BASE_URL_API: http://localhost:4000
+          RESEND_API_KEY: ""
+          EMAIL_FROM: OnUsClub <ci@example.com>
+          # APPLE_PASS_TYPE_ID needs to match what the smoke script sends
+          # (`pass.com.onusclub.loyalty`) so the auth-required Day 12 routes
+          # 401 (as smoke asserts) instead of 404'ing on the passType mismatch.
+          # The actual .p12 / WWDR are absent → buildPkPass returns null and
+          # the GET /apple-pass endpoint 503s. Smoke handles that branch.
+          APPLE_PASS_TYPE_ID: pass.com.onusclub.loyalty
+        run: |
+          node dist/index.js > /tmp/api.log 2>&1 &
+          echo $! > /tmp/api.pid
+
+      - name: Wait for api health
+        run: |
+          for i in {1..30}; do
+            if curl -sf http://localhost:4000/health > /dev/null; then
+              echo "api healthy after ${i}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "api never became healthy. logs:"
+          cat /tmp/api.log
+          exit 1
+
+      - name: Run smoke
+        env:
+          SMOKE_BASE: http://localhost:4000
+        run: pnpm --filter @onusclub/api run smoke
+
+      - name: Show api logs on failure
+        if: failure()
+        run: cat /tmp/api.log || true
+
+      - name: Stop api
+        if: always()
+        run: kill $(cat /tmp/api.pid) 2>/dev/null || true
