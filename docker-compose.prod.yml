@@ -55,6 +55,12 @@ services:
       APPLE_WWDR_PATH: ${APPLE_WWDR_PATH:-/secrets/apple/AppleWWDRCAG4.pem}
       APPLE_APNS_P12_PATH: ${APPLE_APNS_P12_PATH:-/secrets/apple/onusclub-push.p12}
       APPLE_APNS_P12_PASSWORD: ${APPLE_APNS_P12_PASSWORD:-}
+      # Preferred load path on Node 20: pre-extracted PEM cert + key. The
+      # .p12 + node-forge path is silently rejected by Node's TLS during the
+      # APNs client-cert handshake. Generate the PEMs once with openssl, set
+      # these to the resulting paths inside /secrets/.
+      APPLE_APNS_CERT_PEM_PATH: ${APPLE_APNS_CERT_PEM_PATH:-}
+      APPLE_APNS_KEY_PEM_PATH: ${APPLE_APNS_KEY_PEM_PATH:-}
     volumes:
       # VPS dir name kept as /docker/stampdeck/secrets/ — rename later when we
       # move the deploy dir (separate maintenance window).
