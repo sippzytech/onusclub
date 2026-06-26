@@ -98,10 +98,11 @@ async function openSession(): Promise<ClientHttp2Session | null> {
       key: creds.keyPem,
       passphrase: creds.keyPassphrase,
     });
-    // Wait for the TLS handshake + HTTP/2 SETTINGS exchange to complete
-    // before returning the session. Sending a request on an unconnected
-    // session is what was causing "pending stream has been canceled" on
-    // the very first push after credentials loaded.
+    // Wait for the TLS handshake + HTTP/2 SETTINGS to complete OR for the
+    // initial 'error' event before returning. We DON'T treat the error as
+    // fatal — Apple's APNs sometimes emits a transient error during the
+    // handshake that the session recovers from once the request is sent.
+    // The per-request retry path in sendApnsPush picks up real failures.
     let settled = false;
     const done = (val: ClientHttp2Session | null): void => {
       if (settled) return;
@@ -110,11 +111,15 @@ async function openSession(): Promise<ClientHttp2Session | null> {
     };
     s.once("connect", () => done(s));
     s.once("error", (err) => {
-      logger.warn({ err: err.message }, "apns session error during connect");
-      done(null);
+      logger.warn(
+        { err: err.message || "(no message)" },
+        "apns session emitted error during connect — sending request anyway"
+      );
+      // Return the session, not null. If the request fails too, tryOnce
+      // will catch it and the caller retries on a fresh session.
+      done(s);
     });
     s.once("close", () => {
-      // Force a fresh connect on the next push.
       if (session === s) session = null;
     });
     // Belt-and-braces timeout — APNs usually connects in <500ms.
