@@ -24,7 +24,6 @@ const APNS_HOST = "https://api.push.apple.com";
 interface ApnsCredentials {
   certPem: Buffer;
   keyPem: Buffer;
-  keyPassphrase: string;
 }
 
 let cachedCreds: ApnsCredentials | null = null;
@@ -48,14 +47,18 @@ function extractPemPair(
   ]?.[0];
   if (!keyBag?.key) throw new Error("apns p12 missing private key");
 
-  const encryptedKey = forge.pki.encryptRsaPrivateKey(
-    keyBag.key as forge.pki.rsa.PrivateKey,
-    password,
-    { algorithm: "aes256" }
+  // Emit the key as UNENCRYPTED PEM. node-forge's encryptRsaPrivateKey wraps
+  // the key in a format Node's OpenSSL silently chokes on during TLS init
+  // (empty error event, then session destroyed). The key is already in
+  // process memory either way — re-encrypting it just makes the file
+  // unreadable without the passphrase, which doesn't apply when it never
+  // touches disk.
+  const keyPem = forge.pki.privateKeyToPem(
+    keyBag.key as forge.pki.rsa.PrivateKey
   );
   return {
     certPem: Buffer.from(forge.pki.certificateToPem(certBag.cert), "utf8"),
-    keyPem: Buffer.from(encryptedKey, "utf8"),
+    keyPem: Buffer.from(keyPem, "utf8"),
   };
 }
 
@@ -72,11 +75,7 @@ async function loadCreds(): Promise<ApnsCredentials | null> {
   try {
     const buf = await readFile(env.APPLE_APNS_P12_PATH);
     const { certPem, keyPem } = extractPemPair(buf, env.APPLE_APNS_P12_PASSWORD);
-    cachedCreds = {
-      certPem,
-      keyPem,
-      keyPassphrase: env.APPLE_APNS_P12_PASSWORD,
-    };
+    cachedCreds = { certPem, keyPem };
     logger.info({ path: env.APPLE_APNS_P12_PATH }, "apns credentials loaded");
     return cachedCreds;
   } catch (err) {
@@ -96,7 +95,6 @@ async function openSession(): Promise<ClientHttp2Session | null> {
     const s = connect(APNS_HOST, {
       cert: creds.certPem,
       key: creds.keyPem,
-      passphrase: creds.keyPassphrase,
     });
     // Wait for the TLS handshake + HTTP/2 SETTINGS to complete OR for the
     // initial 'error' event before returning. We DON'T treat the error as
@@ -169,13 +167,27 @@ function tryOnce(
   passTypeIdentifier: string
 ): Promise<PushAttempt> {
   return new Promise<PushAttempt>((resolve) => {
-    const req = sess.request({
-      ":method": "POST",
-      ":path": `/3/device/${pushToken}`,
-      "apns-topic": passTypeIdentifier,
-      "apns-push-type": "background",
-      "apns-priority": "5",
-    });
+    let req;
+    try {
+      req = sess.request({
+        ":method": "POST",
+        ":path": `/3/device/${pushToken}`,
+        "apns-topic": passTypeIdentifier,
+        "apns-push-type": "background",
+        "apns-priority": "5",
+      });
+    } catch (err) {
+      // request() throws synchronously when called on a destroyed session
+      // (ERR_HTTP2_INVALID_SESSION). Treat as retryable so the caller
+      // re-opens a fresh session and tries once more.
+      resolve({
+        ok: false,
+        status: 0,
+        reason: (err as Error).message || "session unusable",
+        retryable: true,
+      });
+      return;
+    }
     let status = 0;
     let body = "";
 
