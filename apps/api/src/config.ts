@@ -28,6 +28,11 @@ const EnvSchema = z.object({
   // still download but won't auto-update on the device.
   APPLE_APNS_P12_PATH: z.string().optional().default(""),
   APPLE_APNS_P12_PASSWORD: z.string().optional().default(""),
+  // Preferred path on Node 20: pre-extracted PEM cert + key files. Set these
+  // and the apns client skips the .p12 + node-forge dance (which Node 20's
+  // OpenSSL silently rejects during the TLS client-cert handshake).
+  APPLE_APNS_CERT_PEM_PATH: z.string().optional().default(""),
+  APPLE_APNS_KEY_PEM_PATH: z.string().optional().default(""),
 });
 
 export type Env = z.infer<typeof EnvSchema>;

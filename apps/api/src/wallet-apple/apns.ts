@@ -65,8 +65,44 @@ function extractPemPair(
 async function loadCreds(): Promise<ApnsCredentials | null> {
   if (cachedCreds) return cachedCreds;
   if (credsLoadError) return null;
+
+  // Preferred path: read pre-extracted PEM cert + key directly. node-forge's
+  // PEM output is rejected silently by Node 20's OpenSSL during the TLS
+  // client-cert handshake (empty 'error' event, session destroyed). The
+  // user generates these once on the VPS with:
+  //   openssl pkcs12 -in onusclub-push.p12 -clcerts -nokeys -legacy \
+  //     -out push-cert.pem -passin "pass:..."
+  //   openssl pkcs12 -in onusclub-push.p12 -nocerts -nodes -legacy \
+  //     -out push-key.pem -passin "pass:..."
+  // then sets APPLE_APNS_CERT_PEM_PATH + APPLE_APNS_KEY_PEM_PATH in .env.
+  if (env.APPLE_APNS_CERT_PEM_PATH && env.APPLE_APNS_KEY_PEM_PATH) {
+    try {
+      const [certPem, keyPem] = await Promise.all([
+        readFile(env.APPLE_APNS_CERT_PEM_PATH),
+        readFile(env.APPLE_APNS_KEY_PEM_PATH),
+      ]);
+      cachedCreds = { certPem, keyPem };
+      logger.info(
+        { cert: env.APPLE_APNS_CERT_PEM_PATH, key: env.APPLE_APNS_KEY_PEM_PATH },
+        "apns credentials loaded (PEM)"
+      );
+      return cachedCreds;
+    } catch (err) {
+      credsLoadError = (err as Error).message;
+      logger.warn(
+        { err: credsLoadError },
+        "apns: failed to load PEM cert/key — pushes disabled"
+      );
+      return null;
+    }
+  }
+
+  // Fallback: extract from .p12 via node-forge. Known to fail TLS handshake
+  // on Node 20 / Alpine. Kept for backwards compatibility but the PEM path
+  // above is the recommended setup.
   if (!env.APPLE_APNS_P12_PATH || !env.APPLE_APNS_P12_PASSWORD) {
-    credsLoadError = "APPLE_APNS_P12_PATH / APPLE_APNS_P12_PASSWORD not set";
+    credsLoadError =
+      "neither APPLE_APNS_CERT_PEM_PATH+APPLE_APNS_KEY_PEM_PATH nor APPLE_APNS_P12_PATH+APPLE_APNS_P12_PASSWORD set";
     logger.warn(
       "apns: not configured — pass live-update pushes disabled (passes will still download)"
     );
@@ -76,7 +112,10 @@ async function loadCreds(): Promise<ApnsCredentials | null> {
     const buf = await readFile(env.APPLE_APNS_P12_PATH);
     const { certPem, keyPem } = extractPemPair(buf, env.APPLE_APNS_P12_PASSWORD);
     cachedCreds = { certPem, keyPem };
-    logger.info({ path: env.APPLE_APNS_P12_PATH }, "apns credentials loaded");
+    logger.info(
+      { path: env.APPLE_APNS_P12_PATH },
+      "apns credentials loaded (p12 — may fail TLS, prefer PEM)"
+    );
     return cachedCreds;
   } catch (err) {
     credsLoadError = (err as Error).message;
