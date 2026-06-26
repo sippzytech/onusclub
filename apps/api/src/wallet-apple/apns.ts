@@ -131,16 +131,19 @@ async function openSession(): Promise<ClientHttp2Session | null> {
   const creds = await loadCreds();
   if (!creds) return null;
   return new Promise<ClientHttp2Session | null>((resolve) => {
+    // Force IPv4. Many container networks (including this Docker setup
+    // on Hostinger) get IPv6 routes to Apple's APNs servers that black-
+    // hole — DNS returns AAAA records but the SYN never gets a reply.
+    // Node's TLS/http2 doesn't automatically Happy-Eyeballs over to v4
+    // for client-cert sessions, so we just skip v6 entirely.
+    //
+    // `family` IS valid at runtime (passes through to tls.connect) but
+    // isn't in http2's typed SecureClientSessionOptions — hence the cast.
     const s = connect(APNS_HOST, {
       cert: creds.certPem,
       key: creds.keyPem,
-      // Force IPv4. Many container networks (including this Docker setup
-      // on Hostinger) get IPv6 routes to Apple's APNs servers that black-
-      // hole — DNS returns AAAA records but the SYN never gets a reply.
-      // Node's TLS/http2 doesn't automatically Happy-Eyeballs over to v4
-      // for client-cert sessions, so we just skip v6 entirely.
       family: 4,
-    });
+    } as Parameters<typeof connect>[1]);
     // Wait for the TLS handshake + HTTP/2 SETTINGS to complete OR for the
     // initial 'error' event before returning. We DON'T treat the error as
     // fatal — Apple's APNs sometimes emits a transient error during the
