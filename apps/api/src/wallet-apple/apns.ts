@@ -89,23 +89,56 @@ async function loadCreds(): Promise<ApnsCredentials | null> {
   }
 }
 
-async function getSession(): Promise<ClientHttp2Session | null> {
-  if (session && !session.closed && !session.destroyed) return session;
+async function openSession(): Promise<ClientHttp2Session | null> {
   const creds = await loadCreds();
   if (!creds) return null;
-  session = connect(APNS_HOST, {
-    cert: creds.certPem,
-    key: creds.keyPem,
-    passphrase: creds.keyPassphrase,
+  return new Promise<ClientHttp2Session | null>((resolve) => {
+    const s = connect(APNS_HOST, {
+      cert: creds.certPem,
+      key: creds.keyPem,
+      passphrase: creds.keyPassphrase,
+    });
+    // Wait for the TLS handshake + HTTP/2 SETTINGS exchange to complete
+    // before returning the session. Sending a request on an unconnected
+    // session is what was causing "pending stream has been canceled" on
+    // the very first push after credentials loaded.
+    let settled = false;
+    const done = (val: ClientHttp2Session | null): void => {
+      if (settled) return;
+      settled = true;
+      resolve(val);
+    };
+    s.once("connect", () => done(s));
+    s.once("error", (err) => {
+      logger.warn({ err: err.message }, "apns session error during connect");
+      done(null);
+    });
+    s.once("close", () => {
+      // Force a fresh connect on the next push.
+      if (session === s) session = null;
+    });
+    // Belt-and-braces timeout — APNs usually connects in <500ms.
+    setTimeout(() => done(s), 3000).unref();
   });
-  session.on("error", (err) => {
-    logger.warn({ err: err.message }, "apns session error");
-  });
-  session.on("close", () => {
-    // Force a fresh connect on the next push.
-    session = null;
-  });
-  return session;
+}
+
+async function getSession(): Promise<ClientHttp2Session | null> {
+  if (session && !session.closed && !session.destroyed) return session;
+  const fresh = await openSession();
+  if (fresh) session = fresh;
+  return fresh;
+}
+
+/** Force the next push to open a fresh session. Used by the retry path. */
+function dropSession(): void {
+  if (session && !session.closed) {
+    try {
+      session.close();
+    } catch {
+      // ignore
+    }
+  }
+  session = null;
 }
 
 export interface ApnsResult {
@@ -115,26 +148,22 @@ export interface ApnsResult {
   reason?: string;
 }
 
-/**
- * Send a Wallet pass-update push to a single device. Resolves to a result —
- * never throws. APNs status semantics:
- *   200 = delivered
- *   410 = device deregistered (we should clean up the row)
- *   401/403 = auth issue (cert problem)
- *   400 = malformed (bug in our code)
- *   429 = rate-limited
- *   5xx = transient APNs issue
- */
-export async function sendApnsPush(
+interface PushAttempt {
+  ok: boolean;
+  status: number;
+  reason?: string;
+  // True when the failure is a transient session/stream error worth
+  // retrying on a fresh connection. False for HTTP-level rejections
+  // (which would just fail the same way on retry).
+  retryable: boolean;
+}
+
+function tryOnce(
+  sess: ClientHttp2Session,
   pushToken: string,
   passTypeIdentifier: string
-): Promise<ApnsResult> {
-  const sess = await getSession();
-  if (!sess) {
-    return { pushToken, ok: false, status: 0, reason: "apns not configured" };
-  }
-
-  return new Promise<ApnsResult>((resolve) => {
+): Promise<PushAttempt> {
+  return new Promise<PushAttempt>((resolve) => {
     const req = sess.request({
       ":method": "POST",
       ":path": `/3/device/${pushToken}`,
@@ -154,7 +183,7 @@ export async function sendApnsPush(
     });
     req.on("end", () => {
       if (status === 200) {
-        resolve({ pushToken, ok: true, status });
+        resolve({ ok: true, status, retryable: false });
         return;
       }
       let reason: string | undefined;
@@ -163,15 +192,60 @@ export async function sendApnsPush(
       } catch {
         reason = body || undefined;
       }
-      resolve({ pushToken, ok: false, status, reason });
+      resolve({ ok: false, status, reason, retryable: false });
     });
     req.on("error", (err) => {
-      resolve({ pushToken, ok: false, status: 0, reason: err.message });
+      // Stream-level errors (cancellation, connection died mid-request) are
+      // worth a single retry on a fresh session. Status 0 = we never got a
+      // response.
+      const msg = err.message || "";
+      const retryable =
+        msg.includes("canceled") ||
+        msg.includes("CANCEL") ||
+        msg.includes("GOAWAY") ||
+        msg.includes("ECONNRESET") ||
+        msg.includes("closed");
+      resolve({ ok: false, status: 0, reason: msg || "stream error", retryable });
     });
-
-    // Wallet pass-update push payload is just {}
     req.end("{}");
   });
+}
+
+/**
+ * Send a Wallet pass-update push to a single device. Resolves to a result —
+ * never throws. Retries once with a fresh session on transient HTTP/2 stream
+ * errors (the kind APNs throws when an idle session is being recycled).
+ *
+ * APNs status semantics:
+ *   200 = delivered
+ *   410 = device deregistered (we should clean up the row)
+ *   401/403 = auth issue (cert problem)
+ *   400 = malformed (bug in our code)
+ *   429 = rate-limited
+ *   5xx = transient APNs issue
+ */
+export async function sendApnsPush(
+  pushToken: string,
+  passTypeIdentifier: string
+): Promise<ApnsResult> {
+  let sess = await getSession();
+  if (!sess) {
+    return { pushToken, ok: false, status: 0, reason: "apns not configured" };
+  }
+  let attempt = await tryOnce(sess, pushToken, passTypeIdentifier);
+  if (!attempt.ok && attempt.retryable) {
+    // Toss the bad session and try a fresh one. Don't retry again if this
+    // also fails — keep the result so the caller sees the real reason.
+    dropSession();
+    sess = await getSession();
+    if (sess) attempt = await tryOnce(sess, pushToken, passTypeIdentifier);
+  }
+  return {
+    pushToken,
+    ok: attempt.ok,
+    status: attempt.status,
+    reason: attempt.reason,
+  };
 }
 
 /**
