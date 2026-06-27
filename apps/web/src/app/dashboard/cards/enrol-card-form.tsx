@@ -63,10 +63,16 @@ export function EnrolCardForm({
           className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm"
         >
           {programs.map((p) => {
-            const cfg = p.configJson as { stamps_required?: number } | null;
+            const cfg = p.configJson as
+              | { stamps_required?: number; points_for_reward?: number }
+              | null;
+            const target =
+              p.programType === "points"
+                ? `${cfg?.points_for_reward ?? "?"} points`
+                : `${cfg?.stamps_required ?? "?"} stamps`;
             return (
               <option key={p.id} value={p.id}>
-                {p.name} — {cfg?.stamps_required ?? "?"} stamps → {p.rewardText}
+                {p.name} — {target} → {p.rewardText}
               </option>
             );
           })}
