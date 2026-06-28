@@ -298,15 +298,48 @@ export type WalletLink = z.infer<typeof WalletLink>;
 
 export const ScanInput = z.object({
   qrToken: z.string().length(64),
-  // "auto" stamps when below threshold, redeems when at threshold.
-  action: z.enum(["auto", "stamp", "redeem"]).default("auto"),
+  // Stamp cards: "auto" stamps when below threshold, redeems when at threshold.
+  // Points cards: "auto" returns needs_amount (UI must collect the bill
+  // amount before re-calling with action='add-points' + amount).
+  // "add-points" + amount is the points equivalent of "stamp" for stamp cards.
+  action: z.enum(["auto", "stamp", "redeem", "add-points"]).default("auto"),
+  // Required when action='add-points'. Bill amount in euros; the api computes
+  // points = floor(amount × points_per_euro).
+  amount: z.number().positive().max(100_000).optional(),
 });
 export type ScanInput = z.infer<typeof ScanInput>;
 
-export const ScanResult = z.object({
+// Discriminated union: "applied" = something happened, "needs_amount" = the
+// scanner UI needs to collect the bill amount from the merchant before
+// re-calling scan with action='add-points'. Points cards on action='auto'
+// always return needs_amount.
+export const ScanResultApplied = z.object({
+  status: z.literal("applied"),
   detail: CardDetail,
-  appliedAction: z.enum(["stamp", "redeem"]),
+  appliedAction: z.enum(["stamp", "redeem", "add-points"]),
 });
+export type ScanResultApplied = z.infer<typeof ScanResultApplied>;
+
+export const ScanResultNeedsAmount = z.object({
+  status: z.literal("needs_amount"),
+  cardId: z.string(),
+  programType: z.literal("points"),
+  customerName: z.string().nullable(),
+  programName: z.string(),
+  rewardText: z.string(),
+  currentBalance: z.number().int().nonnegative(),
+  pointsForReward: z.number().int().positive(),
+  pointsPerEuro: z.number().positive(),
+  // True when currentBalance >= pointsForReward, so the UI can show a
+  // "Redeem reward" button alongside the "Add transaction" input.
+  eligibleToRedeem: z.boolean(),
+});
+export type ScanResultNeedsAmount = z.infer<typeof ScanResultNeedsAmount>;
+
+export const ScanResult = z.discriminatedUnion("status", [
+  ScanResultApplied,
+  ScanResultNeedsAmount,
+]);
 export type ScanResult = z.infer<typeof ScanResult>;
 
 // ---------- Public per-merchant signup (customer-facing QR flow) ----------

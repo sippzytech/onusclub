@@ -1,45 +1,61 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import type { Html5Qrcode } from "html5-qrcode";
 import type { ScanResult } from "@onusclub/shared";
 
 const SAME_TOKEN_COOLDOWN_MS = 30_000;
 
+// State machine: idle → starting → scanning → detecting → (result | awaiting_amount | warning | error)
 type Status =
   | { kind: "idle" }
   | { kind: "starting" }
   | { kind: "scanning" }
   | { kind: "detecting"; token: string }
   | { kind: "result"; result: LastResult }
+  | { kind: "awaiting_amount"; card: PointsCardScan; token: string; busy: boolean; err: string | null }
   | { kind: "warning"; message: string; token: string }
   | { kind: "error"; message: string };
 
 interface LastResult {
   customerName: string | null;
   programName: string;
-  appliedAction: "stamp" | "redeem";
-  stampsCurrent: number;
-  stampsRequired: number;
   rewardText: string;
+  // Unified display fields — populated from either stamps or points based on
+  // appliedAction. For 'add-points' we show "+N points (€X transaction)" etc.
+  appliedAction: "stamp" | "redeem" | "add-points";
+  current: number;
+  target: number;
+  unit: "stamps" | "points";
+  pointsAdded?: number;       // only for add-points
+  amountCharged?: number;     // only for add-points
   token: string;
 }
 
+interface PointsCardScan {
+  cardId: string;
+  customerName: string | null;
+  programName: string;
+  rewardText: string;
+  currentBalance: number;
+  pointsForReward: number;
+  pointsPerEuro: number;
+  eligibleToRedeem: boolean;
+}
+
 export function ScanClient(): JSX.Element {
-  const containerId = "stampdeck-qr-reader";
+  const containerId = "onusclub-qr-reader";
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const lastSubmittedAt = useRef<number>(0);
   const lastSubmittedToken = useRef<string>("");
   const [status, setStatus] = useState<Status>({ kind: "idle" });
   const [running, setRunning] = useState(false);
+  const [amount, setAmount] = useState<string>("");
 
   useEffect(() => {
     return () => {
       const inst = scannerRef.current;
       if (!inst) return;
-      // html5-qrcode states: 1=NOT_STARTED, 2=SCANNING, 3=PAUSED.
-      // Calling stop() on a NOT_STARTED scanner throws AND console.errors,
-      // which Next.js turns into a full-page "Application error" overlay.
       void teardown(inst);
     };
   }, []);
@@ -47,17 +63,16 @@ export function ScanClient(): JSX.Element {
   async function teardown(inst: Html5Qrcode): Promise<void> {
     try {
       const state = inst.getState();
-      // 2 = SCANNING, 3 = PAUSED. Only these two states accept stop().
       if (state === 2 || state === 3) {
         await inst.stop().catch(() => undefined);
       }
     } catch {
-      // getState() shouldn't throw, but be defensive.
+      /* ignore */
     }
     try {
       inst.clear();
     } catch {
-      // ignore
+      /* ignore */
     }
   }
 
@@ -102,10 +117,7 @@ export function ScanClient(): JSX.Element {
   }
 
   async function onDecoded(qrToken: string): Promise<void> {
-    if (!/^[0-9a-f]{64}$/i.test(qrToken)) {
-      // ignore non-Stampdeck QR codes silently — keeps the camera scanning.
-      return;
-    }
+    if (!/^[0-9a-f]{64}$/i.test(qrToken)) return;
     const now = Date.now();
     if (
       qrToken === lastSubmittedToken.current &&
@@ -117,64 +129,143 @@ export function ScanClient(): JSX.Element {
     lastSubmittedAt.current = now;
 
     setStatus({ kind: "detecting", token: qrToken });
+    await submitScan(qrToken, { action: "auto" });
+  }
 
+  /**
+   * Single network call helper. Used both for the initial auto-dispatch and
+   * for the follow-up calls after the merchant types an amount or hits
+   * "Redeem reward" on a points card.
+   */
+  async function submitScan(
+    qrToken: string,
+    body: { action: "auto" | "stamp" | "redeem" | "add-points"; amount?: number }
+  ): Promise<void> {
     const res = await fetch("/api/scan", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ qrToken, action: "auto" }),
+      body: JSON.stringify({ qrToken, ...body }),
     });
 
     if (res.status === 409) {
-      // Server enforces "once per day per card" via the scan path. Show a
-      // friendly amber notice — not a red error.
-      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      const b = (await res.json().catch(() => ({}))) as { error?: string };
       setStatus({
         kind: "warning",
-        message: body.error ?? "Already stamped today. Try again tomorrow.",
+        message: b.error ?? "Already stamped today. Try again tomorrow.",
         token: qrToken,
       });
       return;
     }
-
     if (!res.ok) {
-      const body = (await res.json().catch(() => ({}))) as { error?: string };
-      setStatus({ kind: "error", message: body.error ?? "Scan failed" });
+      const b = (await res.json().catch(() => ({}))) as { error?: string };
+      setStatus({ kind: "error", message: b.error ?? "Scan failed" });
       return;
     }
 
     const data = (await res.json()) as ScanResult;
-    const state = data.detail.card.cardState as { stamps_current: number };
+
+    if (data.status === "needs_amount") {
+      // Points card scanned with action='auto' — UI must collect the bill
+      // amount (or the merchant can immediately redeem if eligible).
+      setAmount("");
+      setStatus({
+        kind: "awaiting_amount",
+        token: qrToken,
+        busy: false,
+        err: null,
+        card: {
+          cardId: data.cardId,
+          customerName: data.customerName,
+          programName: data.programName,
+          rewardText: data.rewardText,
+          currentBalance: data.currentBalance,
+          pointsForReward: data.pointsForReward,
+          pointsPerEuro: data.pointsPerEuro,
+          eligibleToRedeem: data.eligibleToRedeem,
+        },
+      });
+      return;
+    }
+
+    // status === "applied" — render success card
+    const detail = data.detail;
+    const isPoints = detail.card.programType === "points";
+    const rawState = detail.card.cardState as Record<string, number | undefined>;
+    const current = isPoints
+      ? rawState.points_current ?? 0
+      : rawState.stamps_current ?? 0;
+    const target = isPoints
+      ? detail.card.pointsForReward ?? 0
+      : detail.card.stampsRequired;
+
+    // For add-points we want to display how many points were just added and
+    // the bill amount. Both are in the most recent points_add event.
+    let pointsAdded: number | undefined;
+    let amountCharged: number | undefined;
+    if (data.appliedAction === "add-points") {
+      const latest = detail.events.find((e) => e.eventType === "points_add");
+      const d = latest?.deltaJson as
+        | { points_earned?: number; amount_euros?: number }
+        | undefined;
+      pointsAdded = d?.points_earned;
+      amountCharged = d?.amount_euros;
+    }
+
     setStatus({
       kind: "result",
       result: {
-        customerName: data.detail.card.customerName,
-        programName: data.detail.card.programName,
+        customerName: detail.card.customerName,
+        programName: detail.card.programName,
+        rewardText: detail.card.rewardText,
         appliedAction: data.appliedAction,
-        stampsCurrent: state.stamps_current,
-        stampsRequired: data.detail.card.stampsRequired,
-        rewardText: data.detail.card.rewardText,
+        current,
+        target,
+        unit: isPoints ? "points" : "stamps",
+        pointsAdded,
+        amountCharged,
         token: qrToken,
       },
     });
   }
 
+  async function onAmountSubmit(e: FormEvent<HTMLFormElement>): Promise<void> {
+    e.preventDefault();
+    if (status.kind !== "awaiting_amount") return;
+    const num = Number(amount);
+    if (!num || num <= 0) {
+      setStatus({ ...status, err: "Enter a positive amount in euros" });
+      return;
+    }
+    setStatus({ ...status, busy: true, err: null });
+    await submitScan(status.token, { action: "add-points", amount: num });
+  }
+
+  async function onRedeemClick(): Promise<void> {
+    if (status.kind !== "awaiting_amount") return;
+    setStatus({ ...status, busy: true, err: null });
+    await submitScan(status.token, { action: "redeem" });
+  }
+
   function clearResult(): void {
     setStatus(running ? { kind: "scanning" } : { kind: "idle" });
+    setAmount("");
   }
 
   const cameraVisible = running || status.kind === "starting";
-  // Frame styling driven by state.
   let frameClass = "border-gray-300";
   if (status.kind === "scanning")
     frameClass = "border-blue-500 shadow-[0_0_0_4px_rgba(59,130,246,0.15)] animate-pulse";
   if (status.kind === "detecting") frameClass = "border-amber-500";
-  if (status.kind === "result")
-    frameClass =
-      status.result.appliedAction === "redeem"
-        ? "border-emerald-500"
-        : "border-emerald-400";
+  if (status.kind === "awaiting_amount") frameClass = "border-indigo-500";
+  if (status.kind === "result") frameClass = "border-emerald-500";
   if (status.kind === "warning") frameClass = "border-amber-500";
   if (status.kind === "error") frameClass = "border-red-500";
+
+  // Live preview of points-from-amount on the awaiting_amount form.
+  const previewPoints =
+    status.kind === "awaiting_amount" && Number(amount) > 0
+      ? Math.floor(Number(amount) * status.card.pointsPerEuro)
+      : null;
 
   return (
     <div className="space-y-4">
@@ -222,10 +313,84 @@ export function ScanClient(): JSX.Element {
         {status.kind === "detecting" ? (
           <span className="inline-flex items-center gap-2 text-sm text-amber-700">
             <span className="h-2 w-2 rounded-full bg-amber-500 animate-pulse" />
-            Recording stamp…
+            Reading card…
           </span>
         ) : null}
       </div>
+
+      {/* Points card needs the merchant to enter the bill amount */}
+      {status.kind === "awaiting_amount" ? (
+        <div className="rounded-md border border-indigo-200 bg-indigo-50 p-4 space-y-3">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-xs uppercase tracking-wide text-indigo-700 font-medium">
+                Points card
+              </p>
+              <p className="text-lg font-medium text-indigo-900 mt-1">
+                {status.card.customerName ?? "(no name)"} · {status.card.programName}
+              </p>
+              <p className="text-sm text-indigo-800 mt-1 tabular-nums">
+                Balance: <strong>{status.card.currentBalance}</strong> /{" "}
+                {status.card.pointsForReward} points
+                {" · "}
+                {status.card.pointsPerEuro} pt per €1
+                {" · "}reward: {status.card.rewardText}
+              </p>
+            </div>
+            <button
+              onClick={clearResult}
+              className="text-xs underline text-indigo-900 hover:no-underline shrink-0"
+            >
+              Cancel
+            </button>
+          </div>
+          <form onSubmit={(e) => void onAmountSubmit(e)} className="flex flex-wrap items-end gap-3">
+            <div>
+              <label className="block text-xs font-medium text-indigo-900">
+                Transaction amount (€)
+              </label>
+              <input
+                type="number"
+                step="0.01"
+                min={0.01}
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                placeholder="25.00"
+                autoFocus
+                className="mt-1 block w-40 rounded-md border border-indigo-300 px-3 py-2 text-sm tabular-nums bg-white"
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={status.busy || !amount}
+              className="rounded-md bg-indigo-700 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-800 disabled:opacity-50"
+            >
+              {status.busy ? "Adding…" : "Add transaction"}
+            </button>
+            {previewPoints !== null ? (
+              <span className="text-xs text-indigo-800">
+                = <span className="font-medium">{previewPoints}</span> points
+              </span>
+            ) : null}
+            <button
+              type="button"
+              onClick={() => void onRedeemClick()}
+              disabled={status.busy || !status.card.eligibleToRedeem}
+              title={
+                status.card.eligibleToRedeem
+                  ? "Customer has enough points to redeem"
+                  : `Need ${status.card.pointsForReward - status.card.currentBalance} more points`
+              }
+              className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-40 ml-auto"
+            >
+              {status.busy ? "…" : "Redeem reward"}
+            </button>
+          </form>
+          {status.err ? (
+            <p className="text-xs text-red-700">{status.err}</p>
+          ) : null}
+        </div>
+      ) : null}
 
       {status.kind === "warning" ? (
         <div className="rounded-md border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900 flex items-start justify-between gap-3">
@@ -255,34 +420,36 @@ export function ScanClient(): JSX.Element {
       ) : null}
 
       {status.kind === "result" ? (
-        <div
-          className={
-            "rounded-md border p-4 flex items-start justify-between gap-3 " +
-            (status.result.appliedAction === "redeem"
-              ? "border-emerald-200 bg-emerald-50"
-              : "border-emerald-200 bg-emerald-50")
-          }
-        >
+        <div className="rounded-md border border-emerald-200 bg-emerald-50 p-4 flex items-start justify-between gap-3">
           <div>
             <p className="text-xs uppercase tracking-wide text-emerald-700 font-medium">
               {status.result.appliedAction === "redeem"
                 ? "Reward redeemed"
+                : status.result.appliedAction === "add-points"
+                ? `+${status.result.pointsAdded ?? "?"} points${
+                    status.result.amountCharged !== undefined
+                      ? ` (€${status.result.amountCharged.toFixed(2)})`
+                      : ""
+                  }`
                 : "+1 stamp"}
             </p>
             <p className="text-lg font-medium text-emerald-900 mt-1">
               {status.result.customerName ?? "(no name)"} ·{" "}
               {status.result.programName}
             </p>
-            <p className="text-sm text-emerald-800 mt-2">
+            <p className="text-sm text-emerald-800 mt-2 tabular-nums">
               {status.result.appliedAction === "redeem" ? (
                 <>
-                  Reward unlocked: <strong>{status.result.rewardText}</strong>. Counter
-                  back to 0.
+                  Reward unlocked: <strong>{status.result.rewardText}</strong>.{" "}
+                  Now at {status.result.current} / {status.result.target}{" "}
+                  {status.result.unit}.
                 </>
               ) : (
                 <>
-                  Now at {status.result.stampsCurrent}/{status.result.stampsRequired} ·{" "}
-                  {status.result.stampsRequired - status.result.stampsCurrent} to go
+                  Now at {status.result.current} / {status.result.target}{" "}
+                  {status.result.unit} ·{" "}
+                  {Math.max(0, status.result.target - status.result.current)}{" "}
+                  to go
                 </>
               )}
             </p>
@@ -297,8 +464,8 @@ export function ScanClient(): JSX.Element {
       ) : null}
 
       <p className="text-xs text-gray-500">
-        Each pass can only be stamped once per day — a safety net so an
-        accidental double-scan doesn&apos;t over-stamp.
+        Stamp cards: one stamp per day per card (anti double-scan).
+        Points cards: enter the bill amount when prompted.
       </p>
     </div>
   );

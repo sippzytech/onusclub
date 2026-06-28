@@ -274,9 +274,11 @@ async function main(): Promise<void> {
     jwt
   );
   const scan1 = await call<{
+    status: "applied" | "needs_amount";
     detail: { card: { cardState: { stamps_current: number } } };
-    appliedAction: "stamp" | "redeem";
+    appliedAction: "stamp" | "redeem" | "add-points";
   }>("POST", "/v1/scan", { qrToken: scanCard.qrToken, action: "auto" }, jwt);
+  assert(scan1.status === "applied", `expected applied, got ${scan1.status}`);
   assert(scan1.appliedAction === "stamp", `expected stamp, got ${scan1.appliedAction}`);
   assert(
     scan1.detail.card.cardState.stamps_current === 1,
@@ -299,9 +301,14 @@ async function main(): Promise<void> {
 
   console.log("→ scan with auto at threshold should redeem (not day-capped)");
   const redeemViaScan = await call<{
+    status: "applied" | "needs_amount";
     detail: { card: { cardState: { stamps_current: number; rewards_redeemed: number } } };
-    appliedAction: "stamp" | "redeem";
+    appliedAction: "stamp" | "redeem" | "add-points";
   }>("POST", "/v1/scan", { qrToken: scanCard.qrToken, action: "auto" }, jwt);
+  assert(
+    redeemViaScan.status === "applied",
+    `expected applied, got ${redeemViaScan.status}`
+  );
   assert(
     redeemViaScan.appliedAction === "redeem",
     `expected redeem, got ${redeemViaScan.appliedAction}`
@@ -1148,6 +1155,112 @@ async function main(): Promise<void> {
   assert(ptsView.programType === "points", `public view programType wrong: ${ptsView.programType}`);
   assert(ptsView.unitLabel === "points", `public view unitLabel wrong: ${ptsView.unitLabel}`);
   assert(ptsView.targetValue === 100, `public view targetValue wrong: ${ptsView.targetValue}`);
+
+  // ---------- Day 15: scan flow for points programs ----------
+
+  // First enrol a fresh points card so we start from a known 0 balance.
+  console.log("→ enrol a fresh card on the points program for scan testing");
+  const scanPtsCustomer = await call<{ id: string }>(
+    "POST",
+    "/v1/customers",
+    { name: "Scan Points Customer", phone: "+31611111200" },
+    jwt
+  );
+  const scanPtsCard = await call<{ id: string; qrToken: string }>(
+    "POST",
+    "/v1/cards",
+    { customerId: scanPtsCustomer.id, programId: ptsProgram.id },
+    jwt
+  );
+
+  console.log("→ scan points card with action=auto → needs_amount");
+  const ptsScanAuto = await call<{
+    status: "applied" | "needs_amount";
+    cardId?: string;
+    programType?: string;
+    currentBalance?: number;
+    pointsForReward?: number;
+    pointsPerEuro?: number;
+    eligibleToRedeem?: boolean;
+  }>("POST", "/v1/scan", { qrToken: scanPtsCard.qrToken, action: "auto" }, jwt);
+  assert(
+    ptsScanAuto.status === "needs_amount",
+    `expected needs_amount, got ${ptsScanAuto.status}`
+  );
+  assert(ptsScanAuto.programType === "points", "needs_amount programType wrong");
+  assert(ptsScanAuto.cardId === scanPtsCard.id, "needs_amount cardId mismatch");
+  assert(ptsScanAuto.currentBalance === 0, `expected currentBalance 0, got ${ptsScanAuto.currentBalance}`);
+  assert(ptsScanAuto.pointsForReward === 100, "pointsForReward wrong");
+  assert(ptsScanAuto.pointsPerEuro === 10, "pointsPerEuro wrong");
+  assert(ptsScanAuto.eligibleToRedeem === false, "should not be eligible at 0 balance");
+
+  console.log("→ scan points card with action=add-points + amount=4 → +40 points");
+  const ptsScanAdd = await call<{
+    status: "applied" | "needs_amount";
+    detail?: { card: { cardState: { points_current: number } } };
+    appliedAction?: "stamp" | "redeem" | "add-points";
+  }>(
+    "POST",
+    "/v1/scan",
+    { qrToken: scanPtsCard.qrToken, action: "add-points", amount: 4 },
+    jwt
+  );
+  assert(ptsScanAdd.status === "applied", `expected applied, got ${ptsScanAdd.status}`);
+  assert(ptsScanAdd.appliedAction === "add-points", "appliedAction wrong");
+  assert(
+    ptsScanAdd.detail?.card.cardState.points_current === 40,
+    `expected balance 40, got ${ptsScanAdd.detail?.card.cardState.points_current}`
+  );
+
+  console.log("→ scan points card with action=add-points but no amount → 400");
+  let ptsScanNoAmount = false;
+  try {
+    await call(
+      "POST",
+      "/v1/scan",
+      { qrToken: scanPtsCard.qrToken, action: "add-points" },
+      jwt
+    );
+  } catch (err) {
+    ptsScanNoAmount = String(err).includes("400");
+  }
+  assert(ptsScanNoAmount, "add-points without amount should 400");
+
+  console.log("→ scan points card with action=stamp → 400 (nonsensical)");
+  let ptsScanStamp = false;
+  try {
+    await call("POST", "/v1/scan", { qrToken: scanPtsCard.qrToken, action: "stamp" }, jwt);
+  } catch (err) {
+    ptsScanStamp = String(err).includes("400");
+  }
+  assert(ptsScanStamp, "action=stamp on points card should 400");
+
+  console.log("→ top points card up to threshold then redeem via scan");
+  // 40 already. Add €6 → +60 = 100, eligible to redeem.
+  await call(
+    "POST",
+    "/v1/scan",
+    { qrToken: scanPtsCard.qrToken, action: "add-points", amount: 6 },
+    jwt
+  );
+  const ptsScanRedeem = await call<{
+    status: "applied" | "needs_amount";
+    detail?: { card: { cardState: { points_current: number; rewards_redeemed: number } } };
+    appliedAction?: "stamp" | "redeem" | "add-points";
+  }>("POST", "/v1/scan", { qrToken: scanPtsCard.qrToken, action: "redeem" }, jwt);
+  assert(ptsScanRedeem.status === "applied", "redeem scan should apply");
+  assert(ptsScanRedeem.appliedAction === "redeem", "appliedAction should be redeem");
+  assert(
+    ptsScanRedeem.detail?.card.cardState.points_current === 0,
+    `after redeem expected 0, got ${ptsScanRedeem.detail?.card.cardState.points_current}`
+  );
+  assert(
+    ptsScanRedeem.detail?.card.cardState.rewards_redeemed === 1,
+    "rewards_redeemed should be 1"
+  );
+
+  console.log("→ no day-rate-limit on points scans (add-points multiple times same day OK)");
+  // We already added points 3+ times today on this card without 409. Implicit assertion.
 
   console.log("✓ smoke test passed");
 }

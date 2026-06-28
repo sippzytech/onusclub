@@ -762,25 +762,45 @@ export async function getCardDetail(
   return detail;
 }
 
-/**
- * Resolve a card by its qr_token, scoped to the merchant. Used by /v1/scan.
- * Also returns whether the card already has a stamp event for today (server's
- * local date) so the scan route can enforce the "one stamp per day" rule.
- */
-export async function findCardByQrToken(
-  qrToken: string,
-  merchantId: string
-): Promise<
+export type ScanLookup =
   | {
+      kind: "stamp";
       id: string;
+      customerName: string | null;
+      programName: string;
+      rewardText: string;
       stampsCurrent: number;
       stampsRequired: number;
       stampedToday: boolean;
     }
-  | null
-> {
+  | {
+      kind: "points";
+      id: string;
+      customerName: string | null;
+      programName: string;
+      rewardText: string;
+      pointsCurrent: number;
+      pointsForReward: number;
+      pointsPerEuro: number;
+    };
+
+/**
+ * Resolve a card by its qr_token, scoped to the merchant. Used by /v1/scan.
+ * Returns a discriminated union so the scan route can branch by program type.
+ *
+ * For stamp cards: includes stampedToday so the route can enforce the
+ * "one stamp per day" rule. Points cards have no equivalent rate-limit
+ * (multiple transactions per customer per day are normal).
+ */
+export async function findCardByQrToken(
+  qrToken: string,
+  merchantId: string
+): Promise<ScanLookup | null> {
   const [rows] = await pool.execute<RowDataPacket[]>(
-    `SELECT c.id, c.card_state, p.config_json AS program_config,
+    `SELECT c.id, c.card_state,
+            cu.name AS customer_name,
+            p.name AS program_name, p.program_type, p.reward_text,
+            p.config_json AS program_config,
             EXISTS (
               SELECT 1 FROM card_events e
                WHERE e.card_id = c.id
@@ -788,6 +808,7 @@ export async function findCardByQrToken(
                  AND DATE(e.created_at) = CURDATE()
             ) AS stamped_today
        FROM loyalty_cards c
+       JOIN customers cu ON cu.id = c.customer_id
        JOIN loyalty_programs p ON p.id = c.program_id
       WHERE c.qr_token = ? AND c.merchant_id = ? AND c.status = 'active'
       LIMIT 1`,
@@ -795,10 +816,32 @@ export async function findCardByQrToken(
   );
   if (rows.length === 0) return null;
   const row = rows[0];
+  const programType = row.program_type as "stamp" | "points";
+
+  if (programType === "points") {
+    const state = parseJson<PointsCardState>(row.card_state);
+    const cfg = parseJson<{ points_for_reward?: number; points_per_euro?: number }>(
+      row.program_config
+    );
+    return {
+      kind: "points",
+      id: row.id as string,
+      customerName: (row.customer_name as string | null) ?? null,
+      programName: row.program_name as string,
+      rewardText: row.reward_text as string,
+      pointsCurrent: state.points_current,
+      pointsForReward: cfg.points_for_reward ?? 0,
+      pointsPerEuro: cfg.points_per_euro ?? 1,
+    };
+  }
   const state = parseJson<StampCardState>(row.card_state);
   const cfg = parseJson<{ stamps_required?: number }>(row.program_config);
   return {
+    kind: "stamp",
     id: row.id as string,
+    customerName: (row.customer_name as string | null) ?? null,
+    programName: row.program_name as string,
+    rewardText: row.reward_text as string,
     stampsCurrent: state.stamps_current,
     stampsRequired: cfg.stamps_required ?? 0,
     stampedToday: Number(row.stamped_today) === 1,
