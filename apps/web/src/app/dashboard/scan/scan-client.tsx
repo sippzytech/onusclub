@@ -84,19 +84,25 @@ export function ScanClient(): JSX.Element {
         scannerRef.current = new mod.Html5Qrcode(containerId);
       }
       const inst = scannerRef.current;
+      // Pick a square qrbox size that fits the viewport. The library's
+      // overlay otherwise stretches to a rectangle on portrait mobile
+      // viewports (looks like a barcode scanner). Single number = guaranteed
+      // square per html5-qrcode's docs. We compute it once before start()
+      // based on the actual rendered camera container width, so on small
+      // phones it stays inside the visible area and on laptops it's big
+      // enough to be useful.
+      const container = document.getElementById(containerId);
+      const containerWidth = container?.clientWidth ?? 320;
+      const qrboxSize = Math.min(
+        Math.max(Math.floor(containerWidth * 0.7), 180),
+        320
+      );
+
       await inst.start(
         { facingMode: "environment" },
         {
           fps: 10,
-          // Always render a SQUARE scan box at ~70% of the camera's shorter
-          // edge. The library's overlay otherwise stretches into a rectangle
-          // on portrait/landscape viewports, which looks like a barcode
-          // scanner instead of a QR scanner.
-          qrbox: (vw: number, vh: number) => {
-            const edge = Math.floor(Math.min(vw, vh) * 0.7);
-            return { width: edge, height: edge };
-          },
-          aspectRatio: 1.0,
+          qrbox: qrboxSize,
         },
         (decoded) => void onDecoded(decoded),
         () => {
