@@ -10,6 +10,29 @@ interface StampState {
   err: string | null;
 }
 
+function avatarColorFor(name: string): string {
+  const palette = [
+    "bg-brand-green",
+    "bg-brand-olive",
+    "bg-[#3d2a1f]",
+    "bg-[#3a4d3f]",
+    "bg-[#5b4332]",
+    "bg-[#2f3a4d]",
+  ];
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) & 0xff;
+  return palette[hash % palette.length];
+}
+function initialsFor(name: string | null): string {
+  if (!name) return "?";
+  return name
+    .split(/\s+/)
+    .map((s) => s[0])
+    .slice(0, 2)
+    .join("")
+    .toUpperCase();
+}
+
 export function CardsList({ cards }: { cards: Card[] }): JSX.Element {
   const router = useRouter();
   const [query, setQuery] = useState("");
@@ -42,8 +65,8 @@ export function CardsList({ cards }: { cards: Card[] }): JSX.Element {
 
   if (cards.length === 0) {
     return (
-      <p className="text-sm text-gray-600">
-        No cards yet. Enrol a customer into a program below.
+      <p className="text-sm text-brand-olive">
+        No cards yet. Enrol a customer into a program using the form on the right.
       </p>
     );
   }
@@ -54,12 +77,12 @@ export function CardsList({ cards }: { cards: Card[] }): JSX.Element {
         value={query}
         onChange={(e) => setQuery(e.target.value)}
         placeholder="Search by customer or program…"
-        className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+        className="block w-full rounded-lg border border-brand-green/10 bg-brand-cream/40 px-3 py-2 text-sm text-brand-green placeholder:text-brand-olive/70 focus:outline-none focus:border-brand-green/30"
       />
       {filtered.length === 0 ? (
-        <p className="text-sm text-gray-600">No matches.</p>
+        <p className="text-sm text-brand-olive">No matches.</p>
       ) : (
-        <ul className="space-y-2">
+        <ul className="divide-y divide-brand-green/10">
           {filtered.map((c) => {
             const isPoints = c.programType === "points";
             const state = c.cardState as
@@ -76,49 +99,52 @@ export function CardsList({ cards }: { cards: Card[] }): JSX.Element {
             const eligible = target > 0 && cur >= target;
             const expired = c.status === "expired";
             const s = stampState[c.id] ?? { busy: false, err: null };
+            const name = c.customerName ?? "(no name)";
             return (
-              <li
-                key={c.id}
-                className={
-                  "rounded-md border bg-white p-4 text-sm " +
-                  (expired ? "border-gray-200 opacity-70" : "border-gray-200")
-                }
-              >
-                <div className="flex items-center justify-between gap-4">
-                  <Link href={`/dashboard/cards/${c.id}`} className="block flex-1 hover:underline">
+              <li key={c.id} className={"py-3 " + (expired ? "opacity-60" : "")}>
+                <div className="flex items-center gap-3">
+                  <div
+                    className={
+                      "h-9 w-9 rounded-md text-white text-xs font-medium flex items-center justify-center shrink-0 " +
+                      avatarColorFor(name)
+                    }
+                  >
+                    {initialsFor(c.customerName)}
+                  </div>
+                  <Link
+                    href={`/dashboard/cards/${c.id}`}
+                    className="flex-1 min-w-0 hover:underline underline-offset-4"
+                  >
                     <div className="flex items-center gap-2">
-                      <span className="font-medium text-gray-900">
-                        {c.customerName ?? "(no name)"}
-                      </span>
+                      <span className="font-medium text-brand-green truncate">{name}</span>
                       {expired ? (
-                        <span className="rounded-full bg-gray-200 px-2 py-0.5 text-xs text-gray-700">
+                        <span className="rounded-full bg-brand-olive/20 px-2 py-0.5 text-xs text-brand-olive">
                           Expired
                         </span>
                       ) : null}
                       {isPoints ? (
-                        <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-xs text-indigo-700">
+                        <span className="rounded-full bg-brand-gold/15 px-2 py-0.5 text-xs text-brand-green">
                           Points
                         </span>
                       ) : null}
                     </div>
-                    <div className="text-gray-600 mt-1">{c.programName}</div>
-                  </Link>
-                  <div className="text-right shrink-0 mr-2">
-                    <div className="text-2xl font-semibold tabular-nums text-gray-900">
-                      {cur}
-                      <span className="text-gray-400">/{target}</span>
+                    <div className="text-xs text-brand-olive mt-0.5 truncate">
+                      {c.programName}
                     </div>
-                    <div className="text-xs text-gray-500 mt-1">
+                  </Link>
+                  <div className="text-right shrink-0 mr-2 hidden sm:block">
+                    <div className="font-serif text-xl text-brand-green tabular-nums">
+                      {cur}
+                      <span className="text-brand-olive/70">/{target}</span>
+                    </div>
+                    <div className="text-[10px] uppercase tracking-wide text-brand-olive">
                       {state?.rewards_redeemed ?? 0} redeemed
                     </div>
                   </div>
                   {isPoints ? (
-                    // Points cards can't be incremented with a single click —
-                    // the merchant needs to enter the transaction amount. Send
-                    // them to the card detail page instead.
                     <Link
                       href={`/dashboard/cards/${c.id}`}
-                      className="rounded-md border border-gray-300 px-3 py-2 text-xs font-medium text-gray-800 hover:bg-gray-50 shrink-0"
+                      className="rounded-full border border-brand-green/15 px-3 py-1.5 text-xs font-medium text-brand-green hover:bg-brand-cream shrink-0"
                     >
                       Open
                     </Link>
@@ -133,14 +159,14 @@ export function CardsList({ cards }: { cards: Card[] }): JSX.Element {
                           ? "At threshold — open the card to redeem"
                           : "Add one stamp"
                       }
-                      className="rounded-md bg-gray-900 px-3 py-2 text-xs font-medium text-white hover:bg-gray-800 disabled:opacity-40 shrink-0"
+                      className="rounded-full bg-brand-green px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-green-deep disabled:opacity-40 shrink-0 transition-colors"
                     >
                       {s.busy ? "…" : "+1 stamp"}
                     </button>
                   )}
                 </div>
                 {s.err ? (
-                  <div className="mt-2 text-xs text-red-700">{s.err}</div>
+                  <p className="mt-2 ml-12 text-xs text-red-700">{s.err}</p>
                 ) : null}
               </li>
             );

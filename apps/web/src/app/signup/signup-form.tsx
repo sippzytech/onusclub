@@ -51,68 +51,68 @@ export function SignupForm(): JSX.Element {
   return (
     <form onSubmit={onSubmit} className="space-y-4">
       <div>
-        <label className="block text-sm font-medium text-gray-800">Business name</label>
+        <label className="block text-sm font-medium text-brand-green">Business name</label>
         <input
           required
           value={businessName}
           onChange={(e) => setBusinessName(e.target.value)}
-          className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+          className="mt-1 block w-full rounded-lg border border-brand-green/15 bg-brand-cream/30 px-3 py-2.5 text-sm text-brand-green placeholder:text-brand-olive/70 focus:outline-none focus:border-brand-green/40"
           placeholder="Café Bonsoir"
         />
       </div>
       <div>
-        <label className="block text-sm font-medium text-gray-800">Your email</label>
+        <label className="block text-sm font-medium text-brand-green">Your email</label>
         <input
           required
           type="email"
           value={ownerEmail}
           onChange={(e) => setOwnerEmail(e.target.value)}
-          className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+          className="mt-1 block w-full rounded-lg border border-brand-green/15 bg-brand-cream/30 px-3 py-2.5 text-sm text-brand-green placeholder:text-brand-olive/70 focus:outline-none focus:border-brand-green/40"
           placeholder="you@example.com"
         />
       </div>
       <div>
-        <label className="block text-sm font-medium text-gray-800">Your name (optional)</label>
+        <label className="block text-sm font-medium text-brand-green">Your name (optional)</label>
         <input
           value={ownerName}
           onChange={(e) => setOwnerName(e.target.value)}
-          className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+          className="mt-1 block w-full rounded-lg border border-brand-green/15 bg-brand-cream/30 px-3 py-2.5 text-sm text-brand-green placeholder:text-brand-olive/70 focus:outline-none focus:border-brand-green/40"
           placeholder="Jane Doe"
         />
       </div>
       <div>
-        <label className="block text-sm font-medium text-gray-800">Password</label>
+        <label className="block text-sm font-medium text-brand-green">Password</label>
         <input
           required
           type="password"
           minLength={8}
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+          className="mt-1 block w-full rounded-lg border border-brand-green/15 bg-brand-cream/30 px-3 py-2.5 text-sm text-brand-green placeholder:text-brand-olive/70 focus:outline-none focus:border-brand-green/40"
           placeholder="At least 8 characters"
         />
       </div>
       <div>
-        <label className="block text-sm font-medium text-gray-800">Confirm password</label>
+        <label className="block text-sm font-medium text-brand-green">Confirm password</label>
         <input
           required
           type="password"
           minLength={8}
           value={confirm}
           onChange={(e) => setConfirm(e.target.value)}
-          className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+          className="mt-1 block w-full rounded-lg border border-brand-green/15 bg-brand-cream/30 px-3 py-2.5 text-sm text-brand-green placeholder:text-brand-olive/70 focus:outline-none focus:border-brand-green/40"
           placeholder="Re-enter your password"
         />
       </div>
       {error ? (
-        <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+        <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">
           {error}
         </div>
       ) : null}
       <button
         type="submit"
         disabled={pending}
-        className="w-full rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50"
+        className="w-full rounded-full bg-brand-green px-4 py-2.5 text-sm font-medium text-white hover:bg-brand-green-deep disabled:opacity-50 transition-colors"
       >
         {pending ? "Creating account…" : "Create account"}
       </button>

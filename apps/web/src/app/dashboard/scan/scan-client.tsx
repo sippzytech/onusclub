@@ -272,10 +272,10 @@ export function ScanClient(): JSX.Element {
   // Static border color per state — no pulsing/fading animation. The state
   // change itself is the feedback; an animated frame on top of a live camera
   // feed reads as visual noise.
-  let frameClass = "border-gray-300";
-  if (status.kind === "scanning") frameClass = "border-blue-500";
-  if (status.kind === "detecting") frameClass = "border-amber-500";
-  if (status.kind === "awaiting_amount") frameClass = "border-indigo-500";
+  let frameClass = "border-brand-green/20";
+  if (status.kind === "scanning") frameClass = "border-brand-gold";
+  if (status.kind === "detecting") frameClass = "border-brand-gold-light";
+  if (status.kind === "awaiting_amount") frameClass = "border-brand-gold";
   if (status.kind === "result") frameClass = "border-emerald-500";
   if (status.kind === "warning") frameClass = "border-amber-500";
   if (status.kind === "error") frameClass = "border-red-500";
@@ -288,84 +288,93 @@ export function ScanClient(): JSX.Element {
 
   return (
     <div className="space-y-4">
-      <div className={"rounded-xl border-2 p-1 transition-colors " + frameClass}>
+      {/* Dark-green camera panel matching mock 3 */}
+      <div className="rounded-card bg-brand-green text-white p-6">
+        <p className="text-xs uppercase tracking-wider text-white/60">
+          Staff mode
+        </p>
         <div
-          id={containerId}
           className={
-            "w-full aspect-square max-w-md mx-auto bg-black rounded-lg overflow-hidden " +
-            (cameraVisible ? "" : "flex items-center justify-center")
+            "mt-4 rounded-xl border-2 p-1 transition-colors " + frameClass
           }
         >
-          {!cameraVisible ? (
-            <p className="text-sm text-gray-300 px-4 text-center">
-              Press <span className="font-medium">Start camera</span> to scan a
-              customer&apos;s loyalty pass.
-            </p>
+          <div
+            id={containerId}
+            className={
+              "w-full aspect-square max-w-md mx-auto bg-brand-green-deepest rounded-lg overflow-hidden " +
+              (cameraVisible ? "" : "flex items-center justify-center")
+            }
+          >
+            {!cameraVisible ? (
+              <p className="text-sm text-white/60 px-4 text-center">
+                Press <span className="font-medium text-white">Start camera</span> to
+                scan a customer&apos;s loyalty pass.
+              </p>
+            ) : null}
+          </div>
+        </div>
+        <p className="text-center text-white/70 text-sm mt-4">
+          Hold their wallet card to the camera, or have them tap to display the QR.
+        </p>
+        <div className="mt-5 flex items-center justify-center gap-3 flex-wrap">
+          {!running ? (
+            <button
+              onClick={() => void start()}
+              disabled={status.kind === "starting"}
+              className="rounded-full bg-brand-gold px-5 py-2 text-sm font-medium text-brand-green hover:bg-brand-gold-light disabled:opacity-50 transition-colors"
+            >
+              {status.kind === "starting" ? "Starting…" : "Start camera"}
+            </button>
+          ) : (
+            <button
+              onClick={() => void stop()}
+              className="rounded-full border border-white/20 px-5 py-2 text-sm font-medium text-white hover:bg-white/5 transition-colors"
+            >
+              Stop
+            </button>
+          )}
+          {status.kind === "scanning" ? (
+            <span className="inline-flex items-center gap-2 text-xs text-brand-gold-light">
+              <span className="h-1.5 w-1.5 rounded-full bg-brand-gold animate-pulse" />
+              Ready
+            </span>
+          ) : null}
+          {status.kind === "detecting" ? (
+            <span className="inline-flex items-center gap-2 text-xs text-brand-gold-light">
+              <span className="h-1.5 w-1.5 rounded-full bg-brand-gold animate-pulse" />
+              Reading…
+            </span>
           ) : null}
         </div>
       </div>
 
-      <div className="flex items-center gap-3 flex-wrap">
-        {!running ? (
-          <button
-            onClick={() => void start()}
-            disabled={status.kind === "starting"}
-            className="rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50"
-          >
-            {status.kind === "starting" ? "Starting…" : "Start camera"}
-          </button>
-        ) : (
-          <button
-            onClick={() => void stop()}
-            className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-800 hover:bg-gray-50"
-          >
-            Stop
-          </button>
-        )}
-
-        {status.kind === "scanning" ? (
-          <span className="inline-flex items-center gap-2 text-sm text-blue-700">
-            <span className="h-2 w-2 rounded-full bg-blue-600 animate-ping" />
-            Ready — point at a customer&apos;s pass QR
-          </span>
-        ) : null}
-        {status.kind === "detecting" ? (
-          <span className="inline-flex items-center gap-2 text-sm text-amber-700">
-            <span className="h-2 w-2 rounded-full bg-amber-500 animate-pulse" />
-            Reading card…
-          </span>
-        ) : null}
-      </div>
-
       {/* Points card needs the merchant to enter the bill amount */}
       {status.kind === "awaiting_amount" ? (
-        <div className="rounded-md border border-indigo-200 bg-indigo-50 p-4 space-y-3">
+        <div className="rounded-card border border-brand-gold/40 bg-brand-cream p-5 space-y-3">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <p className="text-xs uppercase tracking-wide text-indigo-700 font-medium">
+              <p className="text-xs uppercase tracking-wider text-brand-gold font-medium">
                 Points card
               </p>
-              <p className="text-lg font-medium text-indigo-900 mt-1">
+              <p className="font-serif text-xl text-brand-green mt-1">
                 {status.card.customerName ?? "(no name)"} · {status.card.programName}
               </p>
-              <p className="text-sm text-indigo-800 mt-1 tabular-nums">
-                Balance: <strong>{status.card.currentBalance}</strong> /{" "}
-                {status.card.pointsForReward} points
-                {" · "}
-                {status.card.pointsPerEuro} pt per €1
-                {" · "}reward: {status.card.rewardText}
+              <p className="text-sm text-brand-olive mt-1 tabular-nums">
+                Balance: <strong className="text-brand-green">{status.card.currentBalance}</strong> /{" "}
+                {status.card.pointsForReward} points · {status.card.pointsPerEuro} pt per €1 ·
+                reward: <strong className="text-brand-green">{status.card.rewardText}</strong>
               </p>
             </div>
             <button
               onClick={clearResult}
-              className="text-xs underline text-indigo-900 hover:no-underline shrink-0"
+              className="text-xs underline text-brand-olive hover:text-brand-green shrink-0"
             >
               Cancel
             </button>
           </div>
           <form onSubmit={(e) => void onAmountSubmit(e)} className="flex flex-wrap items-end gap-3">
             <div>
-              <label className="block text-xs font-medium text-indigo-900">
+              <label className="block text-xs font-medium text-brand-green">
                 Transaction amount (€)
               </label>
               <input
@@ -376,19 +385,19 @@ export function ScanClient(): JSX.Element {
                 onChange={(e) => setAmount(e.target.value)}
                 placeholder="25.00"
                 autoFocus
-                className="mt-1 block w-40 rounded-md border border-indigo-300 px-3 py-2 text-sm tabular-nums bg-white"
+                className="mt-1 block w-40 rounded-lg border border-brand-green/10 bg-white px-3 py-2 text-sm tabular-nums text-brand-green focus:outline-none focus:border-brand-green/30"
               />
             </div>
             <button
               type="submit"
               disabled={status.busy || !amount}
-              className="rounded-md bg-indigo-700 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-800 disabled:opacity-50"
+              className="rounded-full bg-brand-green px-5 py-2 text-sm font-medium text-white hover:bg-brand-green-deep disabled:opacity-50 transition-colors"
             >
               {status.busy ? "Adding…" : "Add transaction"}
             </button>
             {previewPoints !== null ? (
-              <span className="text-xs text-indigo-800">
-                = <span className="font-medium">{previewPoints}</span> points
+              <span className="text-xs text-brand-olive">
+                = <span className="font-medium text-brand-green">{previewPoints}</span> points
               </span>
             ) : null}
             <button
@@ -400,7 +409,7 @@ export function ScanClient(): JSX.Element {
                   ? "Customer has enough points to redeem"
                   : `Need ${status.card.pointsForReward - status.card.currentBalance} more points`
               }
-              className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-40 ml-auto"
+              className="rounded-full bg-brand-gold px-5 py-2 text-sm font-medium text-brand-green hover:bg-brand-gold-light disabled:opacity-40 ml-auto transition-colors"
             >
               {status.busy ? "…" : "Redeem reward"}
             </button>
@@ -412,7 +421,7 @@ export function ScanClient(): JSX.Element {
       ) : null}
 
       {status.kind === "warning" ? (
-        <div className="rounded-md border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900 flex items-start justify-between gap-3">
+        <div className="rounded-card border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900 flex items-start justify-between gap-3">
           <div>
             <p className="font-medium">Already stamped today</p>
             <p className="mt-1 text-amber-800">{status.message}</p>
@@ -439,9 +448,9 @@ export function ScanClient(): JSX.Element {
       ) : null}
 
       {status.kind === "result" ? (
-        <div className="rounded-md border border-emerald-200 bg-emerald-50 p-4 flex items-start justify-between gap-3">
+        <div className="rounded-card border border-emerald-200 bg-emerald-50 p-4 flex items-start justify-between gap-3">
           <div>
-            <p className="text-xs uppercase tracking-wide text-emerald-700 font-medium">
+            <p className="text-xs uppercase tracking-wider text-emerald-700 font-medium">
               {status.result.appliedAction === "redeem"
                 ? "Reward redeemed"
                 : status.result.appliedAction === "add-points"
@@ -452,7 +461,7 @@ export function ScanClient(): JSX.Element {
                   }`
                 : "+1 stamp"}
             </p>
-            <p className="text-lg font-medium text-emerald-900 mt-1">
+            <p className="font-serif text-xl text-emerald-900 mt-1">
               {status.result.customerName ?? "(no name)"} ·{" "}
               {status.result.programName}
             </p>
@@ -482,7 +491,7 @@ export function ScanClient(): JSX.Element {
         </div>
       ) : null}
 
-      <p className="text-xs text-gray-500">
+      <p className="text-xs text-brand-olive">
         Stamp cards: one stamp per day per card (anti double-scan).
         Points cards: enter the bill amount when prompted.
       </p>

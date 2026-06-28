@@ -66,17 +66,17 @@ function describe(e: CardEvent): string {
 
 export function EventTimeline({ events }: { events: CardEvent[] }): JSX.Element {
   if (events.length === 0) {
-    return <p className="text-sm text-gray-600">No activity yet.</p>;
+    return <p className="text-sm text-brand-olive">No activity yet.</p>;
   }
   return (
     <ol className="space-y-2">
       {events.map((e) => (
         <li
           key={e.id}
-          className="rounded-md border border-gray-200 bg-white p-3 text-sm flex items-center justify-between"
+          className="rounded-lg border border-brand-green/10 bg-brand-cream/40 p-3 text-sm flex items-center justify-between gap-3"
         >
-          <span className="text-gray-900">{describe(e)}</span>
-          <span className="text-xs text-gray-500 tabular-nums">
+          <span className="text-brand-green">{describe(e)}</span>
+          <span className="text-xs text-brand-olive tabular-nums shrink-0">
             {new Date(e.createdAt).toLocaleString()}
           </span>
         </li>

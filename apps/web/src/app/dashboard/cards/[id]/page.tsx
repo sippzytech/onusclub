@@ -70,37 +70,45 @@ export default async function CardDetailPage({
       breadcrumb={`${merchant.businessName} · ${detail.card.customerName ?? "(no name)"}`}
       title={detail.card.programName}
     >
-      <div className="space-y-8">
-        <Link href="/dashboard/cards" className="text-sm text-gray-600 underline">
+      <div className="space-y-4">
+        <Link
+          href="/dashboard/cards"
+          className="inline-flex items-center text-sm text-brand-olive hover:text-brand-green underline-offset-4 hover:underline"
+        >
           ← Back to cards
         </Link>
 
-        <header className="rounded-lg border border-gray-200 bg-white p-6">
+        <header className="rounded-card bg-white border border-brand-green/10 p-6">
           <div className="flex items-start justify-between gap-6">
             <div>
-              <p className="text-xs uppercase tracking-wide text-gray-500">Customer</p>
-              <h2 className="text-xl font-semibold text-gray-900 mt-1">
+              <p className="text-xs uppercase tracking-wider text-brand-olive">
+                Customer
+              </p>
+              <h2 className="font-serif text-3xl text-brand-green mt-1">
                 {detail.card.customerName ?? "(no name)"}
               </h2>
-              <p className="text-sm text-gray-600 mt-2">
-                {detail.card.programName} · reward: {detail.card.rewardText}
+              <p className="text-sm text-brand-olive mt-2">
+                {detail.card.programName} · reward:{" "}
+                <span className="text-brand-green font-medium">
+                  {detail.card.rewardText}
+                </span>
               </p>
             </div>
             <div className="text-right shrink-0">
-              <div className="text-5xl font-semibold tabular-nums text-gray-900">
+              <div className="font-serif text-5xl text-brand-green tabular-nums">
                 {current}
-                <span className="text-gray-400 text-3xl">/{required}</span>
+                <span className="text-brand-olive/60 text-3xl">/{required}</span>
               </div>
-              <p className="text-xs uppercase tracking-wide text-gray-400 mt-1">
+              <p className="text-xs uppercase tracking-wider text-brand-olive mt-1">
                 {unitLabel}
               </p>
-              <p className="text-xs text-gray-500 mt-2">
+              <p className="text-xs text-brand-olive mt-2">
                 lifetime {totalLifetime} · redeemed {rewardsRedeemed}
                 {isPoints && totalExpired > 0 ? ` · expired ${totalExpired}` : ""}
               </p>
             </div>
           </div>
-          <div className="mt-6 border-t border-gray-100 pt-4">
+          <div className="mt-6 border-t border-brand-green/10 pt-5">
             <CardActions
               cardId={detail.card.id}
               eligible={eligible}
@@ -110,21 +118,25 @@ export default async function CardDetailPage({
           </div>
         </header>
 
-        <section className="space-y-3">
-          <h3 className="text-base font-medium text-gray-900">Pass &amp; QR</h3>
-          <WalletSection
-            cardId={detail.card.id}
-            walletUrl={walletLink.available ? walletLink.url : null}
-            applePassUrl={`${publicWebBase()}/v1/public/c/${detail.card.qrToken}/apple-pass`}
-            qrSvg={qrSvg}
-            qrToken={detail.card.qrToken}
-            customerHasEmail={!!customer?.email}
-          />
+        <section className="rounded-card bg-white border border-brand-green/10 p-6">
+          <h3 className="font-serif text-2xl text-brand-green">Pass &amp; QR</h3>
+          <div className="mt-4">
+            <WalletSection
+              cardId={detail.card.id}
+              walletUrl={walletLink.available ? walletLink.url : null}
+              applePassUrl={`${publicWebBase()}/v1/public/c/${detail.card.qrToken}/apple-pass`}
+              qrSvg={qrSvg}
+              qrToken={detail.card.qrToken}
+              customerHasEmail={!!customer?.email}
+            />
+          </div>
         </section>
 
-        <section className="space-y-3">
-          <h3 className="text-base font-medium text-gray-900">Activity</h3>
-          <EventTimeline events={detail.events} />
+        <section className="rounded-card bg-white border border-brand-green/10 p-6">
+          <h3 className="font-serif text-2xl text-brand-green">Activity</h3>
+          <div className="mt-4">
+            <EventTimeline events={detail.events} />
+          </div>
         </section>
       </div>
     </DashboardShell>
