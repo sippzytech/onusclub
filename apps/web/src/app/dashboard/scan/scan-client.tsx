@@ -86,7 +86,18 @@ export function ScanClient(): JSX.Element {
       const inst = scannerRef.current;
       await inst.start(
         { facingMode: "environment" },
-        { fps: 10, qrbox: { width: 240, height: 240 } },
+        {
+          fps: 10,
+          // Always render a SQUARE scan box at ~70% of the camera's shorter
+          // edge. The library's overlay otherwise stretches into a rectangle
+          // on portrait/landscape viewports, which looks like a barcode
+          // scanner instead of a QR scanner.
+          qrbox: (vw: number, vh: number) => {
+            const edge = Math.floor(Math.min(vw, vh) * 0.7);
+            return { width: edge, height: edge };
+          },
+          aspectRatio: 1.0,
+        },
         (decoded) => void onDecoded(decoded),
         () => {
           /* silent per-frame failure */
@@ -252,9 +263,11 @@ export function ScanClient(): JSX.Element {
   }
 
   const cameraVisible = running || status.kind === "starting";
+  // Static border color per state — no pulsing/fading animation. The state
+  // change itself is the feedback; an animated frame on top of a live camera
+  // feed reads as visual noise.
   let frameClass = "border-gray-300";
-  if (status.kind === "scanning")
-    frameClass = "border-blue-500 shadow-[0_0_0_4px_rgba(59,130,246,0.15)] animate-pulse";
+  if (status.kind === "scanning") frameClass = "border-blue-500";
   if (status.kind === "detecting") frameClass = "border-amber-500";
   if (status.kind === "awaiting_amount") frameClass = "border-indigo-500";
   if (status.kind === "result") frameClass = "border-emerald-500";
