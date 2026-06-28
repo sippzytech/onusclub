@@ -9,50 +9,64 @@ import { EnrolCardForm } from "./enrol-card-form";
 export const dynamic = "force-dynamic";
 
 export default async function CardsPage(): Promise<JSX.Element> {
-  const { jwt, user, merchant } = await requireSession();
+  const { jwt, user, merchant, preferences } = await requireSession();
   const [{ cards }, { customers }, { programs }] = await Promise.all([
     apiFetch<{ cards: Card[] }>("/v1/cards", { jwt }),
     apiFetch<{ customers: Customer[] }>("/v1/customers", { jwt }),
     apiFetch<{ programs: Program[] }>("/v1/programs", { jwt }),
   ]);
 
-  return (
-    <DashboardShell user={user} merchant={merchant}>
-      <section className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-medium text-gray-900">Cards</h2>
-          <Link
-            href="/dashboard/scan"
-            className="text-sm text-gray-700 underline hover:text-gray-900"
-          >
-            Scan QR →
-          </Link>
-        </div>
-        <CardsList cards={cards} />
-      </section>
+  const activeCount = cards.filter((c) => c.status === "active").length;
 
-      <section className="space-y-3 mt-10">
-        <h2 className="text-lg font-medium text-gray-900">Enrol a card</h2>
-        {customers.length === 0 || programs.length === 0 ? (
-          <p className="text-sm text-gray-600">
-            You need at least one customer and one program before you can enrol a card.{" "}
-            {customers.length === 0 ? (
-              <Link href="/dashboard/customers" className="underline">
-                Add a customer
-              </Link>
-            ) : null}
-            {customers.length === 0 && programs.length === 0 ? " · " : null}
-            {programs.length === 0 ? (
-              <Link href="/dashboard" className="underline">
-                Create a program
-              </Link>
-            ) : null}
-            .
-          </p>
-        ) : (
-          <EnrolCardForm customers={customers} programs={programs} />
-        )}
-      </section>
+  return (
+    <DashboardShell
+      user={user}
+      merchant={merchant}
+      isPremium={preferences.isPremium}
+      breadcrumb={`${merchant.businessName} · ${activeCount} active cards`}
+      title="Cards"
+    >
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <section className="lg:col-span-2 rounded-card bg-white border border-brand-green/10 p-6">
+          <div className="flex items-center justify-between">
+            <h2 className="font-serif text-2xl text-brand-green">All cards</h2>
+            <Link
+              href="/dashboard/scan"
+              className="text-sm text-brand-olive hover:text-brand-green underline-offset-4 hover:underline"
+            >
+              Scan QR →
+            </Link>
+          </div>
+          <div className="mt-4">
+            <CardsList cards={cards} />
+          </div>
+        </section>
+
+        <section className="rounded-card bg-white border border-brand-green/10 p-6">
+          <h2 className="font-serif text-2xl text-brand-green">Enrol a card</h2>
+          <div className="mt-4">
+            {customers.length === 0 || programs.length === 0 ? (
+              <p className="text-sm text-brand-olive">
+                Need at least one customer and one program first.{" "}
+                {customers.length === 0 ? (
+                  <Link href="/dashboard/customers" className="underline">
+                    Add a customer
+                  </Link>
+                ) : null}
+                {customers.length === 0 && programs.length === 0 ? " · " : null}
+                {programs.length === 0 ? (
+                  <Link href="/dashboard/card-builder" className="underline">
+                    Create a program
+                  </Link>
+                ) : null}
+                .
+              </p>
+            ) : (
+              <EnrolCardForm customers={customers} programs={programs} />
+            )}
+          </div>
+        </section>
+      </div>
     </DashboardShell>
   );
 }

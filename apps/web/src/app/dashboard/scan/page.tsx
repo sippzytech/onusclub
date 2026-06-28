@@ -5,18 +5,26 @@ import { ScanClient } from "./scan-client";
 export const dynamic = "force-dynamic";
 
 export default async function ScanPage(): Promise<JSX.Element> {
-  const { user, merchant } = await requireSession();
+  const { user, merchant, preferences } = await requireSession();
   return (
-    <DashboardShell user={user} merchant={merchant}>
-      <div className="space-y-4">
-        <div>
-          <h2 className="text-lg font-medium text-gray-900">Scan a customer&apos;s pass</h2>
-          <p className="text-sm text-gray-600 mt-1">
-            Open the customer&apos;s Google Wallet pass, point the camera at the QR code, and
-            we&apos;ll add a stamp (or redeem if they&apos;re at the reward).
+    <DashboardShell
+      user={user}
+      merchant={merchant}
+      isPremium={preferences.isPremium}
+      breadcrumb={`${merchant.businessName} · Staff mode`}
+      title="Stamp & scan"
+    >
+      <div className="max-w-3xl">
+        <div className="rounded-card bg-white border border-brand-green/10 p-6">
+          <p className="text-sm text-brand-olive">
+            Open the customer&apos;s wallet pass, point the camera at the QR
+            code. Stamp cards auto-stamp; points cards prompt for the bill
+            amount.
           </p>
+          <div className="mt-5">
+            <ScanClient />
+          </div>
         </div>
-        <ScanClient />
       </div>
     </DashboardShell>
   );

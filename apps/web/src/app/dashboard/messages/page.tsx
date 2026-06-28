@@ -18,7 +18,13 @@ export default async function MessagesPage(): Promise<JSX.Element> {
   // endpoint directly.
   if (!preferences.isPremium) {
     return (
-      <DashboardShell user={user} merchant={merchant}>
+      <DashboardShell
+        user={user}
+        merchant={merchant}
+        isPremium={preferences.isPremium}
+        breadcrumb={`${merchant.businessName} · Messaging`}
+        title="Campaigns"
+      >
         <PremiumLock />
       </DashboardShell>
     );

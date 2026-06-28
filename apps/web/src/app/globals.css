@@ -2,14 +2,21 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --foreground: 17 24 39;
-  --background: 250 250 249;
+/* Brand defaults: cream page bg + deep green text. Specific surfaces
+ * (white cards, dark sidebar) override via component classes. */
+html,
+body {
+  background-color: #f4f1e9;
+  color: #14271c;
 }
 
-body {
-  color: rgb(var(--foreground));
-  background: rgb(var(--background));
-  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
-    sans-serif;
+/* Suppress the spinner buttons on number inputs in the dashboard — the
+ * mocks use clean plain text inputs throughout. */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
 }

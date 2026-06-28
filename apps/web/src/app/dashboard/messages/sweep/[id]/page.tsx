@@ -14,7 +14,7 @@ export default async function SweepDetailPage({
 }: {
   params: { id: string };
 }): Promise<JSX.Element> {
-  const { jwt, user, merchant } = await requireSession();
+  const { jwt, user, merchant, preferences } = await requireSession();
 
   let data: { sweep: SweepRun; deliveries: MessageDelivery[] };
   try {
@@ -27,7 +27,13 @@ export default async function SweepDetailPage({
   const failedForThisMerchant = deliveries.filter((d) => d.status === "failed").length;
 
   return (
-    <DashboardShell user={user} merchant={merchant}>
+    <DashboardShell
+      user={user}
+      merchant={merchant}
+      isPremium={preferences.isPremium}
+      breadcrumb={`${merchant.businessName} · Messaging`}
+      title="Sweep run"
+    >
       <div className="space-y-6">
         <Link href="/dashboard/messages" className="text-sm text-gray-600 underline">
           ← Back to Messages

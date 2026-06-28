@@ -8,7 +8,7 @@ export function LogoutButton(): JSX.Element {
   return (
     <button
       onClick={() => void onClick()}
-      className="text-sm text-gray-600 underline hover:text-gray-900"
+      className="hidden sm:inline text-xs text-brand-olive hover:text-brand-green transition-colors underline-offset-4 hover:underline"
     >
       Sign out
     </button>

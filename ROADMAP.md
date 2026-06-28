@@ -169,6 +169,17 @@ Each day below corresponds to a git branch + a commit. Run `git log --oneline --
 
 ---
 
+## Polish backlog (small, no urgency, do in any order)
+
+User has explicitly asked these be saved for later — not picking any of them now but they're real options to come back to.
+
+- **Owner magic-link email re-wire** (1-2 h) — `issueMagicLink` exists from Day 2; just needs to wire to `sendEmail` so owners can passwordless-login if they prefer.
+- **Bump GitHub Actions to v5** (15 min) — kills the Node 20 deprecation warning, pure housekeeping.
+- **First-merchant demo seed script** (1-2 h) — `pnpm seed:demo` drops a realistic "Café De Klep" merchant with stamp + points programs into the DB for showing the dashboard to prospects without manual setup each time.
+- **Customer card archive view** (2-3 h) — `/dashboard/cards` only shows active cards; no way to see expired/blocked. Small product gap.
+- **Daily/weekly merchant digest email** (2-3 h) — cron emails each merchant a summary ("This week: 12 new cards, 47 stamps, 3 redeems"). Stickiness feature.
+- **Onboarding wizard for new merchants** (3-4 h) — first-time signup dumps you on an empty dashboard. A 3-step guided start (create program → share QR → invite first customer) reduces cold-start friction and converts signups to active use.
+
 ## Likely next steps (Day 15+)
 
 Pick whatever the user finds most valuable next. None are dependencies on each other.

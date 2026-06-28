@@ -30,7 +30,7 @@ export default async function BroadcastDetailPage({
 }: {
   params: { id: string };
 }): Promise<JSX.Element> {
-  const { jwt, user, merchant } = await requireSession();
+  const { jwt, user, merchant, preferences } = await requireSession();
 
   let data: { broadcast: Broadcast; deliveries: MessageDelivery[] };
   try {
@@ -42,7 +42,13 @@ export default async function BroadcastDetailPage({
   const { broadcast, deliveries } = data;
 
   return (
-    <DashboardShell user={user} merchant={merchant}>
+    <DashboardShell
+      user={user}
+      merchant={merchant}
+      isPremium={preferences.isPremium}
+      breadcrumb={`${merchant.businessName} · Messaging`}
+      title="Broadcast"
+    >
       <div className="space-y-6">
         <Link href="/dashboard/messages" className="text-sm text-gray-600 underline">
           ← Back to Messages

@@ -22,7 +22,7 @@ export default async function CardDetailPage({
 }: {
   params: { id: string };
 }): Promise<JSX.Element> {
-  const { jwt, user, merchant } = await requireSession();
+  const { jwt, user, merchant, preferences } = await requireSession();
 
   let detail: CardDetail;
   try {
@@ -63,7 +63,13 @@ export default async function CardDetailPage({
   const unitLabel = isPoints ? "points" : "stamps";
 
   return (
-    <DashboardShell user={user} merchant={merchant}>
+    <DashboardShell
+      user={user}
+      merchant={merchant}
+      isPremium={preferences.isPremium}
+      breadcrumb={`${merchant.businessName} · ${detail.card.customerName ?? "(no name)"}`}
+      title={detail.card.programName}
+    >
       <div className="space-y-8">
         <Link href="/dashboard/cards" className="text-sm text-gray-600 underline">
           ← Back to cards
