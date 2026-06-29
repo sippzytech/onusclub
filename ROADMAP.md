@@ -180,21 +180,58 @@ User has explicitly asked these be saved for later — not picking any of them n
 - **Daily/weekly merchant digest email** (2-3 h) — cron emails each merchant a summary ("This week: 12 new cards, 47 stamps, 3 redeems"). Stickiness feature.
 - **Onboarding wizard for new merchants** (3-4 h) — first-time signup dumps you on an empty dashboard. A 3-step guided start (create program → share QR → invite first customer) reduces cold-start friction and converts signups to active use.
 
-## Likely next steps (Day 15+)
+## Perkstar-inspired candidates (post-tear-down, 2026-06-29)
 
-Pick whatever the user finds most valuable next. None are dependencies on each other.
+We walked through a paid Perkstar sandbox. Full inventory + reasoning lives in **[PERKSTAR_ANALYSIS.md](./PERKSTAR_ANALYSIS.md)**. Headline insight: **Perkstar does not integrate to POS** — they ask the merchant to type the sale amount at scan time, and derive every revenue/ROI/AOV/RFM number from that one data point. We can do the same with one column on `card_events` + one field on the scanner.
+
+The ranked shortlist below comes from that analysis.
+
+### Day 15 (proposed) — "Revenue capture + dashboard come-alive" ⭐
+Bundle items 1 + 5 + 6 + 7 from the COPY list:
+- Migration `008_card_event_amount.sql` — `card_events.amount_cents BIGINT NULL`
+- Scanner state-machine gains a skippable "Sale amount (€)" step
+- Same field on the manual `/dashboard/cards/[id]` stamp/redeem buttons
+- Overview page renders: recent activity feed (last 10 events) + 7-day revenue card + AOV card
+- Smoke test additions for amount capture + aggregate endpoints
+
+**Estimated**: 1.5-2 days. **Unlocks**: RFM (Day 17), AOV/ROI everywhere, demo-worthy Overview.
+
+### After Day 15, in priority order:
+| Day | Bundle | Effort | Dependency |
+|---|---|---|---|
+| **16** | CSV customer import/export + add-customer field alignment (last/first/phone-cc/email/DOB) | 1 day | — |
+| **17** | RFM segments (9 buckets) + editable thresholds settings page | 2-3 days | Day 15 (needs revenue data) |
+| **18** | Industry template gallery (10-15 OnUsClub-branded card designs) | 2-3 days | — |
+| **19** | Weekly merchant digest email (already on polish backlog) | 2-3 h | Day 15 (richer data) |
+| 20+ | Referral tracking + UTM capture on enrol form (bundle) | 2-3 days | — |
+
+### Deferred from Perkstar tear-down (low ROI for our user base or too big):
+- **Push automation rules** ("event → wait → message") — 4-5 days, needs scheduler. Defer.
+- **Geo-push (Apple Wallet `locations[]`)** — PassKit supports it, UX messy. Phase 3.
+- **Two-way push reply / Inbox** — only works on Google Wallet. Probably skip permanently.
+- **Tier system + soft-walls** — pair with Stripe billing when that lands.
+- **Scanner as standalone PWA** — defer until staff complain about the dashboard wrapper.
+- **Feedback / Google Reviews loop** — 4-5 day feature, deserves its own week.
+- **Multipass / Gift card / Cashback / Coupon as separate program types** — covered by Stamp + Points engine already. Skip.
+- **Telegram bot stats / 100+ templates** — diminishing returns. Skip.
+
+---
+
+## Likely next steps (legacy backlog, unrelated to Perkstar tear-down)
+
+Still relevant, none depend on each other.
 
 | Idea | Effort | Value |
 |---|---|---|
-| **Stripe billing** for the premium gate | 1-2 days | Turn fake unlock into real revenue. User flagged this as the *"last part"* to do — Day 14 was the last feature before this. |
+| **Stripe billing** for the premium gate | 1-2 days | Turn fake unlock into real revenue. User flagged this as the *"last part"* to do — pairs with the tier system from Perkstar tear-down. |
 | **Google Wallet production approval** (submit issuer to Google) | half day setup + 1-3 day Google review | Unlocks **any Google account** to save passes (not just allowlisted). Apple already production-ready. Blocked on marketing site privacy + ToS + logo (friend working on it). |
 | **Resend domain verification** for `sippzy.com` or `onusclub.com` | ~30 min setup + DNS propagation | Required to email real customers. Currently `EMAIL_FROM` is on Resend's test domain → only delivers to `sippzy.official@gmail.com`. |
 | **Backblaze B2 offsite backup** (code already ready, just needs setup) | 10 min user-side | Just sign up + 3 env lines on VPS. See `HANDOFF.md` for the recipe; deferred earlier on lack of business email. |
-| **Scan flow for points programs** | 2-3 h | Day 14 deferred this — scan + add-points currently needs amount-capture. Reusable form, just needs the input step in the scanner state machine. |
+| **Scan flow for points programs** | 2-3 h | Day 14 deferred this — scan + add-points currently needs amount-capture. **Will fall out naturally from Day 15** (same input field). |
 | **Membership program type** (third type, paid subscription) | 2-3 days | Pairs naturally with Stripe — membership is essentially a subscription with a paid pass. Defer until billing is done. |
 | **Drop sippzy.com legacy Traefik routes** | 5 min code, 10 min deploy | Wait ~1-2 weeks of onusclub.com stability first. Old saved wallet passes still point at sippzy.com. |
 | **Owner magic-link email** (re-wire) | 1-2 h | Optional passwordless flow for owners who prefer it. |
-| **Wallet/card visual customization** | TBD | Deliberately deferred for a focused "designed properly with AI" project. |
+| **Wallet/card visual customization** | TBD | Deliberately deferred for a focused "designed properly with AI" project. Overlaps with Day 18 industry template gallery — could combine. |
 
 ---
 
