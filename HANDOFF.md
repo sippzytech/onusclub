@@ -1,163 +1,169 @@
-# OnUsClub — Handoff Notes (office laptop, 2026-06-29)
+# OnUsClub — Handoff Notes (2026-08-12)
 
-Picking up from the personal Mac to the office laptop today. The plan is to work **directly on the VPS** (no local dev stack needed for what's queued).
+**Purpose**: This document exists so any fresh Claude session — in Antigravity, VS Code, another Claude Code CLI, or a chat on claude.ai — can pick up this project cold in under 5 minutes. Nothing load-bearing lives in an ephemeral chat window; everything lives in this repo.
+
+If you are a fresh Claude reading this: **also read `CLAUDE.md`, `ROADMAP.md`, `PERKSTAR_ANALYSIS.md` in that order.** They are the canonical context.
 
 ---
 
-## What changed since the last handoff
+## The last chat had this exact context (for continuity)
 
-- **Day 14 (points programs) is shipped and live on prod.** No longer "feature branch only."
-- **UI redesign Phase 1-8 is committed** on `day-14-points-programs` (commits `5e3b282`, `1a329c0`). Brand colors, Fraunces/Lato fonts, dark sidebar shell, branded customer-facing pages — across every page in the app.
-- **Perkstar tear-down complete.** See [PERKSTAR_ANALYSIS.md](./PERKSTAR_ANALYSIS.md) for the full feature inventory + COPY/DEFER/SKIP classification.
-- **ROADMAP.md updated** with proposed Day 15 (revenue capture + dashboard come-alive) + the priority order for Days 16-19.
+The prior Claude Code CLI session on Sanchit's Mac walked through Perkstar's dashboard, wrote `PERKSTAR_ANALYSIS.md`, and updated `ROADMAP.md` with the Day 15+ candidates. Then, deploying Day 14 + UI redesign to prod (Option A):
+- Confirmed VPS was already on branch `day-14-points-programs` at commit `1a329c0`
+- Confirmed migration `007_points_batches.sql` was already applied
+- Confirmed api + web containers were rebuilt from that branch on ~2026-06-29
+- Sanchit visited `https://app.onusclub.com` and said "looks good"
+- Sanchit asked "what about broken functionalities" — I listed known stubs (`/dashboard/card-builder` and `/dashboard/analytics` were shipped as placeholders), then he never came back with specifics
+- **Open question at the moment of handover**: is there anything actually broken on prod, or was it just a vague check-in? Ask Sanchit to name specifics before poking around.
 
-## Where we stand right now
+Immediately after that, Sanchit decided to switch from the CLI to Antigravity IDE, so this doc exists to bridge the gap.
 
-- **Latest branch (where this work is)**: `day-14-points-programs` (HEAD = the redesign commit)
-- **Working tree**: clean as of this commit
-- **Pushed to GitHub**: yes — `github.com/sippzytech/onusclub`
-- **Production VPS**: still on `phase-b-rename` branch (Day 14 + redesign not yet deployed live). Code is on GitHub, just not pulled on the box.
-- **Today's office goal**: deploy Day 14 + UI redesign to prod **OR** start Day 15 (revenue capture). Either works.
+---
 
-## Days shipped (newest first)
+## Where the code lives (nothing can be lost)
 
-| Day | What | Live on prod? |
+| Location | Path | What it holds |
 |---|---|---|
-| UI Redesign | Brand color palette + Fraunces/Lato + dark sidebar + branded auth/landing/cards | ❌ Not deployed |
-| 14 | Points programs (+ per-batch expiry, FIFO redemption, points-expiry cron) | ❌ Not deployed |
-| 13 | Phase B rename + DNS cutover to onusclub.com + smoke in CI + B2 backup code | ✅ Deployed |
-| 12 | Apple Wallet live updates via APNs push | ✅ Deployed |
-| 11 | Apple Wallet end-to-end + OnUsClub branding (Phase A) | ✅ Deployed |
+| Sanchit's Mac | `/Users/sanchit/Projects/stampdeck` | Local clone, working tree clean |
+| GitHub | `github.com/sippzytech/onusclub` (SSH: `git@github.com:sippzytech/onusclub.git`) | Source of truth for code |
+| Production VPS | `root@api.onusclub.com:/docker/stampdeck` | Deployed clone, currently serving prod |
 
-Full history in [ROADMAP.md](./ROADMAP.md). Day-by-day commits visible with `git log --oneline --all`.
+**Note the mismatch**: local dir is `stampdeck` (legacy name), GitHub repo is `onusclub`, pnpm packages are `@onusclub/*`. See `CLAUDE.md` for the full rename history. This is intentional — some names weren't renamed because renaming them (MySQL DB name, Docker volume, VPS deploy dir) would risk data loss for zero user-visible benefit.
+
+## Current git state (as of this doc)
+
+- **Branch**: `day-14-points-programs`
+- **HEAD**: `407b8ea` — "Docs: Perkstar tear-down + Day 15+ candidates + office-laptop handoff"
+- **Working tree**: clean
+- **Remote**: up to date with origin
+
+## What is live on prod right now
+
+- `https://api.onusclub.com` — Node/Express API
+- `https://app.onusclub.com` — Next.js dashboard + customer-facing pages
+- Both routed via existing Traefik on the VPS (`n8n_default` network, cert resolver `mytlschallenge`)
+- MySQL 8 on the internal Docker network (`onusclub-mysql` container, DB name `stampdeck` — not renamed)
+- All 7 migrations applied through `007_points_batches.sql`
+- Both containers on the `day-14-points-groups` build (~2026-06-29 rebuild)
+
+## What is on-hold / gated externally
+
+- **Google Wallet production approval** — issuer still in demo mode. Only allowlisted Google accounts can save passes. Waiting on friend to finish marketing site (privacy/ToS/logo) so Google can approve.
+- **Resend sender domain** — currently `onboarding@resend.dev`. Verified subdomain `send.onusclub.com` at some point but not sure if `EMAIL_FROM` env was flipped on VPS. Worth verifying if we get to email work.
+- **Backblaze B2 offsite backup** — code shipped Day 13, needs 10 min of user-side sign-up + 3 env lines on VPS. See `DEPLOY.md §9`.
 
 ---
 
-## Today's options (pick one)
+## What we're doing next (Day 15 — planned, not started)
 
-### Option A — Deploy Day 14 + UI redesign to prod (lowest risk, ~20 min)
+**"Revenue capture + dashboard come-alive"** — the biggest lever from the Perkstar tear-down (`PERKSTAR_ANALYSIS.md` explains the full reasoning).
 
-The redesign + points programs have been sitting on a feature branch. Get them live.
+**One-line summary**: Perkstar has no POS integration. They ask the merchant to type the sale amount at scan time and derive every revenue/ROI/AOV/RFM number from that one input. We can do the same with one column on `card_events` + one field on the scanner.
 
-```bash
-ssh root@api.onusclub.com
-cd /docker/stampdeck
-
-git fetch origin
-git checkout day-14-points-programs
-git pull origin day-14-points-programs
-
-# Rebuild api + web (mysql untouched)
-docker compose -f docker-compose.prod.yml up -d --build api web
-
-# Apply migration 007 (points batches table)
-docker compose -f docker-compose.prod.yml exec api node dist/db/migrate.js
-# expect: "applying migration 007_points_batches.sql"
-
-# Verify
-curl -sf https://api.onusclub.com/health
-curl -sI https://app.onusclub.com
-```
-
-Then visit `https://app.onusclub.com` from a browser, log in, sanity-check:
-- Dashboard renders with new dark green sidebar
-- Fraunces serif headings render (not falling back to system serif)
-- Create a points program in the dashboard, enrol a customer, add a transaction
-- Open the public `/m/<slug>` enrol page and confirm brand styling
-
-### Option B — Start Day 15 (revenue capture) directly on VPS
-
-This is the Perkstar-inspired bundle. See [PERKSTAR_ANALYSIS.md](./PERKSTAR_ANALYSIS.md) for the full reasoning.
-
-**Scope** (~1.5-2 days):
-1. New migration `008_card_event_amount.sql` — `ALTER TABLE card_events ADD COLUMN amount_cents BIGINT NULL;`
-2. Update `card_events` insert paths to accept optional `amountCents`:
+**Scope (~1.5-2 days)**:
+1. Migration `008_card_event_amount.sql` — `ALTER TABLE card_events ADD COLUMN amount_cents BIGINT NULL;` + `ALTER TABLE merchants ADD COLUMN currency_code CHAR(3) NOT NULL DEFAULT 'EUR';`
+2. Accept optional `amountCents` in card event insert paths:
    - `apps/api/src/cards/operations.ts` — `addStampToCard`, `redeemStampCard`, `addPointsToCard`, `redeemPointsCard`
-   - `apps/api/src/routes/scan.ts` — accept `amountCents` in body
+   - `apps/api/src/routes/scan.ts` — accept in body
 3. Scanner state machine (`apps/web/src/app/dashboard/scan/scan-client.tsx`) — add a skippable "Sale amount (€)" prompt step between scan + commit
-4. Manual stamp/redeem buttons on `/dashboard/cards/[id]` — small amount input next to the buttons
+4. Manual stamp/redeem buttons on `/dashboard/cards/[id]` — small amount input next to buttons
 5. Overview page (`apps/web/src/app/dashboard/page.tsx`):
    - Sum `amount_cents` last 7d → "Revenue (last 7 days)" KPI
    - Sum / count → "AOV" KPI
-   - Last 10 card_events → recent activity feed
+   - Last 10 `card_events` → recent activity feed
 6. Smoke test additions — 5-6 assertions covering amount capture + aggregates
-7. Currency: add `merchants.currency_code` (default `'EUR'`) on a same migration
 
-**Recommended approach for VPS-only work:**
-- Edit on the VPS via `ssh` + `vim` / `nano`, or use VS Code Remote-SSH
-- Run the smoke test in the dev compose on the VPS before deploying to prod:
-  ```bash
-  cd /docker/stampdeck
-  git checkout -b day-15-revenue-capture
-  # make edits
-  docker compose -f docker-compose.dev.yml up -d
-  docker compose -f docker-compose.dev.yml exec api pnpm --filter @onusclub/api run smoke
-  ```
-- Don't deploy until smoke is green.
-
-### Option C — Other small wins from the polish backlog
-
-If you want a quick win instead of either of the above:
-- **Backblaze B2 backup setup** — 10 min. Sign up at backblaze.com, create a bucket, get an application key, paste 3 lines into VPS `.env`, install `b2` CLI. Full runbook in `DEPLOY.md §9`. Code shipped on Day 13.
-- **Bump GitHub Actions to v5** — 15 min. Edit `.github/workflows/ci.yml`, replace `actions/checkout@v4` etc. with `@v5`. Kills the deprecation warning.
+Full priority table for Days 15-19 in `ROADMAP.md` "Perkstar-inspired candidates" section.
 
 ---
 
-## What you need on the office laptop
+## Bootstrapping a fresh Claude session in Antigravity
 
-If you're working directly on the VPS via SSH, you need almost nothing locally:
-- SSH client (built-in on macOS/Linux, OpenSSH on Windows)
-- The VPS SSH key (in your password manager — pull it down)
-- A terminal
+### Step 1: Open the project
 
-If you want VS Code Remote-SSH (recommended for the Day 15 option):
-- VS Code installed
-- Remote-SSH extension installed
-- SSH config entry for `api.onusclub.com` with the right key
-
-If you want to clone the repo locally too (for diffs / git tooling):
 ```bash
-git clone https://github.com/sippzytech/onusclub.git
-cd onusclub
+cd /Users/sanchit/Projects/stampdeck
+# open in Antigravity — however that CLI/GUI shortcut works
+```
+
+The repo is already there; do NOT re-clone (you'd nuke uncommitted work if there ever is any).
+
+If for some reason it's missing, clone fresh:
+```bash
+git clone git@github.com:sippzytech/onusclub.git /Users/sanchit/Projects/stampdeck
+cd /Users/sanchit/Projects/stampdeck
 git checkout day-14-points-programs
 ```
-Use a Personal Access Token if HTTPS auth asks for a password.
+
+### Step 2: Verify state
+
+```bash
+git status && git log --oneline -5
+# expect: clean tree on day-14-points-programs, HEAD at 407b8ea or later
+```
+
+If HEAD is not at `407b8ea`, run `git pull` first.
+
+### Step 3: Paste this exact prompt into the fresh Claude chat
+
+Copy-paste the block below verbatim as your first message in the new chat. This gives Claude instant grounding without you having to explain anything.
 
 ---
 
-## Secrets you do NOT need today
-
-The following live only on Sanchit's personal Mac + password manager. **You don't need them for any of today's options:**
-- Apple Wallet `.p12` certs (already deployed on VPS; only needed to test pass downloads from a fresh local environment)
-- Google Wallet service-account JSON (already deployed on VPS)
-- Resend API key (already in VPS `.env`)
-- APNs cert PEM files (already on VPS)
-
-The VPS already has all these mounted. If you're working only on the VPS, everything just works.
-
----
-
-## Items still in the TODO list (unchanged)
-
-1. **Day 15: revenue capture** — Perkstar-inspired, see PERKSTAR_ANALYSIS.md
-2. **Day 16-19**: CSV import → RFM → templates → digest email (see ROADMAP.md)
-3. **Stripe billing** — user flagged as "last part" of feature work. Pairs with Day 14's tier-system feature.
-4. **Google Wallet production approval** — paperwork: marketing site + privacy/ToS + 660×660 logo + business contact email. Friend shipping the marketing site. ~10 min user-side once friend is done, then 1-3 days Google review.
-5. **Backblaze B2 offsite backup** — code shipped Day 13, needs 10 min of user-side setup.
-
-Smaller items (no rush):
-- Drop sippzy.com legacy Traefik routes (after 1-2 weeks of onusclub.com stability)
-- Day 14 scan-flow for points (will fall out of Day 15 naturally — same amount field)
-- Bump GitHub Actions to v5
-- Owner magic-link email re-wire
-
-See [ROADMAP.md](./ROADMAP.md) for the full prioritized list.
+> I'm resuming a project called **OnUsClub** — a multi-tenant SaaS for digital loyalty cards (Google Wallet + Apple Wallet, Netherlands-first, competing with Perkstar UK and Tap2 NL). The prior chat was in a Claude Code CLI terminal and I'm continuing in Antigravity.
+>
+> Please read these files in order before answering anything:
+>
+> 1. `CLAUDE.md` — stack, ports, conventions, secrets locations
+> 2. `HANDOFF.md` — where I stopped, current git/prod state, what's next
+> 3. `ROADMAP.md` — full day-by-day history + Perkstar-inspired candidates for Days 15-19
+> 4. `PERKSTAR_ANALYSIS.md` — the feature tear-down that shaped the current plan
+>
+> Once you've read those, tell me:
+> - What's currently live on prod
+> - What the next planned work is
+> - Confirm you understand that "Day 15 revenue capture" is the recommended next feature
+>
+> Then wait for me to say what I want to do. Don't start coding until I confirm.
 
 ---
 
-## Continuity tips for the office laptop session
+That's it. Antigravity + Claude reads those four files, and it will know everything the previous CLI session knew.
 
-- **All context lives in the repo** — CLAUDE.md, ROADMAP.md, PERKSTAR_ANALYSIS.md, DEPLOY.md, FEATURES.md, this HANDOFF.md. You can drop into Claude Code from a fresh checkout with zero memory and be fully up to speed.
-- **Don't commit secrets to the repo.** The office laptop probably doesn't have your `.env` files anyway, so this is mostly a non-issue.
-- **If you spin up local dev on the office laptop**, leave Apple/Google Wallet env vars empty — they degrade to 503 gracefully and don't block points / scan / dashboard work.
-- **VPS `.env` editing**: be careful with smart-quotes when pasting on macOS. There's a saved memory note about this. After editing on the VPS, run `grep -P '[^\x00-\x7F]' .env` to catch any curly quotes that snuck in.
+### Step 4 (optional but recommended): tell Claude what your memory contains
+
+If Antigravity's Claude has access to a memory store, it may not have the entries the CLI session built up. The important ones live at `/Users/sanchit/.claude/projects/-Users-sanchit-Projects-stampdeck/memory/`. Two files are load-bearing enough to mention explicitly:
+
+- `feedback_dont_use_office_email.md` — `sanchit.shinde@easyhomefinance.in` is off-limits in any test data. Use personal gmails.
+- `feedback_env_smart_quotes.md` — macOS auto-substitutes " when you paste, breaking .env on remote hosts. After editing `.env` on the VPS: `grep -P '[^\x00-\x7F]' .env` to catch curly quotes.
+
+The rest is nice-to-have context, not action-blocking.
+
+---
+
+## Restart the laptop safely — checklist
+
+Before you close the terminal / restart:
+
+- [ ] `git status` shows clean tree (already true — checked at the top of this doc)
+- [ ] `git log` shows HEAD is pushed (`origin/day-14-points-programs` at `407b8ea` — already true)
+- [ ] Any local uncommitted `.env` files backed up somewhere (they're in `.gitignore` so `git status` won't warn you). If you have wallet certs/keys locally, ensure they're in your password manager or `~/Documents/keys/` too.
+- [ ] SSH agent has your VPS key loaded (`ssh-add -l` — if empty, `ssh-add ~/.ssh/id_ed25519` or whichever)
+
+You are safe to close and restart. Prod continues running regardless of your laptop state.
+
+---
+
+## Files you should never delete
+
+| File | Why |
+|---|---|
+| `CLAUDE.md` | Onboards fresh Claude sessions in one read |
+| `ROADMAP.md` | Canonical plan, day-by-day history |
+| `HANDOFF.md` | This file — the "resume here" bridge |
+| `PERKSTAR_ANALYSIS.md` | The reasoning behind Day 15+ |
+| `DEPLOY.md` | Prod deploy runbook |
+| `FEATURES.md` | User-facing feature catalogue |
+| `METABASE.md` | Analytics setup |
+| `.env.example` files | Show what env is needed |
+| `apps/api/src/db/migrations/*.sql` | The DB is polymorphic on top of these — deleting = catastrophic |
