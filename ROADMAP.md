@@ -140,8 +140,14 @@ Each day below corresponds to a git branch + a commit. Run `git log --oneline --
 ### Wallet production approval *(blocker on real customer launch)*
 - Issuer `3388000000023150410` is still in Google's demo mode.
 - Until approved, only Google accounts on the test users allowlist can save passes.
-- **Gated on**: OnUsClub marketing site with a privacy policy + ToS URL + business logo.
-- Process: submit at <https://pay.google.com/business/console/> → Google reviews in 1-2 business days.
+- **Apple Wallet is not affected** — Apple Developer Program accepts individual enrollment, our `.pkpass` flow is production-ready and live.
+- **Two independent hard gates for Google:**
+  1. **KvK-registered Netherlands business entity** as the Wallet issuer. Sanchit does not personally hold a KvK number, so a friend in the Netherlands who *does* have one is providing it. As of ~2026-06-22 the friend said "next week"; as of 2026-08-23 the actual status is unconfirmed — verify with Sanchit before assuming it's done.
+     - Info the friend must hand over: KvK number, registered legal name, registered address, business contact email, (probably) VAT/BTW number.
+     - That entity's name is what will show on the Wallet pass as the issuer — non-trivial branding decision.
+  2. **OnUsClub marketing site** with a privacy policy URL, ToS URL, and business logo. (Friend is also working on this, per the prior session.)
+- Process (once both gates are met): submit at <https://pay.google.com/business/console/> → Google reviews in 1-2 business days.
+- See `/Users/sanchit/.claude/projects/-Users-sanchit-Projects-stampdeck/memory/project_google_wallet_kvk.md` for the running status log.
 
 ### Resend sender domain verification *(blocker on real customer email)*
 - Currently `EMAIL_FROM=OnUsClub <onboarding@resend.dev>` (Resend's onboarding domain).
@@ -224,7 +230,7 @@ Still relevant, none depend on each other.
 | Idea | Effort | Value |
 |---|---|---|
 | **Stripe billing** for the premium gate | 1-2 days | Turn fake unlock into real revenue. User flagged this as the *"last part"* to do — pairs with the tier system from Perkstar tear-down. |
-| **Google Wallet production approval** (submit issuer to Google) | half day setup + 1-3 day Google review | Unlocks **any Google account** to save passes (not just allowlisted). Apple already production-ready. Blocked on marketing site privacy + ToS + logo (friend working on it). |
+| **Google Wallet production approval** (submit issuer to Google) | half day setup + 1-3 day Google review | Unlocks **any Google account** to save passes (not just allowlisted). Apple already production-ready. Blocked on TWO things from friend in Netherlands: (a) KvK-registered business entity to name as issuer, and (b) marketing site with privacy + ToS + logo. See Deferred section above for the full checklist. |
 | **Resend domain verification** for `sippzy.com` or `onusclub.com` | ~30 min setup + DNS propagation | Required to email real customers. Currently `EMAIL_FROM` is on Resend's test domain → only delivers to `sippzy.official@gmail.com`. |
 | **Backblaze B2 offsite backup** (code already ready, just needs setup) | 10 min user-side | Just sign up + 3 env lines on VPS. See `HANDOFF.md` for the recipe; deferred earlier on lack of business email. |
 | **Scan flow for points programs** | 2-3 h | Day 14 deferred this — scan + add-points currently needs amount-capture. **Will fall out naturally from Day 15** (same input field). |

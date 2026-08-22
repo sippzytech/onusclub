@@ -48,7 +48,7 @@ Immediately after that, Sanchit decided to switch from the CLI to Antigravity ID
 
 ## What is on-hold / gated externally
 
-- **Google Wallet production approval** — issuer still in demo mode. Only allowlisted Google accounts can save passes. Waiting on friend to finish marketing site (privacy/ToS/logo) so Google can approve.
+- **Google Wallet production approval** — issuer still in demo mode. Only allowlisted Google accounts can save passes. **Apple Wallet is unaffected — it is live in production.** Google needs TWO things from a friend in Netherlands: (a) a **KvK-registered business entity** to name as the Wallet issuer (Sanchit has no personal KvK); friend said "next week" around 2026-06-22 — as of 2026-08-23 status unconfirmed, ask Sanchit; and (b) marketing site with privacy + ToS + logo. See `ROADMAP.md` "Wallet production approval" section for the full checklist of what the friend must hand over.
 - **Resend sender domain** — currently `onboarding@resend.dev`. Verified subdomain `send.onusclub.com` at some point but not sure if `EMAIL_FROM` env was flipped on VPS. Worth verifying if we get to email work.
 - **Backblaze B2 offsite backup** — code shipped Day 13, needs 10 min of user-side sign-up + 3 env lines on VPS. See `DEPLOY.md §9`.
 
