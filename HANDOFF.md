@@ -62,6 +62,8 @@ Sanchit chose to do both, in this specific order (B first because it starts a 1-
 
 This is form-filling on <https://pay.google.com/business/console/> for existing issuer `3388000000023150410`. **Not something Claude does — Sanchit has to log in personally.** Claude in Antigravity should walk Sanchit through it if asked, but should not attempt to automate.
 
+**Which Google account to log in with**: almost certainly **`sippzy.official@gmail.com`** — that's the identity the whole `sippzy` GCP project + service account + Resend account was built under, and it's the sole test-user on the current demo allowlist. To verify before filling anything: open the console in an incognito window, sign in with `sippzy.official@gmail.com`, and check that issuer `3388000000023150410` is visible. If not, wrong account.
+
 **Field-by-field checklist for the Business Info form:**
 
 | Field | What to enter |
