@@ -54,13 +54,43 @@ Immediately after that, Sanchit decided to switch from the CLI to Antigravity ID
 
 ---
 
-## What we're doing next (Day 15 — planned, not started)
+## What we're doing next — Decision locked 2026-08-23: **A + B in parallel**
 
-**"Revenue capture + dashboard come-alive"** — the biggest lever from the Perkstar tear-down (`PERKSTAR_ANALYSIS.md` explains the full reasoning).
+Sanchit chose to do both, in this specific order (B first because it starts a 1-2 day Google review clock; A is 1.5-2 days of code that runs while Google reviews):
 
-**One-line summary**: Perkstar has no POS integration. They ask the merchant to type the sale amount at scan time and derive every revenue/ROI/AOV/RFM number from that one input. We can do the same with one column on `card_events` + one field on the scanner.
+### B — Submit Google Wallet issuer for production approval (Sanchit's keyboard, ~half day)
 
-**Scope (~1.5-2 days)**:
+This is form-filling on <https://pay.google.com/business/console/> for existing issuer `3388000000023150410`. **Not something Claude does — Sanchit has to log in personally.** Claude in Antigravity should walk Sanchit through it if asked, but should not attempt to automate.
+
+**Field-by-field checklist for the Business Info form:**
+
+| Field | What to enter |
+|---|---|
+| Legal business name | Friend's KvK-registered legal name (Sanchit has this from friend) |
+| KvK number | From friend |
+| Registered address | From friend |
+| Business contact email | From friend, OR a monitored OnUsClub inbox |
+| VAT / BTW number | From friend, if applicable |
+| Business website | `https://onusclub.com` |
+| Privacy policy URL | `https://onusclub.com/privacy` (verified 200 OK on 2026-08-23) |
+| Terms of Service URL | `https://onusclub.com/terms` (verified 200 OK on 2026-08-23) |
+| Business logo | From marketing site — square, PNG, typically ≥660x660 |
+| Program category | Loyalty program |
+| Program description | "Digital loyalty stamp & points cards for cafés, salons, and SMBs in the Netherlands" |
+| Countries served | Netherlands (add EU later if desired) |
+
+**Sanity checks before hitting submit:**
+- Log into `pay.google.com/business/console/` and check that the LoyaltyClass created for the first real merchant looks sane — proper name/description, real logo (not `placehold.co`). If placeholder logos are still in play from `apps/api/src/wallet/…`, either update to a real logo or wait until we ship per-merchant logo upload.
+- After submit, review typically arrives via email in 1-2 business days.
+- Once approved: **no code change** — the LoyaltyClass + LoyaltyObject + save-to-Wallet JWT already work end-to-end; the issuer just flips from "demo (allowlisted testers only)" to "any Google account."
+
+### A — Day 15: Revenue capture + dashboard come-alive (Antigravity Claude codes this, ~1.5-2 days)
+
+The biggest lever from the Perkstar tear-down (`PERKSTAR_ANALYSIS.md` has the full reasoning).
+
+**One-line summary**: Perkstar has no POS integration. They ask the merchant to type the sale amount at scan time and derive every revenue/ROI/AOV/RFM number from that one input. We do the same with one column on `card_events` + one field on the scanner.
+
+**Scope**:
 1. Migration `008_card_event_amount.sql` — `ALTER TABLE card_events ADD COLUMN amount_cents BIGINT NULL;` + `ALTER TABLE merchants ADD COLUMN currency_code CHAR(3) NOT NULL DEFAULT 'EUR';`
 2. Accept optional `amountCents` in card event insert paths:
    - `apps/api/src/cards/operations.ts` — `addStampToCard`, `redeemStampCard`, `addPointsToCard`, `redeemPointsCard`
@@ -74,6 +104,12 @@ Immediately after that, Sanchit decided to switch from the CLI to Antigravity ID
 6. Smoke test additions — 5-6 assertions covering amount capture + aggregates
 
 Full priority table for Days 15-19 in `ROADMAP.md` "Perkstar-inspired candidates" section.
+
+### Sequencing rule for the Antigravity session
+
+1. **Ask Sanchit first**: "Have you already submitted the Google Wallet Business Console form (Option B)? If not, please do that before we start Day 15 so Google's 1-2 day review runs in the background." If Sanchit says he'll do B himself later — proceed to A anyway; they're independent.
+2. Then start Day 15 (A) — follow the plan-first-wait-for-go-ahead rule from user memory. Show the migration + scope, wait for Sanchit's OK, then code.
+3. If Google approval comes back approved/rejected during coding, react to that separately (usually just an email — no code impact on approve, follow-up form-fill on reject).
 
 ---
 
