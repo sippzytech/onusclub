@@ -54,8 +54,21 @@ export function objectId(cardId: string): string {
   return `${WALLET_ISSUER_ID}.c_${cardId.replace(/-/g, "")}`;
 }
 
-const FALLBACK_LOGO =
-  "https://placehold.co/240x240/111111/FFFFFF/png?text=OnUsClub";
+/**
+ * Shown on the Wallet pass when a merchant has not uploaded their own logo
+ * (there is no logo-upload UI yet — see "Wallet / card visual customization"
+ * in ROADMAP.md), so in practice this is what every pass currently renders.
+ *
+ * It used to point at placehold.co. That was fine while the issuer was in
+ * demo mode and only we could see it, but it is the image a Google reviewer
+ * looks at when assessing the issuer for production — a third-party
+ * placeholder graphic is not what you want representing the brand there.
+ *
+ * Must stay a publicly reachable HTTPS URL: Google fetches it server-side
+ * when the LoyaltyClass is created, so anything behind auth or a private
+ * host silently produces a logo-less pass.
+ */
+const FALLBACK_LOGO = "https://onusclub.com/new_logo.png";
 
 /**
  * Pure mapping from our domain types into a Google Wallet LoyaltyClass body.
