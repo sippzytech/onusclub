@@ -57,15 +57,22 @@ In `docker-compose.prod.yml`:
 - MySQL has no published port and is reachable only on the project-internal Docker network.
 - Traefik labels use `certresolver=mytlschallenge`.
 
-### How to deploy (stub)
+### How to deploy
 
-Full runbook TBD. The pattern will be:
+**[DEPLOY.md](./DEPLOY.md) is the canonical runbook.** Day-to-day it is:
 
-1. SSH to VPS, `cd /docker/stampdeck`.
-2. `git pull`.
-3. `docker compose -f docker-compose.prod.yml up -d --build`.
-4. Traefik picks up labels and routes automatically.
-5. Migrations: `docker compose -f docker-compose.prod.yml run --rm api pnpm db:migrate`.
+```bash
+ssh root@api.onusclub.com
+cd /docker/stampdeck
+git pull
+docker compose -f docker-compose.prod.yml up -d --build
+# only if the new commit added a migration:
+docker compose -f docker-compose.prod.yml exec api node dist/db/migrate.js
+```
+
+Traefik picks up the labels and routes automatically. Note the migration runs the
+**compiled** `dist/db/migrate.js` — `pnpm db:migrate` is dev-image only and will fail
+in prod.
 
 The Google Wallet service-account key already lives at `/docker/stampdeck/secrets/wallet-sa.json` on the VPS (chmod 600) and is mounted into the api container at `/secrets/wallet-sa.json`. **Never** put the key in the repo.
 

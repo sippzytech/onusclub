@@ -110,10 +110,14 @@ Standard `DEPLOY.md` flow, plus the migration:
 
 ```bash
 ssh root@api.onusclub.com
-cd /docker/stampdeck && git pull
+cd /docker/stampdeck
+git pull
 docker compose -f docker-compose.prod.yml up -d --build
-docker compose -f docker-compose.prod.yml run --rm api pnpm db:migrate   # applies 008
+docker compose -f docker-compose.prod.yml exec api node dist/db/migrate.js   # applies 008
 ```
+
+Note the migration command runs the **compiled** `dist/db/migrate.js` via `exec` on the
+running container — not `pnpm db:migrate`, which only exists in the dev image.
 
 Migration `008` is additive (two nullable/defaulted columns + a backfill UPDATE) so it is safe to run against live data with no downtime window.
 

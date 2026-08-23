@@ -288,10 +288,10 @@ Database migrations are **not** auto-rolled-back. If a migration corrupted data,
 # Status
 docker compose -f docker-compose.prod.yml ps
 
-# Logs (live)
-docker logs -f stampdeck-api
-docker logs -f stampdeck-web
-docker logs -f stampdeck-mysql
+# Logs (live) — containers were renamed in the Day 13 rename
+docker logs -f onusclub-api
+docker logs -f onusclub-web
+docker logs -f onusclub-mysql
 
 # Restart a single service
 docker compose -f docker-compose.prod.yml restart api
