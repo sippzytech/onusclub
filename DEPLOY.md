@@ -263,6 +263,30 @@ If a migration was added on the new commit:
 docker compose -f docker-compose.prod.yml exec api node dist/db/migrate.js
 ```
 
+Then **verify the deploy** — always, not just when a migration was involved:
+
+```bash
+./scripts/verify-deploy.sh
+```
+
+Exit code 0 means everything passed. It is read-only and safe against prod.
+
+Run from `/docker/stampdeck` on the VPS it also checks that every migration
+file on disk has actually been applied to the live database — the check that
+would have caught the Day 15 outage, where the web build shipped without its
+migration and the first symptom was a broken login screen.
+
+To include the logged-in checks (strongly recommended — the dashboard can be
+fine anonymously and still broken once a session exists):
+
+```bash
+PROD_EMAIL='you@example.com' PROD_PASSWORD='…' ./scripts/verify-deploy.sh
+```
+
+Do **not** run `pnpm smoke` against production. It creates merchants,
+customers and cards, and would litter the live database with fake records.
+`verify-deploy.sh` is the prod-safe counterpart.
+
 That's it.
 
 ---
