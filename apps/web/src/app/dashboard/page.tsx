@@ -1,5 +1,12 @@
 import Link from "next/link";
-import type { Card, Customer, Program } from "@onusclub/shared";
+import {
+  centsToEuroString,
+  type ActivityEvent,
+  type AnalyticsOverview,
+  type Card,
+  type Customer,
+  type Program,
+} from "@onusclub/shared";
 import { apiFetch } from "@/lib/api";
 import { requireSession } from "@/lib/session";
 import { DashboardShell } from "./dashboard-shell";
@@ -8,6 +15,26 @@ export const dynamic = "force-dynamic";
 
 function formatNumber(n: number): string {
   return n.toLocaleString("en-US");
+}
+
+// What each event looks like in the feed. Stamps and points transactions are
+// the everyday traffic; signup and expire are rarer but worth surfacing —
+// an owner wants to see a new member land.
+function describeEvent(e: ActivityEvent): { label: string; tone: string } {
+  switch (e.eventType) {
+    case "stamp":
+      return { label: "+1 stamp", tone: "text-brand-green" };
+    case "points_add":
+      return { label: "Points transaction", tone: "text-brand-green" };
+    case "redeem":
+      return { label: "Reward redeemed", tone: "text-emerald-700" };
+    case "signup":
+      return { label: "Joined", tone: "text-brand-gold" };
+    case "expire":
+      return { label: "Expired", tone: "text-brand-olive" };
+    default:
+      return { label: e.eventType.replace(/_/g, " "), tone: "text-brand-olive" };
+  }
 }
 
 interface StatCardProps {
@@ -40,11 +67,15 @@ export default async function DashboardPage(): Promise<JSX.Element> {
 
   // Pull the shapes we already have; aggregate to dashboard-shaped numbers
   // client-side so we don't have to add a new endpoint yet.
-  const [{ programs }, { customers }, { cards }] = await Promise.all([
+  const [{ programs }, { customers }, { cards }, overview] = await Promise.all([
     apiFetch<{ programs: Program[] }>("/v1/programs", { jwt }),
     apiFetch<{ customers: Customer[] }>("/v1/customers", { jwt }),
     apiFetch<{ cards: Card[] }>("/v1/cards", { jwt }),
+    apiFetch<AnalyticsOverview>("/v1/analytics/overview", { jwt }),
   ]);
+
+  const money = (cents: number): string =>
+    centsToEuroString(cents, overview.currencyCode);
 
   // Headline numbers — derived from current snapshot. Time-windowed numbers
   // (this week, vs last month) need a dedicated aggregation endpoint —
@@ -63,16 +94,6 @@ export default async function DashboardPage(): Promise<JSX.Element> {
     activeMembers > 0 && totalStamps > 0
       ? Math.round((totalStamps / activeMembers) * 10) / 10
       : 0;
-
-  // "Recent activity" — pull each card's last event timestamp from
-  // last_event_at and surface the most recent few. Sorted desc.
-  const recentCards = [...cards]
-    .filter((c) => c.lastEventAt)
-    .sort(
-      (a, b) =>
-        new Date(b.lastEventAt!).getTime() - new Date(a.lastEventAt!).getTime()
-    )
-    .slice(0, 6);
 
   function timeAgo(iso: string): string {
     const diff = Date.now() - new Date(iso).getTime();
@@ -119,16 +140,39 @@ export default async function DashboardPage(): Promise<JSX.Element> {
       title="Overview"
     >
       <div className="space-y-6">
-        {/* KPI row */}
-        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3">
+        {/* Money row. Everything here comes from sale amounts staff typed at
+          * scan time — see the empty-state hint below when nothing has been
+          * captured yet. */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <StatCard label="Revenue (7 days)" value={money(overview.revenueCents7d)} />
+          <StatCard
+            label="Avg sale"
+            value={overview.aovCents7d === null ? "—" : money(overview.aovCents7d)}
+          />
+          <StatCard
+            label="Transactions (7 days)"
+            value={formatNumber(overview.transactions7d)}
+          />
+          <StatCard label="Revenue (30 days)" value={money(overview.revenueCents30d)} />
+        </div>
+
+        {overview.transactions7d === 0 ? (
+          <div className="rounded-card border border-brand-gold/40 bg-brand-cream px-5 py-4 text-sm text-brand-olive">
+            <span className="font-medium text-brand-green">
+              No sale amounts captured yet.
+            </span>{" "}
+            Revenue and average sale fill in once staff start entering the bill
+            amount when they scan a card — it&apos;s optional on every scan, so
+            these numbers cover the visits where it was entered.
+          </div>
+        ) : null}
+
+        {/* Loyalty row */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <StatCard label="Active members" value={formatNumber(activeMembers)} />
           <StatCard label="Active cards" value={formatNumber(activeCards)} />
           <StatCard label="Stamps issued" value={formatNumber(totalStamps)} />
           <StatCard label="Rewards redeemed" value={formatNumber(totalRewards)} />
-          <StatCard
-            label="Avg stamps / member"
-            value={activeMembers > 0 ? repeatRate.toFixed(1) : "—"}
-          />
         </div>
 
         {/* Main row: chart + activity */}
@@ -183,7 +227,7 @@ export default async function DashboardPage(): Promise<JSX.Element> {
                 />
               </svg>
             </div>
-            <div className="mt-4 grid grid-cols-3 gap-4 pt-4 border-t border-brand-green/10">
+            <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-4 pt-4 border-t border-brand-green/10">
               <div>
                 <p className="text-xs uppercase tracking-wide text-brand-olive">New members</p>
                 <p className="font-serif text-2xl text-brand-green mt-1 tabular-nums">
@@ -207,6 +251,14 @@ export default async function DashboardPage(): Promise<JSX.Element> {
                     : "—"}
                 </p>
               </div>
+              <div>
+                <p className="text-xs uppercase tracking-wide text-brand-olive">
+                  Avg stamps / member
+                </p>
+                <p className="font-serif text-2xl text-brand-green mt-1 tabular-nums">
+                  {activeMembers > 0 ? repeatRate.toFixed(1) : "—"}
+                </p>
+              </div>
             </div>
           </div>
 
@@ -219,40 +271,45 @@ export default async function DashboardPage(): Promise<JSX.Element> {
                 Live
               </span>
             </div>
-            {recentCards.length === 0 ? (
+            {overview.recentEvents.length === 0 ? (
               <p className="text-sm text-brand-olive mt-4">
                 No activity yet. Enrol a customer to get started.
               </p>
             ) : (
               <ul className="mt-4 divide-y divide-brand-green/10">
-                {recentCards.map((c) => {
-                  const name = c.customerName ?? "Member";
-                  const initials = initialsFor(name);
-                  const color = avatarColorFor(name);
+                {overview.recentEvents.map((e) => {
+                  const name = e.customerName ?? "Member";
+                  const { label, tone } = describeEvent(e);
                   return (
-                    <li key={c.id} className="flex items-start gap-3 py-3">
+                    <li key={e.id} className="flex items-start gap-3 py-3">
                       <div
                         className={
                           "h-8 w-8 rounded-md text-white text-xs font-medium flex items-center justify-center shrink-0 " +
-                          color
+                          avatarColorFor(name)
                         }
                       >
-                        {initials}
+                        {initialsFor(name)}
                       </div>
                       <div className="min-w-0 flex-1">
                         <p className="text-sm text-brand-green">
                           <Link
-                            href={`/dashboard/cards/${c.id}`}
+                            href={`/dashboard/cards/${e.cardId}`}
                             className="font-medium hover:underline underline-offset-2"
                           >
                             {name}
                           </Link>{" "}
-                          <span className="text-brand-olive">
-                            on {c.programName}
-                          </span>
+                          <span className="text-brand-olive">on {e.programName}</span>
                         </p>
-                        <p className="text-xs text-brand-olive mt-0.5">
-                          {timeAgo(c.lastEventAt!)}
+                        <p className="text-xs mt-0.5 flex items-center gap-1.5">
+                          <span className={tone}>{label}</span>
+                          {e.amountCents !== null ? (
+                            <span className="text-brand-green font-medium tabular-nums">
+                              · {money(e.amountCents)}
+                            </span>
+                          ) : null}
+                          <span className="text-brand-olive">
+                            · {timeAgo(e.createdAt)}
+                          </span>
                         </p>
                       </div>
                     </li>

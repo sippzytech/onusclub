@@ -1262,6 +1262,234 @@ async function main(): Promise<void> {
   console.log("→ no day-rate-limit on points scans (add-points multiple times same day OK)");
   // We already added points 3+ times today on this card without 409. Implicit assertion.
 
+  // ---------- Day 15: revenue capture ----------
+  //
+  // Revenue aggregates are merchant-wide and this run has already booked
+  // several points transactions, so every assertion below is a *delta*
+  // against a baseline snapshot rather than an absolute figure. That keeps
+  // these checks from breaking when someone adds an unrelated test above.
+
+  interface Overview {
+    currencyCode: string;
+    revenueCents7d: number;
+    revenueCents30d: number;
+    transactions7d: number;
+    aovCents7d: number | null;
+    recentEvents: Array<{
+      id: number;
+      cardId: string;
+      customerName: string | null;
+      programName: string;
+      eventType: string;
+      amountCents: number | null;
+      createdAt: string;
+    }>;
+  }
+  interface EventsDetail {
+    card: { id: string };
+    events: Array<{ id: number; eventType: string; amountCents: number | null }>;
+  }
+
+  console.log("→ analytics overview baseline");
+  const base = await call<Overview>("GET", "/v1/analytics/overview", undefined, jwt);
+  assert(base.currencyCode === "EUR", `currencyCode wrong: ${base.currencyCode}`);
+  // The points transactions above (€5 + €10 + €15 + €4 + €6 = €40) should
+  // already be counted: points programs capture the bill amount by design,
+  // so revenue works without anyone opting in.
+  assert(
+    base.revenueCents7d === 4000,
+    `expected €40.00 from points transactions, got ${base.revenueCents7d}`
+  );
+  assert(
+    base.transactions7d === 5,
+    `expected 5 amount-carrying events, got ${base.transactions7d}`
+  );
+  assert(
+    base.aovCents7d === 800,
+    `expected AOV of €8.00 (4000/5), got ${base.aovCents7d}`
+  );
+  assert(
+    base.revenueCents30d === base.revenueCents7d,
+    "30d window should include everything the 7d window has"
+  );
+
+  console.log("→ enrol a fresh stamp card for revenue capture");
+  const revCustomer = await call<{ id: string }>(
+    "POST",
+    "/v1/customers",
+    { name: "Revenue Rita", phone: "+31611111201" },
+    jwt
+  );
+  const revCard = await call<{ id: string }>(
+    "POST",
+    "/v1/cards",
+    { customerId: revCustomer.id, programId: program.id },
+    jwt
+  );
+
+  console.log("→ stamp with amount €12.50 → event carries 1250 cents");
+  const stampWithAmount = await call<EventsDetail>(
+    "POST",
+    `/v1/cards/${revCard.id}/stamp`,
+    { amount: 12.5 },
+    jwt
+  );
+  assert(
+    stampWithAmount.events[0].eventType === "stamp",
+    `newest event should be the stamp, got ${stampWithAmount.events[0].eventType}`
+  );
+  assert(
+    stampWithAmount.events[0].amountCents === 1250,
+    `expected 1250 cents, got ${stampWithAmount.events[0].amountCents}`
+  );
+
+  console.log("→ stamp with no amount → amountCents stays null (skipped, not zero)");
+  const stampNoAmount = await call<EventsDetail>(
+    "POST",
+    `/v1/cards/${revCard.id}/stamp`,
+    undefined,
+    jwt
+  );
+  assert(
+    stampNoAmount.events[0].amountCents === null,
+    `skipped amount should be null, got ${stampNoAmount.events[0].amountCents}`
+  );
+  const skippedEventId = stampNoAmount.events[0].id;
+
+  console.log("→ overview reflects the €12.50, and the skipped stamp did not count");
+  const afterStamps = await call<Overview>("GET", "/v1/analytics/overview", undefined, jwt);
+  assert(
+    afterStamps.revenueCents7d === base.revenueCents7d + 1250,
+    `expected +1250, got ${afterStamps.revenueCents7d - base.revenueCents7d}`
+  );
+  assert(
+    afterStamps.transactions7d === base.transactions7d + 1,
+    "the skipped stamp must not inflate the AOV denominator"
+  );
+
+  console.log("→ attach €7.25 to the stamp that was skipped");
+  const patched = await call<EventsDetail>(
+    "PATCH",
+    `/v1/cards/${revCard.id}/events/${skippedEventId}/amount`,
+    { amount: 7.25 },
+    jwt
+  );
+  const patchedEvent = patched.events.find((e) => e.id === skippedEventId);
+  assert(
+    patchedEvent?.amountCents === 725,
+    `expected 725 cents after patch, got ${patchedEvent?.amountCents}`
+  );
+
+  console.log("→ overview picks up the retro-attached amount");
+  const afterPatch = await call<Overview>("GET", "/v1/analytics/overview", undefined, jwt);
+  assert(
+    afterPatch.revenueCents7d === base.revenueCents7d + 1975,
+    `expected +1975 total, got ${afterPatch.revenueCents7d - base.revenueCents7d}`
+  );
+  assert(
+    afterPatch.transactions7d === base.transactions7d + 2,
+    "both stamps should now carry amounts"
+  );
+
+  console.log("→ attaching an amount to a 'signup' event should 400");
+  const signupEvent = patched.events.find((e) => e.eventType === "signup");
+  assert(signupEvent, "expected a signup event on the card");
+  let signupRejected = false;
+  try {
+    await call(
+      "PATCH",
+      `/v1/cards/${revCard.id}/events/${signupEvent!.id}/amount`,
+      { amount: 5 },
+      jwt
+    );
+  } catch (err) {
+    signupRejected = String(err).includes("400");
+  }
+  assert(signupRejected, "attaching revenue to a signup event should 400");
+
+  console.log("→ attaching an amount to an unknown event should 404");
+  let unknownEvent = false;
+  try {
+    await call(
+      "PATCH",
+      `/v1/cards/${revCard.id}/events/99999999/amount`,
+      { amount: 5 },
+      jwt
+    );
+  } catch (err) {
+    unknownEvent = String(err).includes("404");
+  }
+  assert(unknownEvent, "unknown event id should 404");
+
+  console.log("→ an event id from a different card should 404 (no cross-card writes)");
+  let wrongCard = false;
+  try {
+    await call(
+      "PATCH",
+      `/v1/cards/${card.id}/events/${skippedEventId}/amount`,
+      { amount: 5 },
+      jwt
+    );
+  } catch (err) {
+    wrongCard = String(err).includes("404");
+  }
+  assert(wrongCard, "event id belonging to another card should 404");
+
+  console.log("→ amount=0 on the patch should 400");
+  let zeroAmount = false;
+  try {
+    await call(
+      "PATCH",
+      `/v1/cards/${revCard.id}/events/${skippedEventId}/amount`,
+      { amount: 0 },
+      jwt
+    );
+  } catch (err) {
+    zeroAmount = String(err).includes("400");
+  }
+  assert(zeroAmount, "amount=0 should 400");
+
+  console.log("→ scan a stamp card with an amount → recorded on the stamp event");
+  const scanRevCustomer = await call<{ id: string }>(
+    "POST",
+    "/v1/customers",
+    { name: "Scan Revenue Sam", phone: "+31611111202" },
+    jwt
+  );
+  const scanRevCard = await call<{ id: string; qrToken: string }>(
+    "POST",
+    "/v1/cards",
+    { customerId: scanRevCustomer.id, programId: program.id },
+    jwt
+  );
+  const scanWithAmount = await call<{
+    status: string;
+    detail: EventsDetail;
+  }>(
+    "POST",
+    "/v1/scan",
+    { qrToken: scanRevCard.qrToken, action: "auto", amount: 30 },
+    jwt
+  );
+  assert(scanWithAmount.status === "applied", "scan should apply");
+  assert(
+    scanWithAmount.detail.events[0].amountCents === 3000,
+    `expected 3000 cents from scan, got ${scanWithAmount.detail.events[0].amountCents}`
+  );
+
+  console.log("→ activity feed returns real events, newest first, capped at 10");
+  const activityFeed = await call<Overview>("GET", "/v1/analytics/overview", undefined, jwt);
+  assert(activityFeed.recentEvents.length > 0, "activity feed should not be empty");
+  assert(activityFeed.recentEvents.length <= 10, "activity feed should cap at 10");
+  assert(
+    activityFeed.recentEvents[0].id > activityFeed.recentEvents[activityFeed.recentEvents.length - 1].id,
+    "activity feed should be newest-first"
+  );
+  assert(
+    activityFeed.recentEvents.every((e) => e.programName && e.cardId),
+    "every activity row needs its card and program joined in"
+  );
+
   console.log("✓ smoke test passed");
 }
 

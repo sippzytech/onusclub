@@ -1,4 +1,4 @@
-import type { CardEvent } from "@onusclub/shared";
+import { centsToEuroString, type CardEvent } from "@onusclub/shared";
 
 function describe(e: CardEvent): string {
   const d = e.deltaJson as Record<string, unknown> | null;
@@ -75,7 +75,16 @@ export function EventTimeline({ events }: { events: CardEvent[] }): JSX.Element 
           key={e.id}
           className="rounded-lg border border-brand-green/10 bg-brand-cream/40 p-3 text-sm flex items-center justify-between gap-3"
         >
-          <span className="text-brand-green">{describe(e)}</span>
+          <span className="text-brand-green">
+            {describe(e)}
+            {/* Points events already state the euro amount inside describe();
+              * this covers stamps and redeems, where it is new information. */}
+            {e.amountCents !== null && e.eventType !== "points_add" ? (
+              <span className="ml-2 text-xs font-medium text-brand-gold tabular-nums">
+                {centsToEuroString(e.amountCents)}
+              </span>
+            ) : null}
+          </span>
           <span className="text-xs text-brand-olive tabular-nums shrink-0">
             {new Date(e.createdAt).toLocaleString()}
           </span>

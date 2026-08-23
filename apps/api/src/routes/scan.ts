@@ -1,5 +1,5 @@
 import { Router, type Request, type Response } from "express";
-import { ScanInput, type ScanResult } from "@onusclub/shared";
+import { ScanInput, euroToCents, type ScanResult } from "@onusclub/shared";
 import { authContext, requireAuth } from "../auth/middleware.js";
 import { ApiError } from "../errors.js";
 import {
@@ -53,7 +53,11 @@ scanRouter.post(
         return res.json({ status: "applied", detail, appliedAction: "add-points" });
       }
       if (input.action === "redeem") {
-        const detail = await redeemCardById(found.id, ctx.merchantId);
+        const detail = await redeemCardById(
+          found.id,
+          ctx.merchantId,
+          input.amount === undefined ? null : euroToCents(input.amount)
+        );
         return res.json({ status: "applied", detail, appliedAction: "redeem" });
       }
       // action='stamp' on a points card — nonsensical, reject clearly.
@@ -86,10 +90,16 @@ scanRouter.post(
       );
     }
 
+    // The sale amount is optional here and never gates the stamp. In practice
+    // the scanner UI attaches it afterwards (see PATCH .../events/:id/amount)
+    // so the once-per-day rule can answer before staff type anything — but
+    // accepting it up front keeps the endpoint usable by any other client.
+    const amountCents = input.amount === undefined ? null : euroToCents(input.amount);
+
     const detail =
       applied === "stamp"
-        ? await stampCardById(found.id, ctx.merchantId)
-        : await redeemCardById(found.id, ctx.merchantId);
+        ? await stampCardById(found.id, ctx.merchantId, amountCents)
+        : await redeemCardById(found.id, ctx.merchantId, amountCents);
 
     return res.json({ status: "applied", detail, appliedAction: applied });
   }

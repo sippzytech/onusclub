@@ -261,6 +261,31 @@ export const AddPointsInput = z.object({
 });
 export type AddPointsInput = z.infer<typeof AddPointsInput>;
 
+// Body for POST /v1/cards/:id/stamp and /:id/redeem. Both used to take no
+// body at all; `amount` is the optional sale amount in euros (Day 15 revenue
+// capture). Omitting it stamps exactly as before — the merchant skipped the
+// prompt — and leaves card_events.amount_cents NULL.
+//
+// Money crosses the wire in euros because that is the unit a human types at
+// the till. The api converts once, at the write boundary, and stores integer
+// cents. Nothing downstream of that boundary deals in floats.
+export const CardActionInput = z.object({
+  amount: z.number().positive().max(100_000).optional(),
+});
+export type CardActionInput = z.infer<typeof CardActionInput>;
+
+// Body for PATCH /v1/card-events/:id/amount — attaches a sale amount to an
+// event that already happened.
+//
+// The scanner needs this because a stamp must apply the instant the QR is
+// read: the one-stamp-per-day rule can reject the scan, and finding that out
+// *after* typing an amount would be a worse trade than typing it after. So
+// the stamp lands first and the amount is attached to the resulting event.
+export const CardEventAmountInput = z.object({
+  amount: z.number().positive().max(100_000),
+});
+export type CardEventAmountInput = z.infer<typeof CardEventAmountInput>;
+
 export const CardEvent = z.object({
   id: z.number(),
   cardId: z.string(),
@@ -275,6 +300,10 @@ export const CardEvent = z.object({
     "expire",
   ]),
   deltaJson: z.unknown(),
+  // Sale amount attributed to this event, in integer minor units. NULL means
+  // no amount was captured (prompt skipped, or the event predates Day 15) —
+  // deliberately distinct from 0, which would be a real zero-value sale.
+  amountCents: z.number().int().nonnegative().nullable(),
   note: z.string().nullable(),
   createdAt: z.string(),
 });
@@ -303,8 +332,13 @@ export const ScanInput = z.object({
   // amount before re-calling with action='add-points' + amount).
   // "add-points" + amount is the points equivalent of "stamp" for stamp cards.
   action: z.enum(["auto", "stamp", "redeem", "add-points"]).default("auto"),
-  // Required when action='add-points'. Bill amount in euros; the api computes
-  // points = floor(amount × points_per_euro).
+  // The sale amount in euros. Two jobs, one field:
+  //   - action='add-points' → REQUIRED. Drives the maths: the api computes
+  //     points = floor(amount × points_per_euro).
+  //   - action='stamp' / 'redeem' / 'auto' on a stamp card → OPTIONAL, and
+  //     purely for revenue reporting. The stamp itself is unaffected.
+  // Either way it lands in card_events.amount_cents, so revenue aggregates
+  // read one column regardless of program type.
   amount: z.number().positive().max(100_000).optional(),
 });
 export type ScanInput = z.infer<typeof ScanInput>;
@@ -504,3 +538,40 @@ export const MessageFeedItem = z.object({
   finishedAt: z.string().nullable(),
 });
 export type MessageFeedItem = z.infer<typeof MessageFeedItem>;
+
+// ---------- Analytics (Day 15) ----------
+
+// One row of the Overview page's activity feed. Reads straight from
+// card_events rather than being inferred from loyalty_cards.last_event_at,
+// so a card stamped three times today shows as three entries and each one
+// carries its own sale amount.
+export const ActivityEvent = z.object({
+  id: z.number(),
+  cardId: z.string(),
+  customerName: z.string().nullable(),
+  programName: z.string(),
+  eventType: CardEvent.shape.eventType,
+  amountCents: z.number().int().nonnegative().nullable(),
+  createdAt: z.string(),
+});
+export type ActivityEvent = z.infer<typeof ActivityEvent>;
+
+// Payload for GET /v1/analytics/overview.
+//
+// Revenue and AOV cover only events that actually carried an amount. If a
+// merchant skips the amount prompt on half their scans, `transactions` counts
+// the half that were captured — otherwise AOV would be revenue divided by
+// every scan, which understates the real basket size.
+export const AnalyticsOverview = z.object({
+  currencyCode: z.string().length(3),
+  // Rolling windows, both anchored on now() rather than calendar boundaries.
+  revenueCents7d: z.number().int().nonnegative(),
+  revenueCents30d: z.number().int().nonnegative(),
+  // Count of amount-carrying events in the last 7 days — the AOV denominator.
+  transactions7d: z.number().int().nonnegative(),
+  // Null when transactions7d is 0: there is no average of nothing, and the UI
+  // should render a dash instead of a misleading €0.00.
+  aovCents7d: z.number().int().nonnegative().nullable(),
+  recentEvents: z.array(ActivityEvent),
+});
+export type AnalyticsOverview = z.infer<typeof AnalyticsOverview>;

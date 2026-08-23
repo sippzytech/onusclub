@@ -17,29 +17,46 @@ export function CardActions({ cardId, eligible, programType, pointsPerEuro }: Pr
   const [error, setError] = useState<string | null>(null);
   const [amount, setAmount] = useState<string>(""); // points-mode bill amount
 
+  // Sale amount is optional on stamp cards: a blank box sends no amount and
+  // the stamp behaves exactly as it did before revenue capture existed.
+  function amountBody(): { amount?: number } {
+    const num = Number(amount);
+    return programType === "stamp" && num > 0 ? { amount: num } : {};
+  }
+
   async function stampAct(): Promise<void> {
     setPending("stamp");
     setError(null);
-    const res = await fetch(`/api/cards/${cardId}/stamp`, { method: "POST" });
+    const res = await fetch(`/api/cards/${cardId}/stamp`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(amountBody()),
+    });
     setPending(null);
     if (!res.ok) {
       const body = (await res.json().catch(() => ({}))) as { error?: string };
       setError(body.error ?? "could not stamp");
       return;
     }
+    setAmount("");
     router.refresh();
   }
 
   async function redeemAct(): Promise<void> {
     setPending("redeem");
     setError(null);
-    const res = await fetch(`/api/cards/${cardId}/redeem`, { method: "POST" });
+    const res = await fetch(`/api/cards/${cardId}/redeem`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(amountBody()),
+    });
     setPending(null);
     if (!res.ok) {
       const body = (await res.json().catch(() => ({}))) as { error?: string };
       setError(body.error ?? "could not redeem");
       return;
     }
+    setAmount("");
     router.refresh();
   }
 
@@ -108,7 +125,22 @@ export function CardActions({ cardId, eligible, programType, pointsPerEuro }: Pr
           </button>
         </div>
       ) : (
-        <div className="flex gap-3">
+        <div className="flex flex-wrap gap-3 items-end">
+          <div>
+            <label className="block text-xs font-medium text-gray-600">
+              Sale amount (€){" "}
+              <span className="font-normal text-gray-400">— optional</span>
+            </label>
+            <input
+              type="number"
+              step="0.01"
+              min={0.01}
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              placeholder="Skip if not tracking"
+              className="mt-1 block w-44 rounded-md border border-gray-300 px-3 py-2 text-sm tabular-nums"
+            />
+          </div>
           <button
             onClick={() => void stampAct()}
             disabled={pending !== null || eligible}

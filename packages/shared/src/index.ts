@@ -74,4 +74,29 @@ export interface HealthResponse {
   version: string;
 }
 
+// ---------- Money (Day 15) ----------
+//
+// The API talks euros because that is what a human types at the till; the
+// database stores integer cents because floats are not money. This is the one
+// sanctioned crossing between the two, so rounding happens identically on
+// every path (manual buttons, scanner, points transactions).
+//
+// Math.round rather than a truncating cast: 12.34 * 100 evaluates to
+// 1233.9999999999998 in IEEE-754, and truncating would quietly lose a cent on
+// a large share of ordinary amounts.
+export function euroToCents(amountEuros: number): number {
+  return Math.round(amountEuros * 100);
+}
+
+export function centsToEuroString(
+  amountCents: number,
+  currencyCode = "EUR",
+  locale = "nl-NL"
+): string {
+  return new Intl.NumberFormat(locale, {
+    style: "currency",
+    currency: currencyCode,
+  }).format(amountCents / 100);
+}
+
 export * from "./contracts.js";

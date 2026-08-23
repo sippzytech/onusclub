@@ -3,7 +3,10 @@ import { Router, type Request, type Response } from "express";
 import type { ResultSetHeader, RowDataPacket } from "mysql2";
 import {
   AddPointsInput,
+  CardActionInput,
   CardCreateInput,
+  CardEventAmountInput,
+  euroToCents,
   type Card,
   type CardDetail,
 } from "@onusclub/shared";
@@ -16,6 +19,7 @@ import {
   addPointsToCard,
   getCardDetail,
   redeemCardById,
+  setCardEventAmount,
   stampCardById,
   syncCardToWallet,
 } from "../cards/operations.js";
@@ -299,12 +303,17 @@ cardsRouter.get("/:id", requireAuth, async (req: Request, res: Response<CardDeta
 
 // ---------- stamp ----------
 
+// Body is optional: `{}` or no body stamps exactly as it did pre-Day-15,
+// `{ amount: 12.5 }` also records the sale for revenue reporting.
+
 cardsRouter.post(
   "/:id/stamp",
   requireAuth,
   async (req: Request, res: Response<CardDetail>) => {
     const ctx = authContext(req);
-    return res.json(await stampCardById(req.params.id, ctx.merchantId));
+    const input = CardActionInput.parse(req.body ?? {});
+    const amountCents = input.amount === undefined ? null : euroToCents(input.amount);
+    return res.json(await stampCardById(req.params.id, ctx.merchantId, amountCents));
   }
 );
 
@@ -318,7 +327,35 @@ cardsRouter.post(
   requireAuth,
   async (req: Request, res: Response<CardDetail>) => {
     const ctx = authContext(req);
-    return res.json(await redeemCardById(req.params.id, ctx.merchantId));
+    const input = CardActionInput.parse(req.body ?? {});
+    const amountCents = input.amount === undefined ? null : euroToCents(input.amount);
+    return res.json(await redeemCardById(req.params.id, ctx.merchantId, amountCents));
+  }
+);
+
+// ---------- attach a sale amount to an event that already happened ----------
+//
+// The scanner's path for stamp cards: apply first (so the once-per-day rule
+// answers instantly), then optionally record what the customer spent.
+
+cardsRouter.patch(
+  "/:id/events/:eventId/amount",
+  requireAuth,
+  async (req: Request, res: Response<CardDetail>) => {
+    const ctx = authContext(req);
+    const input = CardEventAmountInput.parse(req.body);
+    const eventId = Number(req.params.eventId);
+    if (!Number.isInteger(eventId) || eventId <= 0) {
+      throw ApiError.badRequest("eventId must be a positive integer");
+    }
+    return res.json(
+      await setCardEventAmount(
+        eventId,
+        req.params.id,
+        ctx.merchantId,
+        euroToCents(input.amount)
+      )
+    );
   }
 );
 

@@ -30,7 +30,18 @@ interface LastResult {
   pointsAdded?: number;       // only for add-points
   amountCharged?: number;     // only for add-points
   token: string;
+  // Day 15 revenue capture. The event that was just written, so staff can
+  // optionally attach what the customer spent — after the fact, because the
+  // stamp itself must not wait on anyone typing.
+  cardId: string;
+  eventId: number | null;
+  // Non-null when the amount is already known (points transactions derive it
+  // from the bill the merchant typed), which suppresses the prompt.
+  amountCents: number | null;
 }
+
+// Lifecycle of the optional "what did they spend?" box on the success card.
+type SaleState = "idle" | "saving" | "saved";
 
 interface PointsCardScan {
   cardId: string;
@@ -51,6 +62,12 @@ export function ScanClient(): JSX.Element {
   const [status, setStatus] = useState<Status>({ kind: "idle" });
   const [running, setRunning] = useState(false);
   const [amount, setAmount] = useState<string>("");
+  // Separate from `amount` (which drives the points card's pre-scan prompt):
+  // this one is the post-stamp sale box, and the two are never on screen at
+  // the same time but do need independent lifetimes.
+  const [saleAmount, setSaleAmount] = useState<string>("");
+  const [saleState, setSaleState] = useState<SaleState>("idle");
+  const [saleErr, setSaleErr] = useState<string | null>(null);
 
   useEffect(() => {
     return () => {
@@ -228,6 +245,12 @@ export function ScanClient(): JSX.Element {
       amountCharged = d?.amount_euros;
     }
 
+    // events come back newest-first, so [0] is the one this scan just wrote.
+    const latestEvent = detail.events[0];
+
+    setSaleAmount("");
+    setSaleState("idle");
+    setSaleErr(null);
     setStatus({
       kind: "result",
       result: {
@@ -241,8 +264,44 @@ export function ScanClient(): JSX.Element {
         pointsAdded,
         amountCharged,
         token: qrToken,
+        cardId: detail.card.id,
+        eventId: latestEvent?.id ?? null,
+        amountCents: latestEvent?.amountCents ?? null,
       },
     });
+  }
+
+  /**
+   * Attach the sale amount to the event this scan just created. Deliberately
+   * a separate round-trip from the stamp: the stamp has already succeeded and
+   * is not rolled back if this fails, so the worst case is a visit recorded
+   * without revenue — exactly what skipping the box does anyway.
+   */
+  async function onSaleAmountSubmit(e: FormEvent<HTMLFormElement>): Promise<void> {
+    e.preventDefault();
+    if (status.kind !== "result" || status.result.eventId === null) return;
+    const num = Number(saleAmount);
+    if (!num || num <= 0) {
+      setSaleErr("Enter a positive amount in euros");
+      return;
+    }
+    setSaleState("saving");
+    setSaleErr(null);
+    const res = await fetch(
+      `/api/cards/${status.result.cardId}/events/${status.result.eventId}/amount`,
+      {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ amount: num }),
+      }
+    );
+    if (!res.ok) {
+      const b = (await res.json().catch(() => ({}))) as { error?: string };
+      setSaleState("idle");
+      setSaleErr(b.error ?? "Could not save the amount");
+      return;
+    }
+    setSaleState("saved");
   }
 
   async function onAmountSubmit(e: FormEvent<HTMLFormElement>): Promise<void> {
@@ -266,6 +325,9 @@ export function ScanClient(): JSX.Element {
   function clearResult(): void {
     setStatus(running ? { kind: "scanning" } : { kind: "idle" });
     setAmount("");
+    setSaleAmount("");
+    setSaleState("idle");
+    setSaleErr(null);
   }
 
   const cameraVisible = running || status.kind === "starting";
@@ -448,7 +510,8 @@ export function ScanClient(): JSX.Element {
       ) : null}
 
       {status.kind === "result" ? (
-        <div className="rounded-card border border-emerald-200 bg-emerald-50 p-4 flex items-start justify-between gap-3">
+        <div className="rounded-card border border-emerald-200 bg-emerald-50 p-4 space-y-3">
+        <div className="flex items-start justify-between gap-3">
           <div>
             <p className="text-xs uppercase tracking-wider text-emerald-700 font-medium">
               {status.result.appliedAction === "redeem"
@@ -489,11 +552,61 @@ export function ScanClient(): JSX.Element {
             Dismiss
           </button>
         </div>
+
+        {/* Optional sale amount. Shown only when this event does not already
+          * carry one — points transactions get theirs from the bill the
+          * merchant typed before the scan applied. Skipping is a non-action:
+          * scan the next customer and this disappears. */}
+        {status.result.eventId !== null && status.result.amountCents === null ? (
+          <div className="border-t border-emerald-200 pt-3">
+            {saleState === "saved" ? (
+              <p className="text-xs text-emerald-800">
+                Sale amount saved — it will show up in this week&apos;s revenue.
+              </p>
+            ) : (
+              <form
+                onSubmit={(e) => void onSaleAmountSubmit(e)}
+                className="flex flex-wrap items-end gap-3"
+              >
+                <div>
+                  <label className="block text-xs font-medium text-emerald-900">
+                    Sale amount (€){" "}
+                    <span className="font-normal text-emerald-700">
+                      — optional, skip to carry on
+                    </span>
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min={0.01}
+                    value={saleAmount}
+                    onChange={(e) => setSaleAmount(e.target.value)}
+                    placeholder="12.50"
+                    className="mt-1 block w-36 rounded-lg border border-emerald-300 bg-white px-3 py-2 text-sm tabular-nums text-emerald-900 focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={saleState === "saving" || !saleAmount}
+                  className="rounded-full bg-emerald-700 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-800 disabled:opacity-50 transition-colors"
+                >
+                  {saleState === "saving" ? "Saving…" : "Save amount"}
+                </button>
+                {saleErr ? (
+                  <span className="text-xs text-red-700">{saleErr}</span>
+                ) : null}
+              </form>
+            )}
+          </div>
+        ) : null}
+        </div>
       ) : null}
 
       <p className="text-xs text-brand-olive">
-        Stamp cards: one stamp per day per card (anti double-scan).
-        Points cards: enter the bill amount when prompted.
+        Stamp cards: one stamp per day per card (anti double-scan). The sale
+        amount afterwards is optional — enter it and the dashboard can show
+        revenue and average sale. Points cards: enter the bill amount when
+        prompted, since it sets how many points are earned.
       </p>
     </div>
   );

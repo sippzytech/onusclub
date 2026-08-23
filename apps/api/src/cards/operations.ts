@@ -6,11 +6,12 @@
 import { randomUUID } from "node:crypto";
 import type { ResultSetHeader, RowDataPacket } from "mysql2";
 import type { PoolConnection } from "mysql2/promise";
-import type {
-  CardDetail,
-  CardEvent,
-  PointsCardState,
-  StampCardState,
+import {
+  euroToCents,
+  type CardDetail,
+  type CardEvent,
+  type PointsCardState,
+  type StampCardState,
 } from "@onusclub/shared";
 import { pool } from "../db/pool.js";
 import { env } from "../config.js";
@@ -47,9 +48,25 @@ interface EventRow extends RowDataPacket {
   card_id: string;
   event_type: CardEvent["eventType"];
   delta_json: unknown;
+  amount_cents: number | string | null;
   note: string | null;
   created_at: Date;
 }
+
+// MySQL hands BIGINT back as a string once it exceeds the safe-integer range,
+// and mysql2 does not narrow it for us. Amounts never get near that, but
+// normalising here means callers never have to think about which type they
+// got — and a NULL (no amount captured) stays NULL rather than becoming 0.
+function toAmountCents(value: number | string | null): number | null {
+  if (value === null) return null;
+  const n = typeof value === "string" ? Number(value) : value;
+  return Number.isFinite(n) ? n : null;
+}
+
+// Every card_events read goes through this list so the amount column can
+// never be forgotten on a new query.
+const EVENT_SELECT_COLUMNS =
+  "id, card_id, event_type, delta_json, amount_cents, note, created_at";
 
 interface SyncRow extends RowDataPacket {
   merchant_id: string;
@@ -134,6 +151,7 @@ function rowToCardDetail(row: CardRow, events: EventRow[]): CardDetail {
       cardId: e.card_id,
       eventType: e.event_type,
       deltaJson: parseJson(e.delta_json),
+      amountCents: toAmountCents(e.amount_cents),
       note: e.note,
       createdAt: new Date(e.created_at).toISOString(),
     })),
@@ -166,7 +184,7 @@ async function loadCardEvents(
   merchantId: string
 ): Promise<EventRow[]> {
   const [rows] = await conn.execute<EventRow[]>(
-    `SELECT id, card_id, event_type, delta_json, note, created_at
+    `SELECT ${EVENT_SELECT_COLUMNS}
        FROM card_events WHERE card_id = ? AND merchant_id = ?
        ORDER BY id DESC LIMIT 50`,
     [cardId, merchantId]
@@ -184,7 +202,7 @@ async function loadCardOutsideTransaction(
   );
   if (cardRows.length === 0) throw ApiError.notFound("card not found");
   const [eventRows] = await pool.execute<EventRow[]>(
-    `SELECT id, card_id, event_type, delta_json, note, created_at
+    `SELECT ${EVENT_SELECT_COLUMNS}
        FROM card_events WHERE card_id = ? AND merchant_id = ?
        ORDER BY id DESC LIMIT 50`,
     [cardId, merchantId]
@@ -361,9 +379,17 @@ export async function pushAppleWalletUpdate(cardId: string): Promise<void> {
   );
 }
 
+/**
+ * Add one stamp.
+ *
+ * `amountCents` is the optional sale amount for this visit (Day 15 revenue
+ * capture). It is recorded alongside the stamp and never affects it — pass
+ * null and the behaviour is byte-for-byte what it was before Day 15.
+ */
 export async function stampCardById(
   cardId: string,
-  merchantId: string
+  merchantId: string,
+  amountCents: number | null = null
 ): Promise<CardDetail> {
   const conn = await pool.getConnection();
   let event: WalletEvent = "stamp";
@@ -392,8 +418,8 @@ export async function stampCardById(
       [JSON.stringify(newState), cardId, merchantId]
     );
     await conn.execute<ResultSetHeader>(
-      `INSERT INTO card_events (merchant_id, card_id, event_type, delta_json, note)
-       VALUES (?, ?, 'stamp', ?, NULL)`,
+      `INSERT INTO card_events (merchant_id, card_id, event_type, delta_json, amount_cents, note)
+       VALUES (?, ?, 'stamp', ?, ?, NULL)`,
       [
         merchantId,
         cardId,
@@ -402,6 +428,7 @@ export async function stampCardById(
           stamps_after: newState.stamps_current,
           stamps_required: stampsRequired,
         }),
+        amountCents,
       ]
     );
 
@@ -427,7 +454,8 @@ export async function stampCardById(
  */
 export async function redeemCardById(
   cardId: string,
-  merchantId: string
+  merchantId: string,
+  amountCents: number | null = null
 ): Promise<CardDetail> {
   // Quick read (outside the transaction) just to discover the type. The
   // body below re-locks under FOR UPDATE.
@@ -439,7 +467,7 @@ export async function redeemCardById(
   );
   if (typeRows.length === 0) throw ApiError.notFound("card not found");
   if (typeRows[0].program_type === "points") {
-    return redeemPointsCard(cardId, merchantId);
+    return redeemPointsCard(cardId, merchantId, amountCents);
   }
 
   const conn = await pool.getConnection();
@@ -468,8 +496,8 @@ export async function redeemCardById(
       [JSON.stringify(newState), cardId, merchantId]
     );
     await conn.execute<ResultSetHeader>(
-      `INSERT INTO card_events (merchant_id, card_id, event_type, delta_json, note)
-       VALUES (?, ?, 'redeem', ?, NULL)`,
+      `INSERT INTO card_events (merchant_id, card_id, event_type, delta_json, amount_cents, note)
+       VALUES (?, ?, 'redeem', ?, ?, NULL)`,
       [
         merchantId,
         cardId,
@@ -478,6 +506,7 @@ export async function redeemCardById(
           rewards_redeemed_before: rewardsBefore,
           rewards_redeemed_after: newState.rewards_redeemed,
         }),
+        amountCents,
       ]
     );
 
@@ -622,8 +651,8 @@ export async function addPointsToCard(
       [JSON.stringify(newState), cardId, merchantId]
     );
     await conn.execute<ResultSetHeader>(
-      `INSERT INTO card_events (merchant_id, card_id, event_type, delta_json, note)
-       VALUES (?, ?, 'points_add', ?, NULL)`,
+      `INSERT INTO card_events (merchant_id, card_id, event_type, delta_json, amount_cents, note)
+       VALUES (?, ?, 'points_add', ?, ?, NULL)`,
       [
         merchantId,
         cardId,
@@ -636,6 +665,10 @@ export async function addPointsToCard(
           points_for_reward: config.points_for_reward,
           expires_at: expiresAt ? expiresAt.toISOString() : null,
         }),
+        // Points transactions always carry an amount — it is the input that
+        // drives the whole calculation — so revenue reporting gets it for
+        // free, with no extra prompt for the merchant.
+        euroToCents(amountEuros),
       ]
     );
 
@@ -665,7 +698,8 @@ export async function addPointsToCard(
  */
 export async function redeemPointsCard(
   cardId: string,
-  merchantId: string
+  merchantId: string,
+  amountCents: number | null = null
 ): Promise<CardDetail> {
   const conn = await pool.getConnection();
   try {
@@ -726,8 +760,8 @@ export async function redeemPointsCard(
       [JSON.stringify(newState), cardId, merchantId]
     );
     await conn.execute<ResultSetHeader>(
-      `INSERT INTO card_events (merchant_id, card_id, event_type, delta_json, note)
-       VALUES (?, ?, 'redeem', ?, NULL)`,
+      `INSERT INTO card_events (merchant_id, card_id, event_type, delta_json, amount_cents, note)
+       VALUES (?, ?, 'redeem', ?, ?, NULL)`,
       [
         merchantId,
         cardId,
@@ -738,6 +772,7 @@ export async function redeemPointsCard(
           rewards_redeemed_before: state.rewards_redeemed,
           rewards_redeemed_after: newState.rewards_redeemed,
         }),
+        amountCents,
       ]
     );
 
@@ -758,6 +793,49 @@ export async function getCardDetail(
   cardId: string,
   merchantId: string
 ): Promise<CardDetail> {
+  const { detail } = await loadCardOutsideTransaction(cardId, merchantId);
+  return detail;
+}
+
+/**
+ * Attach a sale amount to an event that already happened, and return the
+ * refreshed card.
+ *
+ * The scanner uses this rather than sending the amount up front: a stamp has
+ * to apply the moment the QR is read, because the one-stamp-per-day rule can
+ * reject it and making staff type an amount only to be told "already stamped
+ * today" is the worse of the two orderings.
+ *
+ * Overwriting an existing amount is allowed — fixing a typo is a normal thing
+ * to want, and the merchant owns their own numbers. Only the event types that
+ * represent a visit can carry money; attaching revenue to a 'signup' or an
+ * 'expire' would be meaningless and would corrupt the AOV denominator.
+ */
+export async function setCardEventAmount(
+  eventId: number,
+  cardId: string,
+  merchantId: string,
+  amountCents: number
+): Promise<CardDetail> {
+  const [rows] = await pool.execute<RowDataPacket[]>(
+    `SELECT card_id, event_type FROM card_events
+      WHERE id = ? AND card_id = ? AND merchant_id = ? LIMIT 1`,
+    [eventId, cardId, merchantId]
+  );
+  if (rows.length === 0) throw ApiError.notFound("event not found");
+
+  const eventType = rows[0].event_type as CardEvent["eventType"];
+  if (eventType !== "stamp" && eventType !== "redeem" && eventType !== "points_add") {
+    throw ApiError.badRequest(
+      `cannot attach a sale amount to a '${eventType}' event`
+    );
+  }
+
+  await pool.execute<ResultSetHeader>(
+    "UPDATE card_events SET amount_cents = ? WHERE id = ? AND merchant_id = ?",
+    [amountCents, eventId, merchantId]
+  );
+
   const { detail } = await loadCardOutsideTransaction(cardId, merchantId);
   return detail;
 }

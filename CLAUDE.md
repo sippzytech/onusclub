@@ -6,9 +6,9 @@ This file is the canonical context for Claude Code sessions on this repo. Keep i
 
 Multi-tenant SaaS for **digital loyalty cards** for cafés, salons, and similar SMBs.
 
-- **Phase 1**: stamp cards only, Google Wallet only.
-- **Phase 2**: Apple Wallet + more card types (points, memberships, multipass, discount, cashback, gift, coupon).
-- The DB schema is already polymorphic (`loyalty_programs.program_type` + `config_json`, `loyalty_cards.card_state` JSON) so adding card types does not require a schema rewrite.
+- **Shipped**: stamp cards + points cards, on both Google Wallet and Apple Wallet.
+- **Later**: memberships (pairs with Stripe billing). Multipass / discount / cashback / gift / coupon are deliberately **not** planned as separate types — the stamp + points engines already cover those use cases; see PERKSTAR_ANALYSIS.md.
+- The DB schema is polymorphic (`loyalty_programs.program_type` + `config_json`, `loyalty_cards.card_state` JSON) so adding card types does not require a schema rewrite. Day 14 proved this: adding points needed zero DDL on existing tables.
 
 ## Positioning
 
@@ -43,10 +43,12 @@ Already running on the box:
 - **n8n** at `n8n.sippzy.com`.
 - **Metabase** on host port 3000.
 
-Subdomains already pointed at the VPS:
+Subdomains pointed at the VPS:
 
-- `api.sippzy.com` → Node API
-- `app.sippzy.com` → Next.js dashboard + customer landing pages
+- `api.onusclub.com` → Node API (primary)
+- `app.onusclub.com` → Next.js dashboard + customer landing pages (primary)
+- `api.sippzy.com` / `app.sippzy.com` → same containers, legacy routers. Keep until old saved wallet passes have aged out; `DOMAIN_API_LEGACY` / `DOMAIN_WEB_LEGACY` in `docker-compose.prod.yml` control them.
+- `onusclub.com` + `www` → Netlify marketing site (separate repo, not in this monorepo)
 
 In `docker-compose.prod.yml`:
 
@@ -73,11 +75,12 @@ The Google Wallet service-account key already lives at `/docker/stampdeck/secret
 - **Service account email**: `wallet-issuer@sippzy-wallet.iam.gserviceaccount.com`
 - **Key path (VPS)**: `/docker/stampdeck/secrets/wallet-sa.json` (mounted into api container as `/secrets/wallet-sa.json`)
 - **Env vars** the api reads: `GOOGLE_WALLET_ISSUER_ID`, `GOOGLE_WALLET_SA_KEY_PATH`
-- No real wallet integration on Day 1 — env is wired so Day 2+ can drop in the loyalty-class/object code.
+- Fully integrated since Day 4 (`apps/api/src/wallet/`). Apple Wallet lives in `apps/api/src/wallet-apple/`.
+- ⚠️ The issuer is **still in Google's demo mode** — only allowlisted test Google accounts can save a pass. Production approval is a Business Console form submission, not a code change. See ROADMAP.md "Wallet production approval".
 
 ## Schema
 
-See `apps/api/src/db/migrations/001_initial.sql` — single source of truth. Tables: `merchants`, `locations`, `loyalty_programs`, `customers`, `loyalty_cards`, `card_events`, `staff_users`, `auth_tokens`.
+See `apps/api/src/db/migrations/` — the numbered SQL files are the single source of truth, `001_initial.sql` through `008_card_event_amount.sql`. Core tables: `merchants`, `locations`, `loyalty_programs`, `customers`, `loyalty_cards`, `card_events`, `staff_users`, `auth_tokens`; later migrations add `broadcasts`, `sweep_runs`, `message_deliveries`, `apple_pass_registrations`, `points_batches`.
 
 Polymorphism is in two JSON columns:
 
@@ -94,25 +97,32 @@ When adding a new `program_type`, define its config + state shapes in `packages/
 - Secrets only via env vars or mounted files — never committed.
 - All tenant-scoped queries must filter by `merchant_id`. (Will be enforced via a request-scoped context once auth lands.)
 
-## Status — Day 9 (current)
+## Status — Day 15 (current)
 
-**Deployed live at `api.sippzy.com` + `app.sippzy.com`**.
+**Deployed live at `api.onusclub.com` + `app.onusclub.com`.** The old `api.sippzy.com` / `app.sippzy.com` routes still resolve to the same containers via legacy Traefik routers, because wallet passes saved before the Day 13 cutover still point at them.
 
 What works end-to-end:
 
 - ✅ Owner signup/login with password (bcrypt), forgot/reset password flow
 - ✅ Multi-tenant with auto-generated public slug per merchant
-- ✅ Programs, customers, cards, stamp + redeem (transactional, day-rate-limited on scan)
-- ✅ Google Wallet integration: per-merchant LoyaltyClass, per-card LoyaltyObject, save-to-Wallet JWT, live state PATCH on every stamp/redeem, lifecycle push notifications
-- ✅ Public QR-driven customer self-signup (Perkstar-style flow at `/m/[slug]`)
-- ✅ QR scanner UI (`html5-qrcode`) with state-machine feedback
+- ✅ **Two program types**: stamp cards, and points cards with per-batch FIFO expiry (Day 14)
+- ✅ **Google Wallet**: per-merchant LoyaltyClass, per-card LoyaltyObject, save-to-Wallet JWT, live state PATCH on every stamp/redeem, lifecycle push notifications
+- ✅ **Apple Wallet**: signed `.pkpass`, Apple Web Service endpoints, live in-place updates via APNs push (Days 11-12)
+- ✅ Public QR-driven customer self-signup (`/m/[slug]`) + customer card view (`/c/[qrToken]`)
+- ✅ QR scanner UI (`html5-qrcode`) with state-machine feedback, incl. the points `needs_amount` step
+- ✅ **Revenue capture** (Day 15): optional sale amount at scan / on manual buttons → `card_events.amount_cents` → revenue, AOV, and a real activity feed on the Overview page
 - ✅ Async broadcasts with audience filters + live progress polling
-- ✅ Daily cron sweeps: birthday 08:00, inactivity 10:00, expiry 03:00 (Europe/Amsterdam)
+- ✅ Daily cron sweeps: expiry 03:00, points-expiry 04:00, birthday 08:00, inactivity 10:00 (Europe/Amsterdam)
 - ✅ Per-card delivery audit (broadcasts + sweeps) with manual retry
 - ✅ Premium feature gate (fake unlock for now) + crons-enabled kill-switch
-- ✅ Card expiry (per-program `expiry_days` config → Wallet `state=EXPIRED`)
 - ✅ Staff/team accounts (`/dashboard/team`, owner-only CRUD)
-- ✅ Resend email delivery (still on Resend test mode — only delivers to sippzy.official@gmail.com until domain verified)
+- ✅ Smoke suite at 108 assertions, gated in CI on every PR
+- ⚠️ Resend still on test mode — only delivers to sippzy.official@gmail.com until the sender domain is verified
+- ⚠️ `/dashboard/card-builder` and `/dashboard/analytics` are placeholder pages
+
+### Naming: three different names, on purpose
+
+Local dir is `stampdeck` (legacy), the GitHub repo is `onusclub`, pnpm packages are `@onusclub/*`. The MySQL DB name, MySQL user, Docker volume, VPS deploy dir (`/docker/stampdeck/`) and the Google Wallet issuer project (`sippzy-wallet`) were **deliberately not renamed** in Day 13 — renaming them risks data loss for zero user-visible benefit. Customers never see these names.
 
 ## Where to look for the current plan
 

@@ -32,10 +32,11 @@ Immediately after that, Sanchit decided to switch from the CLI to Antigravity ID
 
 ## Current git state (as of this doc)
 
-- **Branch**: `day-14-points-programs`
-- **HEAD**: `407b8ea` — "Docs: Perkstar tear-down + Day 15+ candidates + office-laptop handoff"
-- **Working tree**: clean
+- **Branch**: `day-14-points-programs` (Day 15 was committed onto the same branch)
+- **Working tree**: clean at time of writing
 - **Remote**: up to date with origin
+
+Run `git log --oneline -5` to see where HEAD actually is — this line goes stale faster than anything else in the doc.
 
 ## What is live on prod right now
 
@@ -43,8 +44,8 @@ Immediately after that, Sanchit decided to switch from the CLI to Antigravity ID
 - `https://app.onusclub.com` — Next.js dashboard + customer-facing pages
 - Both routed via existing Traefik on the VPS (`n8n_default` network, cert resolver `mytlschallenge`)
 - MySQL 8 on the internal Docker network (`onusclub-mysql` container, DB name `stampdeck` — not renamed)
-- All 7 migrations applied through `007_points_batches.sql`
-- Both containers on the `day-14-points-groups` build (~2026-06-29 rebuild)
+- Migrations `001`–`007` applied. **`008_card_event_amount.sql` is NOT yet applied on prod** — it ships with Day 15 and runs on the next deploy.
+- Both containers still on the ~2026-06-29 build; Day 15 is on the branch but **not deployed yet**.
 
 ## What is on-hold / gated externally
 
@@ -86,32 +87,39 @@ This is form-filling on <https://pay.google.com/business/console/> for existing 
 - After submit, review typically arrives via email in 1-2 business days.
 - Once approved: **no code change** — the LoyaltyClass + LoyaltyObject + save-to-Wallet JWT already work end-to-end; the issuer just flips from "demo (allowlisted testers only)" to "any Google account."
 
-### A — Day 15: Revenue capture + dashboard come-alive (Antigravity Claude codes this, ~1.5-2 days)
+### A — Day 15: Revenue capture + dashboard come-alive ✅ **DONE (2026-08-23)**
 
-The biggest lever from the Perkstar tear-down (`PERKSTAR_ANALYSIS.md` has the full reasoning).
+Built, tested, committed on `day-14-points-programs`. **Not deployed to prod yet.**
 
-**One-line summary**: Perkstar has no POS integration. They ask the merchant to type the sale amount at scan time and derive every revenue/ROI/AOV/RFM number from that one input. We do the same with one column on `card_events` + one field on the scanner.
+Full detail in the Day 15 entry of `ROADMAP.md`. The short version:
 
-**Scope**:
-1. Migration `008_card_event_amount.sql` — `ALTER TABLE card_events ADD COLUMN amount_cents BIGINT NULL;` + `ALTER TABLE merchants ADD COLUMN currency_code CHAR(3) NOT NULL DEFAULT 'EUR';`
-2. Accept optional `amountCents` in card event insert paths:
-   - `apps/api/src/cards/operations.ts` — `addStampToCard`, `redeemStampCard`, `addPointsToCard`, `redeemPointsCard`
-   - `apps/api/src/routes/scan.ts` — accept in body
-3. Scanner state machine (`apps/web/src/app/dashboard/scan/scan-client.tsx`) — add a skippable "Sale amount (€)" prompt step between scan + commit
-4. Manual stamp/redeem buttons on `/dashboard/cards/[id]` — small amount input next to buttons
-5. Overview page (`apps/web/src/app/dashboard/page.tsx`):
-   - Sum `amount_cents` last 7d → "Revenue (last 7 days)" KPI
-   - Sum / count → "AOV" KPI
-   - Last 10 `card_events` → recent activity feed
-6. Smoke test additions — 5-6 assertions covering amount capture + aggregates
+- Migration `008_card_event_amount.sql` — `card_events.amount_cents` + `merchants.currency_code`, and it backfills existing points transactions so revenue is right on first render.
+- Optional sale amount on the manual buttons and on `POST /v1/scan`; a new `PATCH /v1/cards/:id/events/:eventId/amount` for the scanner.
+- New `GET /v1/analytics/overview`; the Overview page grew a money KPI row and a real `card_events`-backed activity feed.
+- Smoke 95 → 108 assertions, all passing against the local dev stack.
 
-Full priority table for Days 15-19 in `ROADMAP.md` "Perkstar-inspired candidates" section.
+**Two corrections to what this doc previously claimed**, for anyone comparing:
+- The scan flow for **points** cards was already built before Day 15 (`needs_amount` in `ScanResult`), despite ROADMAP listing it as a 2-3h todo. Day 15 only had to extend capture to *stamp* cards.
+- The operations functions are named `stampCardById` / `redeemCardById`, not `addStampToCard` / `redeemStampCard`.
 
-### Sequencing rule for the Antigravity session
+**Design decision worth knowing**: on the scanner, the amount is captured *after* the stamp applies, not before. A stamp has to land the instant the QR is read because the once-per-day rule can reject it — making staff type an amount only to then be told "already stamped today" is the worse ordering. The manual buttons capture up front, since that click is deliberate.
 
-1. **Ask Sanchit first**: "Have you already submitted the Google Wallet Business Console form (Option B)? If not, please do that before we start Day 15 so Google's 1-2 day review runs in the background." If Sanchit says he'll do B himself later — proceed to A anyway; they're independent.
-2. Then start Day 15 (A) — follow the plan-first-wait-for-go-ahead rule from user memory. Show the migration + scope, wait for Sanchit's OK, then code.
-3. If Google approval comes back approved/rejected during coding, react to that separately (usually just an email — no code impact on approve, follow-up form-fill on reject).
+### To deploy Day 15
+
+Standard `DEPLOY.md` flow, plus the migration:
+
+```bash
+ssh root@api.onusclub.com
+cd /docker/stampdeck && git pull
+docker compose -f docker-compose.prod.yml up -d --build
+docker compose -f docker-compose.prod.yml run --rm api pnpm db:migrate   # applies 008
+```
+
+Migration `008` is additive (two nullable/defaulted columns + a backfill UPDATE) so it is safe to run against live data with no downtime window.
+
+### Sequencing note
+
+A and B are independent. If Google approval lands while other work is in flight, react to it separately — approval needs no code change, rejection means another round of the form.
 
 ---
 

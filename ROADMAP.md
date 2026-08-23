@@ -84,6 +84,19 @@ Each day below corresponds to a git branch + a commit. Run `git log --oneline --
 - METABASE.md runbook with 7 starter SQL queries.
 - Smoke test: 70 assertions.
 
+### Day 15 — Revenue capture + dashboard come-alive
+- **The lever from the Perkstar tear-down**: no POS integration, ever. Staff optionally type the sale amount and every monetary number is derived from that one input.
+- Migration `008_card_event_amount`: `card_events.amount_cents BIGINT NULL` + `merchants.currency_code CHAR(3) DEFAULT 'EUR'`. No new index — 001's `INDEX (merchant_id, created_at)` is already the exact access path. **Backfills** existing `points_add` events from `delta_json.amount_euros`, so revenue is correct on first render instead of starting at zero.
+- `NULL` amount means "not captured", deliberately distinct from `0` ("a real zero-value sale"). Every aggregate filters `amount_cents IS NOT NULL` so skipped scans never drag the AOV denominator down.
+- Money crosses the wire in **euros** (what a human types) and is stored as **integer cents** (floats aren't money). One sanctioned crossing: `euroToCents()` in `packages/shared`, using `Math.round` because `12.34 * 100` is `1233.9999999999998` in IEEE-754 and a truncating cast silently loses a cent.
+- Two capture paths, because the UX constraints genuinely differ:
+  - **Pre-capture** — optional `{ amount }` body on `POST /v1/cards/:id/stamp` and `/redeem`, and on `POST /v1/scan`. Used by the manual buttons on `/dashboard/cards/[id]`, where the click is deliberate.
+  - **Post-capture** — new `PATCH /v1/cards/:id/events/:eventId/amount`. Used by the **scanner**: a stamp must apply the instant the QR is read, because the once-per-day rule can reject it, and making staff type an amount only to be told "already stamped today" is the worse ordering. So the stamp lands, then the success card offers an optional sale box. Skipping is a non-action — scan the next customer and it disappears.
+- Points programs needed no new prompt at all: they already collect the bill amount because it drives the points maths, so `addPointsToCard` just writes the same column.
+- New `GET /v1/analytics/overview` — 7d/30d revenue, 7d transaction count, AOV (null when there are no transactions, so the UI shows a dash rather than a confident `€0.00`), and the last 10 real `card_events`.
+- Overview page: a money KPI row, an empty-state hint explaining where the numbers come from, and an activity feed now reading **actual events** instead of each card's `last_event_at` — so a card stamped three times today shows three entries, each with its own amount. Card-detail timeline shows captured amounts too.
+- Smoke 108 assertions (13 new). Revenue checks are **deltas against a baseline snapshot**, not absolutes, so an unrelated test added above won't break them. Covers: amount recorded / skipped-stays-null, overview deltas, retro-attach, 400 on attaching revenue to a `signup` event, 404 on unknown event, 404 on an event belonging to a different card, 400 on `amount=0`, scan-with-amount, and feed ordering.
+
 ### Day 14 — Multi-program type: points programs with per-batch expiry
 - Second program type alongside stamps. Customer earns N points per €1 spent; threshold of points = free reward. Each "add transaction" creates its own batch row with an optional expiry timer (Starbucks-style). Redemptions deduct FIFO from oldest non-expired batches.
 - **Zero DB migration on existing tables** — Day 1's polymorphic columns (`loyalty_programs.program_type`, `loyalty_programs.config_json`, `loyalty_cards.card_state`) already handled this. Migration `007_points_batches` only adds the new ledger table.
@@ -91,7 +104,7 @@ Each day below corresponds to a git branch + a commit. Run `git log --oneline --
 - New endpoint `POST /v1/cards/:id/add-points` (body `{amount}`) — computes `points = floor(amount × points_per_euro)`, writes a batch row, recomputes cached balance, emits a `points_add` card_event. `POST /v1/cards/:id/redeem` now dispatches by program_type — calls `redeemPointsCard` which FIFO-deducts the reward threshold from oldest non-expired batches under `FOR UPDATE`.
 - Wallet rendering (Google + Apple) is now type-aware via discriminated `ProgramForWallet`/`CardForWallet`. Apple pass shows `POINTS 420 / 1000` header with notification `"You have 420 points — keep going!"` on add-transaction. Falls back gracefully if type ↔ state mismatch.
 - New daily cron at 04:00 Europe/Amsterdam: `runPointsExpirySweep` finds batches with `expires_at < NOW` + `points_remaining > 0`, zeroes their remainders, recomputes card balance, increments `card_state.total_expired`, PATCHes wallet, sends customer "X points expired" message. Manual trigger at `POST /v1/sweeps/run/points-expiry`.
-- Dashboard create-program form gains a Stamps/Points type selector with conditional config inputs (points-per-euro default 1, points-for-reward, optional batch-expiry days). Card detail page shows correct unit + an "Add transaction (€)" input with live "= N points" preview instead of "+1 stamp". Cards list shows indigo "Points" pill + the right unit. Public `/c/[qrToken]` page renders points or stamps based on `unitLabel`. Scan flow not yet updated for points (deferred — needs amount-capture UX).
+- Dashboard create-program form gains a Stamps/Points type selector with conditional config inputs (points-per-euro default 1, points-for-reward, optional batch-expiry days). Card detail page shows correct unit + an "Add transaction (€)" input with live "= N points" preview instead of "+1 stamp". Cards list shows indigo "Points" pill + the right unit. Public `/c/[qrToken]` page renders points or stamps based on `unitLabel`. (The scan flow for points landed shortly after, via the `needs_amount` step in `ScanResult` — see Day 15.)
 - Smoke 95 assertions (13 new for points: create program, enrol, three add-transactions with varied €, three FIFO redemptions, insufficient-balance 400, amount=0 400, points-expiry sweep, public view shape).
 
 ### Day 13 — Polish bundle (repo rename, smoke in CI, B2 backup code)
@@ -194,15 +207,8 @@ We walked through a paid Perkstar sandbox. Full inventory + reasoning lives in *
 
 The ranked shortlist below comes from that analysis.
 
-### Day 15 (proposed) — "Revenue capture + dashboard come-alive" ⭐
-Bundle items 1 + 5 + 6 + 7 from the COPY list:
-- Migration `008_card_event_amount.sql` — `card_events.amount_cents BIGINT NULL`
-- Scanner state-machine gains a skippable "Sale amount (€)" step
-- Same field on the manual `/dashboard/cards/[id]` stamp/redeem buttons
-- Overview page renders: recent activity feed (last 10 events) + 7-day revenue card + AOV card
-- Smoke test additions for amount capture + aggregate endpoints
-
-**Estimated**: 1.5-2 days. **Unlocks**: RFM (Day 17), AOV/ROI everywhere, demo-worthy Overview.
+### Day 15 — "Revenue capture + dashboard come-alive" ⭐ ✅ SHIPPED
+Items 1 + 5 + 6 + 7 from the COPY list. See the Day 15 entry in the history above for what actually landed and why the design differs from the original sketch (post-capture on the scanner rather than a pre-scan prompt). **Unlocks**: RFM (Day 17), AOV/ROI everywhere, demo-worthy Overview.
 
 ### After Day 15, in priority order:
 | Day | Bundle | Effort | Dependency |
@@ -235,7 +241,7 @@ Still relevant, none depend on each other.
 | **Google Wallet production approval** (submit issuer to Google) | half day setup + 1-3 day Google review | Unlocks **any Google account** to save passes (not just allowlisted). Apple already production-ready. **BOTH prior blockers cleared as of 2026-08-23** — KvK entity + marketing site + policy URLs all in hand. Now just needs Sanchit to fill the Business Console form. See Deferred section above for the exact steps. |
 | **Resend domain verification** for `sippzy.com` or `onusclub.com` | ~30 min setup + DNS propagation | Required to email real customers. Currently `EMAIL_FROM` is on Resend's test domain → only delivers to `sippzy.official@gmail.com`. |
 | **Backblaze B2 offsite backup** (code already ready, just needs setup) | 10 min user-side | Just sign up + 3 env lines on VPS. See `HANDOFF.md` for the recipe; deferred earlier on lack of business email. |
-| **Scan flow for points programs** | 2-3 h | Day 14 deferred this — scan + add-points currently needs amount-capture. **Will fall out naturally from Day 15** (same input field). |
+| ~~**Scan flow for points programs**~~ | — | ✅ Done. The `needs_amount` step in `ScanResult` + the scanner's `awaiting_amount` state cover it. |
 | **Membership program type** (third type, paid subscription) | 2-3 days | Pairs naturally with Stripe — membership is essentially a subscription with a paid pass. Defer until billing is done. |
 | **Drop sippzy.com legacy Traefik routes** | 5 min code, 10 min deploy | Wait ~1-2 weeks of onusclub.com stability first. Old saved wallet passes still point at sippzy.com. |
 | **Owner magic-link email** (re-wire) | 1-2 h | Optional passwordless flow for owners who prefer it. |
