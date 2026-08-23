@@ -67,15 +67,26 @@ export default async function DashboardPage(): Promise<JSX.Element> {
 
   // Pull the shapes we already have; aggregate to dashboard-shaped numbers
   // client-side so we don't have to add a new endpoint yet.
-  const [{ programs }, { customers }, { cards }, overview] = await Promise.all([
+  const [{ programs }, { customers }, { cards }] = await Promise.all([
     apiFetch<{ programs: Program[] }>("/v1/programs", { jwt }),
     apiFetch<{ customers: Customer[] }>("/v1/customers", { jwt }),
     apiFetch<{ cards: Card[] }>("/v1/cards", { jwt }),
-    apiFetch<AnalyticsOverview>("/v1/analytics/overview", { jwt }),
   ]);
 
+  // Analytics is fetched separately and allowed to fail.
+  //
+  // It is the newest and most fragile query on this page — it is the only one
+  // that depends on migration 008 having run, so an api/db that is mid-deploy
+  // or a migration that has not been applied yet must NOT take down the whole
+  // dashboard. Everything above this line renders from tables that have
+  // existed since Day 1. Learned the hard way: bundling this into the
+  // Promise.all above turned one failing query into a full-page 500.
+  const overview = await apiFetch<AnalyticsOverview>("/v1/analytics/overview", {
+    jwt,
+  }).catch(() => null);
+
   const money = (cents: number): string =>
-    centsToEuroString(cents, overview.currencyCode);
+    centsToEuroString(cents, overview?.currencyCode ?? "EUR");
 
   // Headline numbers — derived from current snapshot. Time-windowed numbers
   // (this week, vs last month) need a dedicated aggregation endpoint —
@@ -142,21 +153,40 @@ export default async function DashboardPage(): Promise<JSX.Element> {
       <div className="space-y-6">
         {/* Money row. Everything here comes from sale amounts staff typed at
           * scan time — see the empty-state hint below when nothing has been
-          * captured yet. */}
+          * captured yet. Dashes when analytics is unavailable, so the rest of
+          * the page still works. */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <StatCard label="Revenue (7 days)" value={money(overview.revenueCents7d)} />
+          <StatCard
+            label="Revenue (7 days)"
+            value={overview ? money(overview.revenueCents7d) : "—"}
+          />
           <StatCard
             label="Avg sale"
-            value={overview.aovCents7d === null ? "—" : money(overview.aovCents7d)}
+            value={
+              overview && overview.aovCents7d !== null
+                ? money(overview.aovCents7d)
+                : "—"
+            }
           />
           <StatCard
             label="Transactions (7 days)"
-            value={formatNumber(overview.transactions7d)}
+            value={overview ? formatNumber(overview.transactions7d) : "—"}
           />
-          <StatCard label="Revenue (30 days)" value={money(overview.revenueCents30d)} />
+          <StatCard
+            label="Revenue (30 days)"
+            value={overview ? money(overview.revenueCents30d) : "—"}
+          />
         </div>
 
-        {overview.transactions7d === 0 ? (
+        {overview === null ? (
+          <div className="rounded-card border border-amber-300 bg-amber-50 px-5 py-4 text-sm text-amber-900">
+            <span className="font-medium">Revenue figures are unavailable.</span>{" "}
+            The analytics endpoint could not be reached — usually because a
+            deploy is still in progress or migration{" "}
+            <code className="text-xs">008_card_event_amount.sql</code> has not
+            been applied yet. Everything else on this page is live and correct.
+          </div>
+        ) : overview.transactions7d === 0 ? (
           <div className="rounded-card border border-brand-gold/40 bg-brand-cream px-5 py-4 text-sm text-brand-olive">
             <span className="font-medium text-brand-green">
               No sale amounts captured yet.
@@ -271,9 +301,11 @@ export default async function DashboardPage(): Promise<JSX.Element> {
                 Live
               </span>
             </div>
-            {overview.recentEvents.length === 0 ? (
+            {!overview || overview.recentEvents.length === 0 ? (
               <p className="text-sm text-brand-olive mt-4">
-                No activity yet. Enrol a customer to get started.
+                {overview
+                  ? "No activity yet. Enrol a customer to get started."
+                  : "Activity is temporarily unavailable."}
               </p>
             ) : (
               <ul className="mt-4 divide-y divide-brand-green/10">
