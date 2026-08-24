@@ -1,5 +1,10 @@
 import { notFound } from "next/navigation";
-import type { PublicCardView } from "@onusclub/shared";
+import {
+  DEFAULT_CARD_DESIGN,
+  renderStampGrid,
+  type CardDesign,
+  type PublicCardView,
+} from "@onusclub/shared";
 import { ApiCallError, apiFetch } from "@/lib/api";
 
 export const dynamic = "force-dynamic";
@@ -33,15 +38,43 @@ export default async function PublicCardPage({
   const remaining = Math.max(0, target - current);
   const eligible = target > 0 && current >= target;
 
+  // Stamp cards render as a grid of icon badges (docs/card-design/README.md).
+  // Points cards stay numeric — a grid of 420/1000 would be nonsense. The
+  // upper bound keeps a mis-configured 500-stamp program from emitting a
+  // wall of SVG.
+  //
+  // Precedence: defaults < merchant brand colour < the design the merchant
+  // saved in the card builder.
+  const design: CardDesign = {
+    ...DEFAULT_CARD_DESIGN,
+    ...(card.brandColor ? { backgroundColor: card.brandColor } : {}),
+    ...(card.design ?? {}),
+  };
+  const brand = design.backgroundColor;
+  const stampGrid =
+    card.programType === "stamp" && target > 0 && target <= 30
+      ? renderStampGrid({
+          current,
+          total: target,
+          icon: design.stampIcon,
+          filledColor: design.stampFilledColor,
+          emptyColor: design.stampEmptyColor,
+          badgeStyle: design.badgeStyle,
+          background: brand,
+          pattern: design.pattern,
+          patternColor: design.stampEmptyColor,
+          patternOpacity: design.patternOpacity,
+          radius: 12,
+        })
+      : null;
+
   return (
     <main className="min-h-screen px-6 py-12 bg-brand-cream">
       <div className="mx-auto max-w-md space-y-4">
-        {/* Brand-coloured hero card. Uses the merchant's brand colour if set
-         * (falls back to brand green). Cream text reads on dark merchant
-         * colours and stays on-brand. */}
+        {/* Hero card, painted from the saved design. */}
         <header
           className="rounded-card p-6 text-brand-cream shadow-sm"
-          style={{ backgroundColor: card.brandColor ?? "#14271C" }}
+          style={{ backgroundColor: brand, color: design.foregroundColor }}
         >
           <p className="text-xs uppercase tracking-wider opacity-80">
             Loyalty card
@@ -50,12 +83,26 @@ export default async function PublicCardPage({
           <p className="text-sm opacity-90 mt-2">
             {card.customerName ?? "Welcome"} · {card.programName}
           </p>
-          <div className="mt-6 flex items-end justify-between">
+          {stampGrid ? (
+            <div
+              className="mt-5 [&>svg]:w-full [&>svg]:h-auto"
+              dangerouslySetInnerHTML={{ __html: stampGrid.svg }}
+            />
+          ) : null}
+
+          <div className="mt-5 flex items-end justify-between">
             <div>
-              <p className="font-serif text-5xl tabular-nums">
-                {current}
-                <span className="text-3xl opacity-70">/{target}</span>
-              </p>
+              {stampGrid ? (
+                <p className="font-serif text-3xl tabular-nums">
+                  {current}
+                  <span className="text-xl opacity-70">/{target}</span>
+                </p>
+              ) : (
+                <p className="font-serif text-5xl tabular-nums">
+                  {current}
+                  <span className="text-3xl opacity-70">/{target}</span>
+                </p>
+              )}
               <p className="text-xs uppercase tracking-wider opacity-70 mt-1">
                 {unit}
               </p>

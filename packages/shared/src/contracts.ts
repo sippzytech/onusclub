@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { STAMP_ICON_IDS } from "./card-art.js";
 
 // ---------- Auth ----------
 
@@ -420,8 +421,36 @@ export const PublicEnrolResult = z.object({
 });
 export type PublicEnrolResult = z.infer<typeof PublicEnrolResult>;
 
+// ---------- Card design ----------
+//
+// Stored in loyalty_programs.config_json.design — no migration, per the
+// polymorphic-config convention in CLAUDE.md. Every field is optional: a
+// PATCH sends only what changed, and the renderer fills the rest from
+// DEFAULT_CARD_DESIGN.
+//
+// Colours are validated here rather than only at render time so a bad value
+// is rejected at the API boundary instead of silently falling back.
+const HEX_COLOR = z
+  .string()
+  .regex(/^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/, "must be a hex colour like #14271C");
+
+export const CardDesignInput = z.object({
+  backgroundColor: HEX_COLOR.optional(),
+  foregroundColor: HEX_COLOR.optional(),
+  labelColor: HEX_COLOR.optional(),
+  stampIcon: z.enum(STAMP_ICON_IDS).optional(),
+  stampFilledColor: HEX_COLOR.optional(),
+  stampEmptyColor: HEX_COLOR.optional(),
+  badgeStyle: z.enum(["filled", "outline", "bare"]).optional(),
+  pattern: z.enum(["icon-tile"]).nullable().optional(),
+  patternOpacity: z.number().min(0).max(1).optional(),
+  titleText: z.string().max(60).optional(),
+  progressLabel: z.string().max(40).optional(),
+  rewardsLabel: z.string().max(40).optional(),
+});
+export type CardDesignInput = z.infer<typeof CardDesignInput>;
+
 // Customer-facing read of their own card. Sanitised — only the customer's
-// own name + program/business + state. No event history, no other customer
 // data, no merchant secrets. Access controlled solely by knowledge of the
 // 64-char qr_token (unguessable).
 export const PublicCardView = z.object({
@@ -445,6 +474,10 @@ export const PublicCardView = z.object({
   rewardsRedeemed: z.number().int(),
   status: z.enum(["active", "blocked", "expired"]),
   walletSaveUrl: z.string().url().nullable(),
+  // Per-program visual design (loyalty_programs.config_json.design). Null when
+  // the merchant has not customised the card — the renderer falls back to
+  // DEFAULT_CARD_DESIGN plus the merchant brand colour.
+  design: CardDesignInput.nullable().optional(),
 });
 export type PublicCardView = z.infer<typeof PublicCardView>;
 

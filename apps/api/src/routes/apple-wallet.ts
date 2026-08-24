@@ -17,7 +17,11 @@
 import { randomUUID } from "node:crypto";
 import { Router, type Request, type Response } from "express";
 import type { ResultSetHeader, RowDataPacket } from "mysql2";
-import type { PointsCardState, StampCardState } from "@onusclub/shared";
+import {
+  CardDesignInput,
+  type PointsCardState,
+  type StampCardState,
+} from "@onusclub/shared";
 import { pool } from "../db/pool.js";
 import { env } from "../config.js";
 import { logger } from "../logger.js";
@@ -295,6 +299,7 @@ appleWalletRouter.get(
         name: card.program_name,
         rewardText: card.reward_text,
         pointsForReward: Number(cfgRaw.points_for_reward ?? 0),
+      design: CardDesignInput.safeParse(cfgRaw.design ?? {}).data ?? null,
       };
       cardForApple = {
         id: card.card_id,
@@ -313,6 +318,7 @@ appleWalletRouter.get(
         name: card.program_name,
         rewardText: card.reward_text,
         stampsRequired: Number(cfgRaw.stamps_required ?? 0),
+        design: CardDesignInput.safeParse(cfgRaw.design ?? {}).data ?? null,
       };
       cardForApple = {
         id: card.card_id,

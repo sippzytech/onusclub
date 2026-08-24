@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { Router, type Request, type Response } from "express";
 import type { ResultSetHeader, RowDataPacket } from "mysql2";
 import {
+  CardDesignInput,
   ProgramCreateInput,
   type Program,
   type PointsProgramConfig,
@@ -9,6 +10,7 @@ import {
 } from "@onusclub/shared";
 import { pool } from "../db/pool.js";
 import { authContext, requireAuth } from "../auth/middleware.js";
+import { ApiError } from "../errors.js";
 
 export const programsRouter: Router = Router();
 
@@ -99,6 +101,48 @@ programsRouter.post(
       active: true,
       createdAt: new Date().toISOString(),
     });
+  }
+);
+
+/**
+ * PATCH /v1/programs/:id/design — save the card's visual design.
+ *
+ * The design is merged into `config_json.design` rather than replacing the
+ * config, so the program's *rules* (stamps_required, expiry) are untouched by
+ * a colour change. Merging also means the client can PATCH a single field.
+ *
+ * Tenant-scoped: the UPDATE is filtered by merchant_id, so one merchant can
+ * never restyle another's card even with a guessed program id.
+ */
+programsRouter.patch(
+  "/:id/design",
+  requireAuth,
+  async (req: Request, res: Response<Program>) => {
+    const ctx = authContext(req);
+    const patch = CardDesignInput.parse(req.body ?? {});
+
+    const [rows] = await pool.execute<ProgramRow[]>(
+      `SELECT id, merchant_id, name, program_type, config_json, reward_text, active, created_at
+         FROM loyalty_programs
+        WHERE id = ? AND merchant_id = ? LIMIT 1`,
+      [req.params.id, ctx.merchantId]
+    );
+    if (rows.length === 0) throw ApiError.notFound("program not found");
+
+    const current = rowToProgram(rows[0]);
+    const config = current.configJson as Record<string, unknown>;
+    const existingDesign =
+      typeof config.design === "object" && config.design !== null
+        ? (config.design as Record<string, unknown>)
+        : {};
+    const nextConfig = { ...config, design: { ...existingDesign, ...patch } };
+
+    await pool.execute<ResultSetHeader>(
+      "UPDATE loyalty_programs SET config_json = ? WHERE id = ? AND merchant_id = ?",
+      [JSON.stringify(nextConfig), req.params.id, ctx.merchantId]
+    );
+
+    return res.json({ ...current, configJson: nextConfig });
   }
 );
 

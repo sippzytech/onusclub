@@ -1,4 +1,4 @@
-import type { PointsCardState, StampCardState } from "@onusclub/shared";
+import type { CardDesign, PointsCardState, StampCardState } from "@onusclub/shared";
 
 export interface AppleMerchantBranding {
   id: string;
@@ -7,8 +7,10 @@ export interface AppleMerchantBranding {
 }
 
 // Discriminated union — the pass-builder pulls the right labels + numbers
-// based on programType without needing a second lookup.
-export type AppleProgramForWallet =
+// based on programType without needing a second lookup. `design` rides along
+// on both variants (it lives in the same config_json the rules come from) so
+// the pass builder can paint the strip without a second query.
+export type AppleProgramForWallet = { design?: Partial<CardDesign> | null } & (
   | {
       programType: "stamp";
       id: string;
@@ -22,7 +24,8 @@ export type AppleProgramForWallet =
       name: string;
       rewardText: string;
       pointsForReward: number;
-    };
+    }
+);
 
 export type AppleCardForWallet =
   | {

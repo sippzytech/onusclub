@@ -3,6 +3,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PKPass } from "passkit-generator";
 import { logger } from "../logger.js";
+import { buildStripSet } from "../card-art/raster.js";
 import { appleWalletCredentials } from "./client.js";
 import type {
   AppleCardForWallet,
@@ -79,6 +80,9 @@ interface PassBits {
   progressBody: string;
   lifetimeBody: string;
   termsBody: string;
+  /** Drives the strip artwork. */
+  current: number;
+  total: number;
 }
 
 function renderBits(
@@ -99,6 +103,8 @@ function renderBits(
       }`,
       termsBody:
         "Earn points on every purchase. Reward at the threshold above. Points may expire — see your earliest expiring batch on the activity page.",
+      current: card.state.points_current,
+      total: program.pointsForReward,
     };
   }
   // Default: stamps. Treat anything that isn't a clean (points, points) pair
@@ -120,6 +126,8 @@ function renderBits(
     lifetimeBody: `${stampState.total_lifetime} stamps collected · ${stampState.rewards_redeemed} rewards redeemed`,
     termsBody:
       "Show this pass at the counter to earn a stamp. One stamp per visit. Reward at the threshold above. Cards may expire after extended inactivity.",
+    current: stampState.stamps_current,
+    total: stampsRequired,
   };
 }
 
@@ -134,6 +142,20 @@ export async function buildPkPass(
 
   const icons = await loadIcons();
   const bits = renderBits(program, card);
+
+  // The strip is the merchant's card art. Best-effort: if rasterisation
+  // fails we still ship a (plain) pass rather than none at all.
+  const strips =
+    program.programType === "stamp" && bits.total > 0 && bits.total <= 30
+      ? buildStripSet(program.design, bits.current, bits.total)
+      : null;
+
+  // Design colours win over the merchant brand colour, which is itself a
+  // fallback for the hardcoded default.
+  const passBg =
+    program.design?.backgroundColor ?? merchant.brandColor ?? "#111111";
+  const passFg = program.design?.foregroundColor ?? "#FFFFFF";
+  const passLabel = program.design?.labelColor ?? "#FFFFFF";
 
   try {
     const pass = new PKPass(
@@ -152,9 +174,9 @@ export async function buildPkPass(
         organizationName: merchant.businessName,
         description: `${merchant.businessName} — ${program.name}`,
         logoText: merchant.businessName,
-        foregroundColor: "rgb(255, 255, 255)",
-        backgroundColor: hexToRgb(merchant.brandColor ?? "#111111"),
-        labelColor: "rgb(255, 255, 255)",
+        foregroundColor: hexToRgb(passFg),
+        backgroundColor: hexToRgb(passBg),
+        labelColor: hexToRgb(passLabel),
         ...(liveUpdate
           ? {
               webServiceURL: liveUpdate.webServiceURL,
@@ -165,6 +187,17 @@ export async function buildPkPass(
     );
 
     pass.type = "storeCard";
+
+    if (strips) {
+      // A storeCard renders primaryFields *on top of* the strip, so with
+      // artwork present the primary slot is deliberately left empty and the
+      // reward drops to a secondary field. Otherwise the reward text sits
+      // across the stamp badges.
+      for (const [name, buf] of Object.entries(strips)) {
+        pass.addBuffer(name, buf);
+      }
+    }
+
     // changeMessage drives the lock-screen notification: Wallet detects when
     // this field's value differs from the on-device copy after a pass
     // refresh and shows the message. `%@` is substituted with the new value.
@@ -176,16 +209,25 @@ export async function buildPkPass(
     });
     // Primary field renders huge and bold but truncates ~14 chars mid-word.
     // The reward is short and is what the customer cares about; program name
-    // moves to a secondary field where it ellipsises cleanly.
-    pass.primaryFields.push({
-      key: "reward",
-      label: "Reward",
-      value: program.rewardText,
-    });
-    pass.secondaryFields.push(
-      { key: "program", label: "Program", value: program.name },
-      { key: "member", label: "Member", value: card.customerName ?? "Member" }
-    );
+    // moves to a secondary field where it ellipsises cleanly. With a strip
+    // present the primary slot stays empty (see above) and the reward moves
+    // down beside the program name.
+    if (!strips) {
+      pass.primaryFields.push({
+        key: "reward",
+        label: "Reward",
+        value: program.rewardText,
+      });
+      pass.secondaryFields.push(
+        { key: "program", label: "Program", value: program.name },
+        { key: "member", label: "Member", value: card.customerName ?? "Member" }
+      );
+    } else {
+      pass.secondaryFields.push(
+        { key: "reward", label: "Reward", value: program.rewardText },
+        { key: "member", label: "Member", value: card.customerName ?? "Member" }
+      );
+    }
     pass.auxiliaryFields.push(
       {
         key: "remaining",

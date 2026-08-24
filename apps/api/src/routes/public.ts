@@ -10,6 +10,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { Router, type Request, type Response } from "express";
 import type { ResultSetHeader, RowDataPacket } from "mysql2";
 import {
+  CardDesignInput,
   PublicEnrolInput,
   type PointsCardState,
   type PublicCardView,
@@ -326,6 +327,10 @@ publicRouter.get(
       rewardsRedeemed,
       status: row.status,
       walletSaveUrl,
+      // Whatever the merchant saved in the card builder. Parsed leniently:
+      // a malformed design must not break a customer's card page, so an
+      // invalid blob degrades to null and the renderer uses its defaults.
+      design: CardDesignInput.safeParse(cfgRaw.design ?? {}).data ?? null,
     });
   }
 );
@@ -405,6 +410,7 @@ publicRouter.get("/c/:qrToken/apple-pass", async (req: Request, res: Response) =
       name: row.program_name,
       rewardText: row.reward_text,
       pointsForReward: Number(cfgRaw.points_for_reward ?? 0),
+      design: CardDesignInput.safeParse(cfgRaw.design ?? {}).data ?? null,
     };
     cardForApple = {
       id: row.card_id,
@@ -423,6 +429,7 @@ publicRouter.get("/c/:qrToken/apple-pass", async (req: Request, res: Response) =
       name: row.program_name,
       rewardText: row.reward_text,
       stampsRequired: Number(cfgRaw.stamps_required ?? 0),
+      design: CardDesignInput.safeParse(cfgRaw.design ?? {}).data ?? null,
     };
     cardForApple = {
       id: row.card_id,

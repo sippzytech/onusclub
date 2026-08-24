@@ -5,6 +5,7 @@ import type { CardDetail, Customer, WalletLink } from "@onusclub/shared";
 import { ApiCallError, apiFetch } from "@/lib/api";
 import { requireSession } from "@/lib/session";
 import { DashboardShell } from "../../dashboard-shell";
+import { CardPreview } from "../../card-preview";
 import { CardActions } from "./card-actions";
 import { EventTimeline } from "./event-timeline";
 import { WalletSection } from "./wallet-section";
@@ -14,6 +15,13 @@ export const dynamic = "force-dynamic";
 function publicWebBase(): string {
   return (
     process.env.NEXT_PUBLIC_API_BASE?.replace(/\/$/, "") ?? "http://localhost:4000"
+  );
+}
+
+/** Where the customer's own card page lives (the Next app, not the api). */
+function customerSiteBase(): string {
+  return (
+    process.env.NEXT_PUBLIC_WEB_BASE?.replace(/\/$/, "") ?? "http://localhost:3001"
   );
 }
 
@@ -117,6 +125,43 @@ export default async function CardDetailPage({
             />
           </div>
         </header>
+
+        <section className="rounded-card bg-white border border-brand-green/10 p-6">
+          <h3 className="font-serif text-2xl text-brand-green">Customer view</h3>
+          <p className="text-sm text-brand-olive mt-1">
+            How this card looks on {detail.card.customerName ?? "the customer"}&apos;s
+            phone.
+          </p>
+          <div className="mt-5 flex flex-col gap-6 sm:flex-row sm:items-start">
+            <CardPreview
+              businessName={merchant.businessName}
+              programName={detail.card.programName}
+              rewardText={detail.card.rewardText}
+              current={current}
+              target={required}
+              programType={detail.card.programType}
+              qrSvg={qrSvg}
+            />
+            <div className="min-w-0 flex-1 space-y-3">
+              <a
+                href={`${customerSiteBase()}/c/${detail.card.qrToken}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-block rounded-full bg-brand-green px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-brand-green-deep"
+              >
+                Open customer card page ↗
+              </a>
+              <p className="text-sm text-brand-olive">
+                This is the page the customer lands on after scanning your QR — where
+                they add the card to Apple or Google Wallet. It opens in a new tab.
+              </p>
+              <p className="text-xs text-brand-olive/80">
+                The preview uses your brand colour and the default stamp style. Per-card
+                design is coming in the card builder.
+              </p>
+            </div>
+          </div>
+        </section>
 
         <section className="rounded-card bg-white border border-brand-green/10 p-6">
           <h3 className="font-serif text-2xl text-brand-green">Pass &amp; QR</h3>
