@@ -84,6 +84,31 @@ Each day below corresponds to a git branch + a commit. Run `git log --oneline --
 - METABASE.md runbook with 7 starter SQL queries.
 - Smoke test: 70 assertions.
 
+### Day 16 — Card design system (stamp art + per-program editor + Apple strip)
+- ⚠️ **Committed as `80a9ac9` but NOT pushed and NOT deployed** — the Mac had no working
+  GitHub credential. See the top of `HANDOFF.md` before anything else.
+- **`packages/shared/src/card-art.ts`** — one dependency-free SVG renderer feeding the
+  customer card page, the Apple Wallet strip and the dashboard preview, so they cannot
+  drift. 10 tintable icons; `balancedColumns()` fills rows evenly (6→3×2, 10→5×2) instead
+  of leaving a 5+1 hole; `renderCardStrip()` re-lays the badges for the wallet's ~3:1 band.
+- **Design storage** in `loyalty_programs.config_json.design` — **no migration**, the
+  polymorphic-config convention paying off again. `PATCH /v1/programs/:id/design` merges
+  rather than replaces so rules can't be clobbered; hex validated at the API boundary and
+  sanitised at render (the SVG is injected into a customer-facing page).
+- **Apple Wallet**: `strip.png` @1x/2x/3x via `pass.addBuffer()`, pass colours from the
+  design, `primaryFields` left empty because a storeCard paints it over the strip. Strips
+  cached in a bounded LRU — `buildPkPass` runs on every device pull (296 ms → 0.017 ms).
+- **Dashboard**: live per-program design editor in `/dashboard/card-builder` (icon,
+  colours, badge style, pattern + opacity, labels) with phone preview; `/dashboard/cards/[id]`
+  gained a customer-view preview and a link to the customer card page.
+- Verified: typecheck, production build, smoke 108/108, a real `.pkpass` unpacked to confirm
+  strip dimensions and `pass.json`. **Not verified: a physical iPhone** (Apple certs are
+  VPS-only). Google Wallet hero image still not wired.
+- Decisions recorded in `docs/card-design/README.md`: mirror Perkstar's full template
+  catalogue using *original* single-colour tintable SVG motifs (94 names extracted; T–Z
+  missing from the capture). `"icon-tile"` is a placeholder until those motifs exist.
+- `/dashboard/card-builder` is **no longer a placeholder**; `/dashboard/analytics` still is.
+
 ### Day 15 — Revenue capture + dashboard come-alive
 - **The lever from the Perkstar tear-down**: no POS integration, ever. Staff optionally type the sale amount and every monetary number is derived from that one input.
 - Migration `008_card_event_amount`: `card_events.amount_cents BIGINT NULL` + `merchants.currency_code CHAR(3) DEFAULT 'EUR'`. No new index — 001's `INDEX (merchant_id, created_at)` is already the exact access path. **Backfills** existing `points_add` events from `delta_json.amount_euros`, so revenue is correct on first render instead of starting at zero.

@@ -125,7 +125,10 @@ What works end-to-end:
 - ✅ Staff/team accounts (`/dashboard/team`, owner-only CRUD)
 - ✅ Smoke suite at 108 assertions, gated in CI on every PR
 - ⚠️ Resend still on test mode — only delivers to sippzy.official@gmail.com until the sender domain is verified
-- ⚠️ `/dashboard/card-builder` and `/dashboard/analytics` are placeholder pages
+- ✅ **Card design system** (Day 16): shared SVG renderer, per-program design editor in
+  `/dashboard/card-builder`, Apple Wallet `strip.png` artwork. See `docs/card-design/README.md`.
+  ⚠️ Committed as `80a9ac9` but **not pushed / not deployed** — read `HANDOFF.md` first.
+- ⚠️ `/dashboard/analytics` is still a placeholder page
 
 ### Naming: three different names, on purpose
 
