@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PKPass } from "passkit-generator";
+import { DEFAULT_CARD_DESIGN, type CardDesign } from "@onusclub/shared";
 import { logger } from "../logger.js";
 import { buildStripSet } from "../card-art/raster.js";
 import { appleWalletCredentials } from "./client.js";
@@ -143,19 +144,32 @@ export async function buildPkPass(
   const icons = await loadIcons();
   const bits = renderBits(program, card);
 
+  // Precedence: defaults < merchant brand colour < the design the merchant
+  // saved in the card builder — the same chain, in the same order, as the
+  // customer page in apps/web/src/app/c/[qrToken]/page.tsx.
+  //
+  // Resolve it ONCE and paint both the strip and the pass body from it. These
+  // used to run through separate fallback chains: buildStripSet fills in
+  // DEFAULT_CARD_DESIGN internally, while passBg skipped straight from an
+  // absent design to brandColor. So any program with no saved design got a
+  // #14271C strip sitting on a #000000 pass — a visible seam on every card
+  // that had never been through the editor, which is all of them today.
+  const design: CardDesign = {
+    ...DEFAULT_CARD_DESIGN,
+    ...(merchant.brandColor ? { backgroundColor: merchant.brandColor } : {}),
+    ...(program.design ?? {}),
+  };
+
   // The strip is the merchant's card art. Best-effort: if rasterisation
   // fails we still ship a (plain) pass rather than none at all.
   const strips =
     program.programType === "stamp" && bits.total > 0 && bits.total <= 30
-      ? buildStripSet(program.design, bits.current, bits.total)
+      ? buildStripSet(design, bits.current, bits.total)
       : null;
 
-  // Design colours win over the merchant brand colour, which is itself a
-  // fallback for the hardcoded default.
-  const passBg =
-    program.design?.backgroundColor ?? merchant.brandColor ?? "#111111";
-  const passFg = program.design?.foregroundColor ?? "#FFFFFF";
-  const passLabel = program.design?.labelColor ?? "#FFFFFF";
+  const passBg = design.backgroundColor;
+  const passFg = design.foregroundColor;
+  const passLabel = design.labelColor;
 
   try {
     const pass = new PKPass(

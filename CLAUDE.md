@@ -104,9 +104,11 @@ When adding a new `program_type`, define its config + state shapes in `packages/
 - Secrets only via env vars or mounted files — never committed.
 - All tenant-scoped queries must filter by `merchant_id`. (Will be enforced via a request-scoped context once auth lands.)
 
-## Status — Day 15 (current)
+## Status — Day 16 (current)
 
-**Deployed live at `api.onusclub.com` + `app.onusclub.com`.** The old `api.sippzy.com` / `app.sippzy.com` routes still resolve to the same containers via legacy Traefik routers, because wallet passes saved before the Day 13 cutover still point at them.
+**Deployed live at `api.onusclub.com` + `app.onusclub.com`**, on branch `card-customization` (`9f9c4d2`), migrations `001`–`008` all applied.
+
+⚠️ **The legacy `sippzy.com` routes are dead.** `api.sippzy.com` and `app.sippzy.com` no longer resolve in DNS (checked against the system resolver, `1.1.1.1` and `8.8.8.8` on 2026-09-17 — all three return nothing). `docker-compose.prod.yml` still carries the `DOMAIN_API_LEGACY` / `DOMAIN_WEB_LEGACY` Traefik routers, but with no DNS in front of them they are unreachable. Any Apple pass saved before the Day 13 cutover has `webServiceURL` baked in pointing at `api.sippzy.com`, so **those passes have already stopped updating** — they still display, just frozen. Either restore the DNS records or drop the legacy routers; keeping them as-is is the one option that helps nobody.
 
 What works end-to-end:
 
@@ -124,11 +126,18 @@ What works end-to-end:
 - ✅ Premium feature gate (fake unlock for now) + crons-enabled kill-switch
 - ✅ Staff/team accounts (`/dashboard/team`, owner-only CRUD)
 - ✅ Smoke suite at 108 assertions, gated in CI on every PR
-- ⚠️ Resend still on test mode — only delivers to sippzy.official@gmail.com until the sender domain is verified
 - ✅ **Card design system** (Day 16): shared SVG renderer, per-program design editor in
   `/dashboard/card-builder`, Apple Wallet `strip.png` artwork. See `docs/card-design/README.md`.
-  ⚠️ Committed as `80a9ac9` but **not pushed / not deployed** — read `HANDOFF.md` first.
+  Deployed and **verified on a physical iPhone 2026-09-18**.
+- 🔶 Resend: the VPS `.env` sends from `noreply@send.onusclub.com`, a verified custom
+  domain — so the old "test mode, only delivers to sippzy.official@gmail.com" note no
+  longer holds. **Delivery to an arbitrary third-party address has not actually been
+  observed**, so treat "real customer email works" as likely-but-unconfirmed until
+  someone watches one land.
 - ⚠️ `/dashboard/analytics` is still a placeholder page
+- ⚠️ `merchants.brand_color` has **no write path anywhere** — no API, no UI. It is
+  whatever the schema default made it, and it feeds card/pass background colour as the
+  middle tier of `defaults < brand colour < saved design`. Ships with merchant logo upload.
 
 ### Naming: three different names, on purpose
 

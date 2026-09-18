@@ -85,8 +85,8 @@ Each day below corresponds to a git branch + a commit. Run `git log --oneline --
 - Smoke test: 70 assertions.
 
 ### Day 16 — Card design system (stamp art + per-program editor + Apple strip)
-- ⚠️ **Committed as `80a9ac9` but NOT pushed and NOT deployed** — the Mac had no working
-  GitHub credential. See the top of `HANDOFF.md` before anything else.
+- ✅ **Pushed, deployed and verified on a physical iPhone (2026-09-18.)** Shipped as
+  `80a9ac9` + `9f9c4d2` on `card-customization`; the VPS is checked out on that branch.
 - **`packages/shared/src/card-art.ts`** — one dependency-free SVG renderer feeding the
   customer card page, the Apple Wallet strip and the dashboard preview, so they cannot
   drift. 10 tintable icons; `balancedColumns()` fills rows evenly (6→3×2, 10→5×2) instead
@@ -102,8 +102,23 @@ Each day below corresponds to a git branch + a commit. Run `git log --oneline --
   colours, badge style, pattern + opacity, labels) with phone preview; `/dashboard/cards/[id]`
   gained a customer-view preview and a link to the customer card page.
 - Verified: typecheck, production build, smoke 108/108, a real `.pkpass` unpacked to confirm
-  strip dimensions and `pass.json`. **Not verified: a physical iPhone** (Apple certs are
-  VPS-only). Google Wallet hero image still not wired.
+  strip dimensions and `pass.json`. Google Wallet hero image still not wired.
+- **Verified against production 2026-09-18**, which retired the two open risks:
+  - `@resvg/resvg-js` loads and rasterises inside the `node:20-alpine` (musl) api
+    container. Note it is reached through a *dynamic* `await import()` in
+    `routes/public.ts` and `routes/apple-wallet.ts`, so a clean startup log proves
+    nothing about it — it has to be exercised.
+  - A live stamp pass pulled over HTTPS came back 141,454 bytes carrying
+    `strip.png` / `@2x` / `@3x` at exactly 375×123 / 750×246 / 1125×369, all three
+    in the manifest, `primaryFields` empty. The same pull for a points card is
+    7,843 bytes with no strip — correct, strips are stamp-only. Installed and
+    rendered on a physical iPhone.
+- **Fixed on the way through**: the strip and the pass body resolved their background
+  through two different fallback chains, so any program with no saved design got a
+  `#14271C` strip on a `#000000` pass — a visible seam on every unedited card.
+  `pass-builder.ts` now merges the design once, using the same
+  `defaults < merchant brand colour < saved design` precedence the customer page
+  already documented, and paints both surfaces from it.
 - Decisions recorded in `docs/card-design/README.md`: mirror Perkstar's full template
   catalogue using *original* single-colour tintable SVG motifs (94 names extracted; T–Z
   missing from the capture). `"icon-tile"` is a placeholder until those motifs exist.

@@ -1,4 +1,4 @@
-# OnUsClub — Handoff Notes (updated 2026-09-16)
+# OnUsClub — Handoff Notes (updated 2026-09-18)
 
 **Purpose**: This document exists so any fresh Claude session — in Antigravity, VS Code, another Claude Code CLI, or a chat on claude.ai — can pick up this project cold in under 5 minutes. Nothing load-bearing lives in an ephemeral chat window; everything lives in this repo.
 
@@ -6,70 +6,117 @@ If you are a fresh Claude reading this: **also read `CLAUDE.md`, `ROADMAP.md`, `
 
 ---
 
-## 🚨 READ THIS FIRST — the card-design work is NOT on GitHub yet
+## READ THIS FIRST — Day 16 is shipped, pushed, deployed and verified
 
-As of 2026-09-16 there is **one commit that exists only on Sanchit's Mac**:
+**Everything the previous version of this file warned about is resolved.** The card
+design work is on GitHub, running in production, and confirmed working on a real iPhone
+as of 2026-09-18. If you are reading an older copy of this section claiming `80a9ac9` is
+unpushed, that copy is stale.
 
-```
-80a9ac9  Card design system: stamp-grid art, per-program editor, Apple Wallet strip
-```
+Current state:
 
-It is committed, the working tree is clean, and it is **not pushed**. `git push` fails
-because this machine has no GitHub credential: nothing in the macOS keychain for
-github.com, no `~/.git-credentials`, no `GITHUB_TOKEN`/`GH_TOKEN`, no `gh` CLI, and both
-`~/.ssh/id_ed25519` and `~/.ssh/id_rsa` are unencrypted but **rejected by GitHub**
-(`Permission denied (publickey)`) — i.e. neither public key is registered on the account.
+| Thing | State |
+|---|---|
+| Branch | `card-customization` |
+| HEAD | `9f9c4d2` (on top of `80a9ac9`) — pushed to `origin` |
+| VPS | checked out on `card-customization`, containers rebuilt from it |
+| Migrations | `001`–`008` all applied (`migrate.js` reports `applied:0, total:8`) |
+| Apple Wallet | strip artwork verified in prod **and on a physical iPhone** |
 
-**Consequences, so nobody wastes an hour on this again:**
-- `git pull` on the VPS correctly reports "Already up to date" — there genuinely is
-  nothing new on the remote. Rebuilding containers changes nothing. This is not a
-  Docker problem, a cache problem, or a build problem.
-- A second laptop cloning from GitHub will **not** get this work.
+Confirm any of it in one line: `git ls-remote --heads origin card-customization`.
 
-### Fix (pick one, ~2 minutes)
+### What production verification actually covered
 
-**A — register the SSH key (preferred; lets Claude push in future sessions):**
+Run from a laptop against live, no SSH needed — the Apple pass endpoint is public
+because the `qr_token` *is* the credential:
+
 ```bash
-cat ~/.ssh/id_ed25519.pub | pbcopy     # paste at github.com/settings/keys
-git remote set-url origin git@github.com:sippzytech/onusclub.git
-git push -u origin card-customization
+curl -sS -o /tmp/t.pkpass -w 'http %{http_code}  bytes %{size_download}\n' \
+  "https://api.onusclub.com/v1/public/c/<QR_TOKEN>/apple-pass"
+unzip -l /tmp/t.pkpass
 ```
 
-**B — personal access token:** create at github.com/settings/tokens with `repo` scope,
-then `git push -u origin card-customization` and paste the token as the password.
-`credential.helper` is already `osxkeychain`, so it is stored once.
+A **stamp** card returns ~141 KB with `strip.png` / `strip@2x.png` / `strip@3x.png` at
+375×123 / 750×246 / 1125×369, all three in `manifest.json`, and `primaryFields` empty.
+A **points** card returns ~7.8 KB with no strip and the reward in `primaryFields` —
+that is correct, not a bug: strips are gated to `programType === "stamp"` with
+`total <= 30` in `wallet-apple/pass-builder.ts`. Testing with a points card proves
+nothing about the design system; pick a stamp card.
 
-**C — no GitHub at all (offline transfer):** a bundle of this exact commit is at
-`~/Desktop/onusclub-card-customization.bundle` (2.0 MB, verified). On the other machine:
+Get tokens on the VPS with:
+
 ```bash
-git clone <existing onusclub clone or GitHub>          # get the base repo first
-git bundle verify /path/to/onusclub-card-customization.bundle
-git fetch /path/to/onusclub-card-customization.bundle card-customization:card-customization
-git checkout card-customization
+docker exec -e MYSQL_PWD="$(grep '^MYSQL_PASSWORD=' .env | cut -d= -f2-)" onusclub-mysql \
+  mysql -ustampdeck stampdeck -N -B -e "SELECT qr_token FROM loyalty_cards LIMIT 3"
 ```
-The bundle requires parent commit `f5265c7`, which is already on
-`origin/day-14-points-programs` — so any normal clone can absorb it.
 
-### After pushing — the branch mismatch that will bite next
+### The musl trap, documented so nobody re-learns it
 
-`origin/HEAD` points at `day-1-skeleton`, which is **behind** and does not contain
-Days 14/15. The real line of work is `day-14-points-programs` (`f5265c7`), and
-`card-customization` is one commit on top of it. The VPS is almost certainly checked
-out on `day-14-points-programs`, so a plain `git pull` there will still not bring the
-new commit. On the VPS:
+`@resvg/resvg-js` is a native dependency and the api image is `node:20-alpine` (musl).
+It **is** confirmed working there — but note that both call sites reach it through a
+*dynamic* import:
+
+```
+routes/public.ts        const { buildPkPass } = await import("../wallet-apple/pass-builder.js");
+routes/apple-wallet.ts  const { buildPkPass } = await import("../wallet-apple/pass-builder.js");
+```
+
+So a clean api startup log proves **nothing** about resvg — the binary isn't touched
+until the first pass is built. `grep resvg` over the logs coming back empty is an
+absence of evidence. To check it directly in ~10 seconds:
 
 ```bash
 cd /docker/stampdeck
-git branch --show-current          # confirm what it is actually on
-git fetch origin
-git checkout card-customization    # or merge origin/card-customization into its branch
-git log --oneline -1               # MUST show 80a9ac9 before you rebuild
-docker compose -f docker-compose.prod.yml up -d --build
+cat > /tmp/resvg-check.mjs <<'EOF'
+import { Resvg } from "@resvg/resvg-js";
+const svg = "<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12'><rect width='12' height='12' fill='red'/></svg>";
+console.log("resvg OK — png bytes:", new Resvg(svg).render().asPng().length);
+EOF
+docker compose -f docker-compose.prod.yml cp /tmp/resvg-check.mjs api:/repo/apps/api/resvg-check.mjs
+docker compose -f docker-compose.prod.yml exec api node resvg-check.mjs
+docker compose -f docker-compose.prod.yml exec api rm -f resvg-check.mjs
 ```
 
-**No migration needed for this commit** — the card design is stored inside
-`loyalty_programs.config_json.design`, so there is no new DDL. (Migration `008` from
-Day 15 is a separate question — see below.)
+Expect `resvg OK — png bytes: 79`. `ERR_DLOPEN_FAILED` means the musl prebuild didn't
+resolve — the lockfile does carry `@resvg/resvg-js-linux-x64-musl` and
+`-linux-arm64-musl`, so check that `pnpm install --frozen-lockfile` actually succeeded
+in the `deps` stage rather than falling through to the `|| pnpm install` branch.
+
+### Deploying this branch to the VPS
+
+**No migration needed for the card design** — it lives in
+`loyalty_programs.config_json.design`, so there is no new DDL. The VPS is already on
+`card-customization`; for a fresh box, or if it ever gets reset to another branch:
+
+```bash
+cd /docker/stampdeck
+git fetch origin
+git checkout card-customization
+git log --oneline -1               # MUST show 9f9c4d2 before you rebuild
+docker compose -f docker-compose.prod.yml up -d --build
+docker compose -f docker-compose.prod.yml exec api node dist/db/migrate.js   # idempotent
+./scripts/verify-deploy.sh
+```
+
+`origin/HEAD` still points at `day-1-skeleton`, which is far behind and contains none of
+Days 14–16. Ignore it; the live line of work is `card-customization`.
+
+### Gotcha: `.env` and shell scripts
+
+`EMAIL_FROM`'s display-name form contains `<` and `>`. **Unquoted, it breaks
+`set -a; . ./.env`** with ``syntax error near unexpected token `newline` `` and silently
+leaves every variable *below that line* unset. Docker Compose uses its own parser and is
+unaffected, so the damage is invisible until a shell script — `verify-deploy.sh` — reads
+it. `.env.example` now ships it quoted; check the VPS `.env` matches:
+
+```bash
+cd /docker/stampdeck
+( set -a; . ./.env; set +a; echo "sourced OK -> $EMAIL_FROM" )
+grep -P '[^\x00-\x7F]' .env && echo "^^ smart quotes" || echo "ASCII clean"
+```
+
+(The `grep -P` is the macOS-curly-quote check — pasting into a remote editor from a Mac
+substitutes `"` for `"`, which breaks env parsing in a way that is very hard to see.)
 
 ---
 
@@ -77,26 +124,47 @@ Day 15 is a separate question — see below.)
 
 | Location | Path | What it holds |
 |---|---|---|
-| Sanchit's Mac | `/Users/sanchit-easy/personal/onusclub` | Local clone — **holds the only copy of `80a9ac9`** |
-| Desktop bundle | `~/Desktop/onusclub-card-customization.bundle` | Offline copy of that commit |
-| GitHub | `github.com/sippzytech/onusclub` | Source of truth for everything up to `f5265c7` |
-| Production VPS | `root@api.onusclub.com:/docker/stampdeck` | Deployed clone, currently serving prod |
+| GitHub | `github.com/sippzytech/onusclub` | **Source of truth.** Everything through `9f9c4d2` |
+| Mac #1 | `/Users/sanchit-easy/personal/onusclub` | Clone the card-design work was authored on |
+| Mac #2 | `/Users/sanchit/Projects/stampdeck` | Second laptop, up to date on `card-customization` |
+| Production VPS | `root@api.onusclub.com:/docker/stampdeck` | Deployed clone, serving prod |
 
-**Note the mismatch**: local dir used to be `stampdeck` (legacy name) and some older notes
-still say `/Users/sanchit/Projects/stampdeck` — **that path is stale**, the real one is
-`/Users/sanchit-easy/personal/onusclub`. GitHub repo is `onusclub`, pnpm packages are
-`@onusclub/*`. See `CLAUDE.md` for the full rename history; the un-renamed names (MySQL DB,
-Docker volume, VPS deploy dir) are deliberate — renaming risks data loss for zero
-user-visible benefit.
+**Both local paths are real** — there are two laptops. An older version of this file
+declared `/Users/sanchit/Projects/stampdeck` "stale"; it isn't, it is Mac #2's clone. The
+directory name difference is only the legacy `stampdeck` name. GitHub repo is `onusclub`,
+pnpm packages are `@onusclub/*`. See `CLAUDE.md` for the rename history; the un-renamed
+names (MySQL DB, Docker volume, VPS deploy dir) are deliberate — renaming risks data loss
+for zero user-visible benefit.
+
+Since everything is pushed, **GitHub is now the sync point** — no bundles, no
+laptop-specific copies of anything. The old
+`~/Desktop/onusclub-card-customization.bundle` on Mac #1 is obsolete and can be deleted.
 
 ## Current git state
 
 - **Branch**: `card-customization`, forked from `day-14-points-programs`
-- **HEAD**: `80a9ac9` — clean tree, **unpushed** (see the top of this doc)
-- **Remote heads**: `day-1-skeleton` (default, stale), `day-14-points-programs` (`f5265c7`,
-  the real trunk), plus the older `day-*` branches
+- **HEAD**: `9f9c4d2` — pushed, and what the VPS is running
+- **Remote heads**: `day-1-skeleton` (still the default, badly stale — ignore it),
+  `day-14-points-programs` (`f5265c7`, the previous trunk), `card-customization`
+  (current), plus older `day-*` branches
 
 Run `git log --oneline -5` — this section goes stale faster than anything else here.
+
+### SSH access is per-machine
+
+Mac #2 can reach GitHub over SSH but its keys are **not** on the VPS — `id_rsa` and
+`id_ed25519` are both offered and both rejected, so `ssh root@api.onusclub.com` falls
+back to asking for a password. To fix it for a given laptop:
+
+```bash
+ssh-copy-id -i ~/.ssh/id_ed25519.pub root@api.onusclub.com
+```
+
+If SSH refuses with `Host key verification failed`, that machine has simply never
+connected. The box's ED25519 fingerprint is
+`SHA256:qTOHwGb8Nk1Yb92Vc5c38fPb6SuezmZSbQFKM+vuGok` — verify against that rather than
+blindly accepting, and note it is the *same* key the retired `api.sippzy.com` entry
+used, since it is the same machine.
 
 ---
 
@@ -141,22 +209,49 @@ Verified locally: monorepo typecheck, full production build (`pnpm build`), smok
 (108 assertions), design round-trip (save → customer page), and a **real `.pkpass`
 unpacked** to confirm strip dimensions (375×123 / 750×246 / 1125×369) and `pass.json`.
 
-**Not verified — do this first on the other machine / on prod:**
-- ❌ **Never rendered on a physical iPhone.** Apple signing certs are not present locally
-  (`APPLE_TEAM_ID` and `APPLE_PASS_P12_PASSWORD` are empty in `apps/api/.env`, `secrets/`
-  is empty); they only exist on the VPS. The local test used a throwaway self-signed cert,
-  which proves bundle *structure* but not Apple acceptance.
-- ⚠️ **`@resvg/resvg-js` is a new native dependency** and the API image is `node:20-alpine`
-  (musl). `pnpm install` runs inside that image so the `linux-*-musl` prebuild should
-  resolve, but if the api container crash-loops after deploy, look there first.
+**Verified in production on 2026-09-18:**
+- ✅ **Renders on a physical iPhone.** The pass installs and displays correctly.
+- ✅ **`@resvg/resvg-js` works on musl** inside the `node:20-alpine` api container.
+- ✅ Live stamp pass carries all three strips at spec dimensions, hashed in the manifest,
+  with `primaryFields` empty. Points passes correctly carry no strip.
+
+**Still not verified:**
+- ❌ **Nobody has saved a custom design on production yet.** Every prod card is rendering
+  `DEFAULT_CARD_DESIGN` (plus `merchants.brand_color`). The editor round-trip is proven
+  locally but not against the live database — so a `PATCH /v1/programs/:id/design`
+  followed by re-downloading the pass is still worth doing once.
 - ❌ Google Wallet still uses default styling — the hero image is not wired up. Low value
   while the issuer is in demo mode anyway.
+
+### Bug found during that verification, and fixed
+
+The strip and the pass body resolved their background colour through **two different
+fallback chains**. `buildStripSet` merges `DEFAULT_CARD_DESIGN` internally, while
+`passBg` jumped straight from an absent design to `merchant.brandColor`. With no saved
+design — which is every card today — that produced a `#14271C` dark green strip sitting
+on a `#000000` black pass. A visible seam, and exactly the drift the shared renderer
+exists to prevent.
+
+`pass-builder.ts` now resolves the design **once** and paints both surfaces from it,
+using the same precedence the customer page already documented:
+
+```ts
+// defaults < merchant brand colour < the design saved in the card builder
+const design: CardDesign = {
+  ...DEFAULT_CARD_DESIGN,
+  ...(merchant.brandColor ? { backgroundColor: merchant.brandColor } : {}),
+  ...(program.design ?? {}),
+};
+```
+
+If you add a third surface that paints card colours, merge from that same shape. Do not
+reintroduce a parallel `?? ?? ??` chain — that is precisely how this broke.
 
 ### Known gaps / next candidates for this feature
 
 1. **Google Wallet hero image** — public cache-busted URL + `heroImage` on the object patch.
 2. **Merchant logo upload** — `merchants.brand_color` has no write path at all, and there is
-   no logo upload. Note `ensureLoyaltyClass()` in `apps/api/src/wallet/loyalty.js` does a GET
+   no logo upload. Note `ensureLoyaltyClass()` in `apps/api/src/wallet/loyalty.ts` does a GET
    and returns early on 200 — **it never PATCHes**, so a brand-colour change would silently
    never reach Google Wallet. Needs an `updateLoyaltyClass()`.
 3. **Template gallery** — decided: mirror Perkstar's full catalogue with *original*
@@ -174,37 +269,48 @@ unpacked** to confirm strip dimensions (375×123 / 750×246 / 1125×369) and `pa
 - `https://app.onusclub.com` — Next.js dashboard + customer-facing pages
 - Both routed via existing Traefik on the VPS (`n8n_default` network, cert resolver `mytlschallenge`)
 - MySQL 8 on the internal Docker network (`onusclub-mysql` container, DB name `stampdeck` — not renamed)
-- ⚠️ **Deployed state is UNVERIFIED as of 2026-09-16.** The last session tried to deploy the
-  card-design work, but the commit was never pushed (see the top of this doc), so whatever
-  is running is whatever was there before. Do not trust the next two lines without checking.
-- Migrations `001`–`007` were applied. `008_card_event_amount.sql` (Day 15) may or may not
-  have run — **verify before assuming**.
-- Verify all of it in one go:
+- ✅ **Deployed state verified 2026-09-18**: VPS on `card-customization` at `9f9c4d2`,
+  `verify-deploy.sh` 13/13, migrations `001`–`008` **all applied**
+  (`migrate.js` → `applied:0, total:8`).
+- ⚠️ The legacy `api.sippzy.com` / `app.sippzy.com` routers are still configured but their
+  **DNS records are gone**, so they resolve to nothing. Apple passes issued before the
+  Day 13 cutover point their `webServiceURL` there and have silently stopped updating.
+  See the Status section of `CLAUDE.md`.
+- Re-verify any time, from a laptop, no SSH needed:
   ```bash
-  ssh root@api.onusclub.com
-  cd /docker/stampdeck && git branch --show-current && git log --oneline -1
-  docker compose -f docker-compose.prod.yml exec api node dist/db/migrate.js   # idempotent; applies anything outstanding
+  ./scripts/verify-deploy.sh                      # HTTP checks
+  PROD_EMAIL=… PROD_PASSWORD=… ./scripts/verify-deploy.sh   # + logged-in checks
   ```
+  Run it **on the VPS** and it additionally diffs every migration file against the
+  `_migrations` table. It is strictly read-only — unlike `pnpm smoke`, which creates
+  merchants and cards and must never be pointed at prod.
 
 ## What is on-hold / gated externally
 
 - **Google Wallet production approval** — issuer still in demo mode, but **both prior blockers are cleared as of 2026-08-23**: friend delivered the KvK-registered NL entity details, and the marketing site is live at `https://onusclub.com` with `/privacy` and `/terms` (verified 200 OK). What's left is purely Sanchit-driven: log into <https://pay.google.com/business/console/>, fill the Business Info form with the KvK entity + policy URLs + logo, submit. Google review is 1-2 business days. No code change needed after approval. Apple Wallet is unaffected and already live. See `ROADMAP.md` "Wallet production approval" for the step-by-step.
-- **Resend sender domain** — currently `onboarding@resend.dev`. Verified subdomain `send.onusclub.com` at some point but not sure if `EMAIL_FROM` env was flipped on VPS. Worth verifying if we get to email work.
+- **Resend sender domain** — **resolved**: the VPS `.env` has
+  `EMAIL_FROM="OnUsClub <noreply@send.onusclub.com>"`, a verified custom subdomain, so the
+  old `onboarding@resend.dev` test-mode restriction no longer applies. Delivery to an
+  arbitrary third-party address has not been *observed* though — watch one land before
+  treating customer email as proven. (It read `Stampdeck <…>` until 2026-09-18; the old
+  brand name was showing in the From header of every customer email.)
 - **Backblaze B2 offsite backup** — code shipped Day 13, needs 10 min of user-side sign-up + 3 env lines on VPS. See `DEPLOY.md §9`.
 
 ---
 
 ## What we're doing next
 
-**Immediate, in order:**
+**Steps 1–3 of the previous plan (push → deploy → iPhone test) are all DONE as of
+2026-09-18.** What remains:
 
-1. **Push `80a9ac9`** — see the top of this doc. Nothing else can proceed until this lands.
-2. **Get it onto the VPS** and confirm `git log --oneline -1` shows `80a9ac9` *before* rebuilding.
-3. **Test the Apple Wallet pass on a real iPhone** — the one thing that could not be tested
-   locally. Card builder → design → Save → customer card page → Add to Apple Wallet → stamp
-   the card from the dashboard and watch the pass repaint.
-4. Then pick from "Known gaps" above — merchant logo upload is the highest value, because it
-   also fixes the `ensureLoyaltyClass()` never-PATCHes bug.
+1. **Save a real design in `/dashboard/card-builder` on prod** and re-download the pass.
+   The only card-design path never exercised against the live database.
+2. **Merchant logo upload** — highest value of the known gaps, because it also forces
+   fixing the `ensureLoyaltyClass()` never-PATCHes bug *and* gives
+   `merchants.brand_color` its first write path (it currently has none, anywhere).
+3. **Decide the `sippzy.com` legacy question** — restore DNS or drop the dead routers.
+4. **Google Wallet production approval** (section B below) — still pure form-filling,
+   still needs Sanchit personally.
 
 **Still open from the 2026-08-23 plan (B below is untouched and still valid):**
 
@@ -280,17 +386,30 @@ A and B are independent. If Google approval lands while other work is in flight,
 
 ### Step 1: Get the code
 
-**On this Mac** the repo is already at `/Users/sanchit-easy/personal/onusclub` — do NOT
-re-clone, it holds the only copy of `80a9ac9`.
+Everything is on GitHub, so any machine can just clone:
 
-**On a second laptop**, once `80a9ac9` is pushed:
 ```bash
-git clone https://github.com/sippzytech/onusclub.git onusclub
+git clone git@github.com:sippzytech/onusclub.git onusclub
 cd onusclub
 git checkout card-customization
-git log --oneline -1          # must show 80a9ac9
+git log --oneline -1          # must show 9f9c4d2
 ```
-If it has NOT been pushed yet, use the bundle — see "READ THIS FIRST" at the top.
+
+On an **existing clone that has been sitting idle**, it will likely be on
+`day-14-points-programs` and needs the branch fetched rather than pulled:
+
+```bash
+git fetch origin
+git checkout card-customization
+git pull
+pnpm install                                   # Day 16 added @resvg/resvg-js
+pnpm --filter @onusclub/shared run build
+pnpm -r run typecheck
+```
+
+`.env`, `apps/api/.env` and `apps/web/.env` are gitignored and will **not** arrive from
+GitHub. Day 16 added no new env vars, so an older machine's existing files still work;
+a fresh clone copies them from the `.env.example` files.
 
 ### Step 2: Get it running locally
 
@@ -331,18 +450,19 @@ Apple Wallet will 503 locally — `APPLE_TEAM_ID` / `APPLE_PASS_P12_PASSWORD` ar
 > 5. `PERKSTAR_ANALYSIS.md` — the competitor tear-down behind the plan
 >
 > Then tell me:
-> - Whether commit `80a9ac9` is on the remote yet, and if not, what my options are
-> - What the card design system does, and specifically what was **never verified**
+> - Whether this machine is up to date with `origin/card-customization`, and whether
+>   what is running on the VPS matches it
+> - What the card design system does, and specifically what is **still unverified**
 > - What you would do first
 >
-> Context on where I left off: the card design system is built and committed — a shared
-> SVG renderer in `packages/shared/src/card-art.ts` feeding the customer card page, a
+> Context on where I left off: the card design system (Day 16) is shipped — a shared SVG
+> renderer in `packages/shared/src/card-art.ts` feeding the customer card page, a
 > per-program design editor in `/dashboard/card-builder`, and Apple Wallet `strip.png`
-> artwork. It passes typecheck, production build and the 108-assertion smoke suite. It has
-> **never been rendered on a real iPhone** and was **never pushed to GitHub** because that
-> Mac had no working GitHub credential.
+> artwork. It is pushed, deployed, and verified on a physical iPhone. The open thread is
+> that **no merchant has saved a custom design on production yet**, so the editor
+> round-trip is proven only locally.
 >
-> Don't start coding until I confirm what I want.
+> Don't start coding, and don't deploy, until I confirm what I want.
 
 ---
 
@@ -362,10 +482,10 @@ old machine lived at `~/.claude/projects/-Users-sanchit-easy-personal-onusclub/m
 
 Before you close the terminal / restart:
 
-- [ ] `git status` shows clean tree (true as of 2026-09-16)
-- [ ] ⚠️ **`git log` shows HEAD is pushed — CURRENTLY FALSE.** `80a9ac9` exists only on this
-      Mac plus `~/Desktop/onusclub-card-customization.bundle`. Push it, or keep the bundle
-      somewhere safe, before wiping or losing this laptop.
+- [ ] `git status` shows a clean tree
+- [ ] `git log --oneline -1` matches `git ls-remote --heads origin card-customization` —
+      i.e. HEAD is actually pushed. Nothing load-bearing should live only on a laptop;
+      that is what cost the 2026-09-16 session an hour.
 - [ ] Any local uncommitted `.env` files backed up somewhere (they're in `.gitignore` so `git status` won't warn you). If you have wallet certs/keys locally, ensure they're in your password manager or `~/Documents/keys/` too.
 - [ ] SSH agent has your VPS key loaded (`ssh-add -l` — if empty, `ssh-add ~/.ssh/id_ed25519` or whichever)
 
