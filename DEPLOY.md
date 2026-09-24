@@ -58,11 +58,11 @@ Save the output **into a notes file or password manager** — you'll need `REPOR
 mkdir -p /docker/stampdeck
 cd /docker/stampdeck
 
-git clone git@github.com:sippzytech/stampdeck.git . \
-  || git clone https://github.com/sippzytech/stampdeck.git .
+git clone git@github.com:sippzytech/onusclub.git . \
+  || git clone https://github.com/sippzytech/onusclub.git .
 
-# Use the latest deployed branch (until we merge to main).
-git checkout day-7-deploy-and-email-domain
+# main is the trunk and what production runs.
+git checkout main
 
 cp .env.example .env
 nano .env   # fill in every blank with the values you generated in step 1

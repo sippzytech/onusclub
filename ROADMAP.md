@@ -86,7 +86,8 @@ Each day below corresponds to a git branch + a commit. Run `git log --oneline --
 
 ### Day 16 — Card design system (stamp art + per-program editor + Apple strip)
 - ✅ **Pushed, deployed and verified on a physical iPhone (2026-09-18.)** Shipped as
-  `80a9ac9` + `9f9c4d2` on `card-customization`; the VPS is checked out on that branch.
+  `80a9ac9` + `9f9c4d2`, plus the follow-up fix `8bdc4bf`. That line of work became
+  `main` when the repo got a trunk on 2026-09-25.
 - **`packages/shared/src/card-art.ts`** — one dependency-free SVG renderer feeding the
   customer card page, the Apple Wallet strip and the dashboard preview, so they cannot
   drift. 10 tintable icons; `balancedColumns()` fills rows evenly (6→3×2, 10→5×2) instead

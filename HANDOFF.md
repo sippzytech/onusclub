@@ -1,4 +1,4 @@
-# OnUsClub — Handoff Notes (updated 2026-09-18)
+# OnUsClub — Handoff Notes (updated 2026-09-25)
 
 **Purpose**: This document exists so any fresh Claude session — in Antigravity, VS Code, another Claude Code CLI, or a chat on claude.ai — can pick up this project cold in under 5 minutes. Nothing load-bearing lives in an ephemeral chat window; everything lives in this repo.
 
@@ -17,13 +17,18 @@ Current state:
 
 | Thing | State |
 |---|---|
-| Branch | `card-customization` |
-| HEAD | `9f9c4d2` (on top of `80a9ac9`) — pushed to `origin` |
-| VPS | checked out on `card-customization`, containers rebuilt from it |
+| Trunk | **`main`** — created 2026-09-25 from `card-customization`, now the only branch that matters |
+| HEAD | `8bdc4bf` — pushed to `origin` |
+| VPS | deploys from `main` |
 | Migrations | `001`–`008` all applied (`migrate.js` reports `applied:0, total:8`) |
 | Apple Wallet | strip artwork verified in prod **and on a physical iPhone** |
 
-Confirm any of it in one line: `git ls-remote --heads origin card-customization`.
+**`main` is the trunk as of 2026-09-25.** Before that the repo had no trunk at all — 16
+unmerged `day-*` branches and `origin/HEAD` pointing at `day-1-skeleton`, which predates
+auth. Every one of those branches was verified to be fully contained in
+`card-customization` before `main` was cut, so nothing was lost. Work from `main`.
+
+Confirm any of it in one line: `git ls-remote --heads origin main`.
 
 ### What production verification actually covered
 
@@ -82,24 +87,23 @@ resolve — the lockfile does carry `@resvg/resvg-js-linux-x64-musl` and
 `-linux-arm64-musl`, so check that `pnpm install --frozen-lockfile` actually succeeded
 in the `deps` stage rather than falling through to the `|| pnpm install` branch.
 
-### Deploying this branch to the VPS
+### Deploying to the VPS
 
-**No migration needed for the card design** — it lives in
-`loyalty_programs.config_json.design`, so there is no new DDL. The VPS is already on
-`card-customization`; for a fresh box, or if it ever gets reset to another branch:
+The VPS deploys from `main`:
 
 ```bash
 cd /docker/stampdeck
 git fetch origin
-git checkout card-customization
-git log --oneline -1               # MUST show 9f9c4d2 before you rebuild
+git checkout main                  # only needed once, if it is on an old branch
+git pull
+git log --oneline -1               # confirm the SHA you expect BEFORE you rebuild
 docker compose -f docker-compose.prod.yml up -d --build
 docker compose -f docker-compose.prod.yml exec api node dist/db/migrate.js   # idempotent
 ./scripts/verify-deploy.sh
 ```
 
-`origin/HEAD` still points at `day-1-skeleton`, which is far behind and contains none of
-Days 14–16. Ignore it; the live line of work is `card-customization`.
+Checking the SHA before rebuilding is not ceremony — building the wrong commit and
+concluding the feature is broken has already cost one session.
 
 ### Gotcha: `.env` and shell scripts
 
@@ -124,9 +128,9 @@ substitutes `"` for `"`, which breaks env parsing in a way that is very hard to 
 
 | Location | Path | What it holds |
 |---|---|---|
-| GitHub | `github.com/sippzytech/onusclub` | **Source of truth.** Everything through `9f9c4d2` |
+| GitHub | `github.com/sippzytech/onusclub` | **Source of truth.** `main` is the trunk |
 | Mac #1 | `/Users/sanchit-easy/personal/onusclub` | Clone the card-design work was authored on |
-| Mac #2 | `/Users/sanchit/Projects/stampdeck` | Second laptop, up to date on `card-customization` |
+| Mac #2 | `/Users/sanchit/Projects/stampdeck` | Second laptop, up to date on `main` |
 | Production VPS | `root@api.onusclub.com:/docker/stampdeck` | Deployed clone, serving prod |
 
 **Both local paths are real** — there are two laptops. An older version of this file
@@ -142,11 +146,11 @@ laptop-specific copies of anything. The old
 
 ## Current git state
 
-- **Branch**: `card-customization`, forked from `day-14-points-programs`
-- **HEAD**: `9f9c4d2` — pushed, and what the VPS is running
-- **Remote heads**: `day-1-skeleton` (still the default, badly stale — ignore it),
-  `day-14-points-programs` (`f5265c7`, the previous trunk), `card-customization`
-  (current), plus older `day-*` branches
+- **Trunk**: `main` — branch from it, merge back into it, deploy it
+- **HEAD**: `8bdc4bf` — pushed, and what the VPS runs
+- **Legacy branches**: the `day-*` series and `phase-b-rename` are historical snapshots,
+  every one of them an ancestor of `main`. They hold nothing unique. `card-customization`
+  is the immediate parent of `main` and is equally redundant.
 
 Run `git log --oneline -5` — this section goes stale faster than anything else here.
 
@@ -269,7 +273,7 @@ reintroduce a parallel `?? ?? ??` chain — that is precisely how this broke.
 - `https://app.onusclub.com` — Next.js dashboard + customer-facing pages
 - Both routed via existing Traefik on the VPS (`n8n_default` network, cert resolver `mytlschallenge`)
 - MySQL 8 on the internal Docker network (`onusclub-mysql` container, DB name `stampdeck` — not renamed)
-- ✅ **Deployed state verified 2026-09-18**: VPS on `card-customization` at `9f9c4d2`,
+- ✅ **Deployed state verified 2026-09-18**: VPS deploying `main`,
   `verify-deploy.sh` 13/13, migrations `001`–`008` **all applied**
   (`migrate.js` → `applied:0, total:8`).
 - ⚠️ The legacy `api.sippzy.com` / `app.sippzy.com` routers are still configured but their
@@ -391,16 +395,17 @@ Everything is on GitHub, so any machine can just clone:
 ```bash
 git clone git@github.com:sippzytech/onusclub.git onusclub
 cd onusclub
-git checkout card-customization
-git log --oneline -1          # must show 9f9c4d2
+git checkout main
+git log --oneline -1          # should show 8bdc4bf or later
 ```
 
-On an **existing clone that has been sitting idle**, it will likely be on
-`day-14-points-programs` and needs the branch fetched rather than pulled:
+On an **existing clone that has been sitting idle**, it will be on whichever `day-*` or
+feature branch it was left on, and `main` may not exist locally yet — so fetch and check
+out rather than pulling:
 
 ```bash
 git fetch origin
-git checkout card-customization
+git checkout main
 git pull
 pnpm install                                   # Day 16 added @resvg/resvg-js
 pnpm --filter @onusclub/shared run build
@@ -450,7 +455,7 @@ Apple Wallet will 503 locally — `APPLE_TEAM_ID` / `APPLE_PASS_P12_PASSWORD` ar
 > 5. `PERKSTAR_ANALYSIS.md` — the competitor tear-down behind the plan
 >
 > Then tell me:
-> - Whether this machine is up to date with `origin/card-customization`, and whether
+> - Whether this machine is up to date with `origin/main`, and whether
 >   what is running on the VPS matches it
 > - What the card design system does, and specifically what is **still unverified**
 > - What you would do first
@@ -483,7 +488,7 @@ old machine lived at `~/.claude/projects/-Users-sanchit-easy-personal-onusclub/m
 Before you close the terminal / restart:
 
 - [ ] `git status` shows a clean tree
-- [ ] `git log --oneline -1` matches `git ls-remote --heads origin card-customization` —
+- [ ] `git log --oneline -1` matches `git ls-remote --heads origin main` —
       i.e. HEAD is actually pushed. Nothing load-bearing should live only on a laptop;
       that is what cost the 2026-09-16 session an hour.
 - [ ] Any local uncommitted `.env` files backed up somewhere (they're in `.gitignore` so `git status` won't warn you). If you have wallet certs/keys locally, ensure they're in your password manager or `~/Documents/keys/` too.

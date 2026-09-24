@@ -106,7 +106,9 @@ When adding a new `program_type`, define its config + state shapes in `packages/
 
 ## Status — Day 16 (current)
 
-**Deployed live at `api.onusclub.com` + `app.onusclub.com`**, on branch `card-customization` (`9f9c4d2`), migrations `001`–`008` all applied.
+**Deployed live at `api.onusclub.com` + `app.onusclub.com`**, from branch **`main`**, migrations `001`–`008` all applied.
+
+**Branching**: `main` is the trunk — branch from it, merge back into it, deploy it. It was created on 2026-09-25; before that the repo had no trunk, just 16 unmerged `day-*` branches with `origin/HEAD` pointing at `day-1-skeleton` (which predates auth). Every legacy branch was verified to be an ancestor of `main` before the cut, so they hold nothing unique.
 
 ⚠️ **The legacy `sippzy.com` routes are dead.** `api.sippzy.com` and `app.sippzy.com` no longer resolve in DNS (checked against the system resolver, `1.1.1.1` and `8.8.8.8` on 2026-09-17 — all three return nothing). `docker-compose.prod.yml` still carries the `DOMAIN_API_LEGACY` / `DOMAIN_WEB_LEGACY` Traefik routers, but with no DNS in front of them they are unreachable. Any Apple pass saved before the Day 13 cutover has `webServiceURL` baked in pointing at `api.sippzy.com`, so **those passes have already stopped updating** — they still display, just frozen. Either restore the DNS records or drop the legacy routers; keeping them as-is is the one option that helps nobody.
 
