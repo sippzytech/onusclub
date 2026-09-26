@@ -23,11 +23,67 @@ import {
 } from "./state.js";
 
 /**
- * Idempotently register the merchant's LoyaltyClass with Google. If a class
- * already exists for this merchant id (either remotely or in our DB), this is
- * a no-op. Returns the class id on success, null on failure or when wallet
- * is offline. Failures are logged and swallowed — callers should not abort
- * the user-facing operation just because Wallet is unhappy.
+ * The subset of a LoyaltyClass that `buildLoyaltyClass` actually owns.
+ *
+ * Google decorates the class it hands back with plenty we never set — `kind`,
+ * `id`, a `reviewStatus` it has moved on to `APPROVED`, and assorted defaults —
+ * so comparing whole bodies would report a difference on every single call and
+ * PATCH forever. Compare only the fields we control.
+ */
+function classBrandingDiffers(
+  remote: Record<string, unknown>,
+  desired: Record<string, unknown>
+): boolean {
+  const logoOf = (c: Record<string, unknown>): string | undefined =>
+    (c.programLogo as { sourceUri?: { uri?: string } } | undefined)?.sourceUri?.uri;
+
+  const rewardOf = (c: Record<string, unknown>): string | undefined =>
+    (c.textModulesData as Array<{ id?: string; body?: string }> | undefined)?.find(
+      (m) => m.id === "reward"
+    )?.body;
+
+  return (
+    remote.issuerName !== desired.issuerName ||
+    remote.programName !== desired.programName ||
+    remote.hexBackgroundColor !== desired.hexBackgroundColor ||
+    logoOf(remote) !== logoOf(desired) ||
+    rewardOf(remote) !== rewardOf(desired)
+  );
+}
+
+/**
+ * PATCH an existing LoyaltyClass so branding changes actually reach Google.
+ * Best-effort, like every other wallet call: false on any failure.
+ */
+export async function updateLoyaltyClass(
+  merchant: MerchantBranding,
+  program: ProgramForWallet
+): Promise<boolean> {
+  if (!(await walletEnabled())) return false;
+  const id = classId(merchant.id);
+
+  const res = await walletRequest({
+    method: "PATCH",
+    path: `/loyaltyClass/${id}`,
+    body: buildLoyaltyClass(merchant, program),
+  });
+  if (!res || res.status >= 300) {
+    logger.error(
+      { status: res?.status, data: res?.data, merchantId: merchant.id },
+      "wallet: failed to PATCH LoyaltyClass"
+    );
+    return false;
+  }
+  logger.info({ classId: id, merchantId: merchant.id }, "wallet: LoyaltyClass updated");
+  return true;
+}
+
+/**
+ * Idempotently register the merchant's LoyaltyClass with Google, and keep its
+ * branding in sync once it exists. Returns the class id on success, null on
+ * failure or when wallet is offline. Failures are logged and swallowed —
+ * callers should not abort the user-facing operation just because Wallet is
+ * unhappy.
  */
 export async function ensureLoyaltyClass(
   merchant: MerchantBranding,
@@ -41,6 +97,19 @@ export async function ensureLoyaltyClass(
   const get = await walletRequest({ method: "GET", path: `/loyaltyClass/${id}` });
   if (get && get.status === 200) {
     if (!existingClassId) await persistClassId(merchant.id, id);
+
+    // A class is built from whatever branding was current when it was first
+    // created, and Google never revisits it. This used to return here, which
+    // meant a logo or colour change silently never reached Wallet — passes
+    // kept the old branding forever with nothing in the logs to say so.
+    //
+    // Only PATCH when something we own actually differs. This runs on *every
+    // stamp* (see cards/operations.ts), so an unconditional PATCH would put an
+    // extra Google round-trip on the hot path for no reason.
+    const desired = buildLoyaltyClass(merchant, program);
+    if (classBrandingDiffers((get.data ?? {}) as Record<string, unknown>, desired)) {
+      await updateLoyaltyClass(merchant, program);
+    }
     return id;
   }
   if (get && get.status !== 404) {

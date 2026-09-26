@@ -71,6 +71,26 @@ export function objectId(cardId: string): string {
 const FALLBACK_LOGO = "https://onusclub.com/new_logo.png";
 
 /**
+ * The logo URI a merchant's pass *should* carry right now.
+ *
+ * Shared by class creation and the logo re-sync script so the two cannot
+ * disagree about what "correct" means — the re-sync exists precisely because
+ * classes drifted away from this value and nothing noticed.
+ */
+export function logoUriFor(merchant: MerchantBranding): string {
+  return merchant.logoUrl ?? FALLBACK_LOGO;
+}
+
+export function programLogoFor(merchant: MerchantBranding): Record<string, unknown> {
+  return {
+    sourceUri: { uri: logoUriFor(merchant) },
+    contentDescription: {
+      defaultValue: { language: "en-US", value: merchant.businessName },
+    },
+  };
+}
+
+/**
  * Pure mapping from our domain types into a Google Wallet LoyaltyClass body.
  * Class is the same shape for both program types — it's the per-card
  * LoyaltyObject below that carries the type-specific numbers.
@@ -83,12 +103,7 @@ export function buildLoyaltyClass(
     id: classId(merchant.id),
     issuerName: merchant.businessName,
     programName: program.name,
-    programLogo: {
-      sourceUri: { uri: merchant.logoUrl ?? FALLBACK_LOGO },
-      contentDescription: {
-        defaultValue: { language: "en-US", value: merchant.businessName },
-      },
-    },
+    programLogo: programLogoFor(merchant),
     hexBackgroundColor: merchant.brandColor ?? "#111111",
     rewardsTier: "MEMBER",
     rewardsTierLabel: "Member",

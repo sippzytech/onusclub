@@ -105,6 +105,31 @@ docker compose -f docker-compose.prod.yml exec api node dist/db/migrate.js   # i
 Checking the SHA before rebuilding is not ceremony — building the wrong commit and
 concluding the feature is broken has already cost one session.
 
+### Gotcha: local dev used to write to the PRODUCTION Wallet issuer
+
+There is only one Google Wallet issuer — `3388000000023150410` — and it is the
+production one. `apps/api/.env.example` used to seed it as the *dev* default, so every
+local `pnpm smoke` run created real LoyaltyClasses on the live issuer. That is how ~40
+classes named `Smoke Café <timestamp>` and `Pw Café <timestamp>` ended up there.
+
+**They cannot be removed.** The Google Wallet API has no delete operation for classes —
+`insert`, `get`, `patch`, `update`, `list`, `addmessage`, and that is the whole list. The
+junk is permanent on that issuer, and a reviewer assessing it for production sees it.
+
+Fixed 2026-09-27: `apps/api/.env.example` now defaults to `GOOGLE_WALLET_ISSUER_ID=0` and
+a nonexistent key path, mirroring what CI already did. The api reports "wallet not
+configured", every Google Wallet path degrades gracefully, and the smoke suite passes
+unchanged. Apple Wallet is unaffected and is the wallet worth testing locally anyway.
+
+**Before running anything that creates merchants, check what your env is pointed at:**
+
+```bash
+grep -E '^GOOGLE_WALLET' apps/api/.env      # want ISSUER_ID=0 for day-to-day work
+```
+
+Only set the real issuer when you are deliberately testing Google Wallet, and set it back
+afterwards. Anything you create while it is pointed at production is there forever.
+
 ### Gotcha: `.env` and shell scripts
 
 `EMAIL_FROM`'s display-name form contains `<` and `>`. **Unquoted, it breaks
