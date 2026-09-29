@@ -7,7 +7,14 @@
 
 import { Router, type Request, type Response } from "express";
 import type { RowDataPacket } from "mysql2";
-import type { ActivityEvent, AnalyticsOverview } from "@onusclub/shared";
+import {
+  AnalyticsRange,
+  type ActivityEvent,
+  type AnalyticsDayBucket,
+  type AnalyticsDetail,
+  type AnalyticsOverview,
+  type AnalyticsTopMember,
+} from "@onusclub/shared";
 import { pool } from "../db/pool.js";
 import { authContext, requireAuth } from "../auth/middleware.js";
 
@@ -115,6 +122,240 @@ analyticsRouter.get(
         amountCents: r.amount_cents === null ? null : toInt(r.amount_cents),
         createdAt: new Date(r.created_at).toISOString(),
       })),
+    });
+  }
+);
+
+// ---------------------------------------------------------------------------
+// Day 17: GET /v1/analytics/detail
+//
+// Separate from /overview on purpose. The dashboard hits /overview on every
+// load; this one is heavier and only runs when someone opens the analytics
+// page.
+//
+// ## The timezone problem, and why it is solved in Node
+//
+// card_events.created_at is UTC (the MySQL server runs SYSTEM = UTC, so NOW()
+// and UTC_TIMESTAMP() agree). Merchants are not: merchants.timezone defaults
+// to Europe/Amsterdam. Bucketing UTC timestamps into named days and hours
+// therefore needs a conversion, and getting it wrong is insidious — a stamp at
+// 00:30 Amsterdam is 22:30 UTC the *previous* day, and a "busiest hours"
+// chart built on raw UTC hours is off by one or two with no visible symptom.
+//
+// Two tempting SQL fixes, both rejected:
+//
+//   CONVERT_TZ(t,'UTC','Europe/Amsterdam')  — returns NULL, not an error, when
+//     the server's timezone tables are not populated. It happens to work on
+//     our image today, but that is an ops property of the container, not a
+//     guarantee. The failure mode is silently empty charts.
+//
+//   CONVERT_TZ(t,'+00:00','+02:00')  — no table dependency, but wrong for
+//     half the year. Europe/Amsterdam is +01:00 in winter and +02:00 in
+//     summer, so a 12-month histogram smears by an hour and still looks
+//     entirely plausible.
+//
+// So: MySQL groups by UTC hour (cheap, and rides the (merchant_id, created_at)
+// index from 001_initial), and Node re-buckets each hour into merchant-local
+// days and hours via Intl, which is DST-correct by construction because every
+// hour is converted at its own instant. node:20-alpine ships full ICU, so the
+// named zones resolve.
+// ---------------------------------------------------------------------------
+
+const RANGE_DAYS: Record<AnalyticsRange, number> = {
+  "7d": 7,
+  "30d": 30,
+  "90d": 90,
+  "12m": 365,
+};
+
+const DEFAULT_TZ = "Europe/Amsterdam";
+
+// Constructing an Intl.DateTimeFormat is expensive and we call this once per
+// populated hour — up to 8,760 times on a 12-month range.
+const formatterCache = new Map<string, Intl.DateTimeFormat>();
+
+function formatterFor(timeZone: string): Intl.DateTimeFormat {
+  const cached = formatterCache.get(timeZone);
+  if (cached) return cached;
+  const fmt = new Intl.DateTimeFormat("en-GB", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    // h23 rather than hour12:false — some locales render midnight as "24"
+    // under hour12:false, which would produce an out-of-range bucket.
+    hourCycle: "h23",
+  });
+  formatterCache.set(timeZone, fmt);
+  return fmt;
+}
+
+/** An unknown IANA zone makes Intl throw, so a bad DB value must not 500. */
+function safeZone(tz: string | null): string {
+  if (!tz) return DEFAULT_TZ;
+  try {
+    new Intl.DateTimeFormat("en-GB", { timeZone: tz });
+    return tz;
+  } catch {
+    return DEFAULT_TZ;
+  }
+}
+
+function localDayHour(instant: Date, timeZone: string): { date: string; hour: number } {
+  const parts = formatterFor(timeZone).formatToParts(instant);
+  const get = (type: string): string =>
+    parts.find((p) => p.type === type)?.value ?? "";
+  return {
+    date: `${get("year")}-${get("month")}-${get("day")}`,
+    hour: Number(get("hour")),
+  };
+}
+
+interface HourRow extends RowDataPacket {
+  utc_hour: string;
+  visits: number;
+  revenue_cents: string | number | null;
+  txns: number;
+}
+
+interface CardAggRow extends RowDataPacket {
+  card_id: string;
+  customer_name: string | null;
+  visits: number;
+  revenue_cents: string | number | null;
+}
+
+interface MerchantMetaRow extends RowDataPacket {
+  currency_code: string;
+  timezone: string | null;
+}
+
+analyticsRouter.get(
+  "/detail",
+  requireAuth,
+  async (req: Request, res: Response<AnalyticsDetail>) => {
+    const ctx = authContext(req);
+    const range = AnalyticsRange.catch("30d").parse(req.query.range);
+    const days = RANGE_DAYS[range];
+
+    const [metaRows] = await pool.execute<MerchantMetaRow[]>(
+      "SELECT currency_code, timezone FROM merchants WHERE id = ? LIMIT 1",
+      [ctx.merchantId]
+    );
+    const currencyCode = metaRows[0]?.currency_code ?? "EUR";
+    const timeZone = safeZone(metaRows[0]?.timezone ?? null);
+
+    // Explicit UTC string rather than handing mysql2 a Date: mysql2's default
+    // `timezone: 'local'` would serialise it through the Node process zone,
+    // which is only UTC here by coincidence.
+    const startMs = Date.now() - days * 86_400_000;
+    const startSql = new Date(startMs).toISOString().slice(0, 19).replace("T", " ");
+
+    // "Visits" = the moments a customer actually transacted. signup is joining,
+    // not visiting; expire is a cron, not a person.
+    const [hourRows] = await pool.execute<HourRow[]>(
+      `SELECT DATE_FORMAT(created_at, '%Y-%m-%dT%H:00:00.000Z') AS utc_hour,
+              COUNT(*)                        AS visits,
+              SUM(COALESCE(amount_cents, 0))  AS revenue_cents,
+              COUNT(amount_cents)             AS txns
+         FROM card_events
+        WHERE merchant_id = ?
+          AND created_at >= ?
+          AND event_type IN ('stamp', 'points_add')
+        GROUP BY utc_hour
+        ORDER BY utc_hour`,
+      [ctx.merchantId, startSql]
+    );
+
+    // Pre-seed every local day in the window so a quiet Tuesday renders as a
+    // zero rather than vanishing and compressing the x-axis.
+    const dayMap = new Map<string, AnalyticsDayBucket>();
+    for (let i = 0; i <= days; i += 1) {
+      // Anchor at midday so a DST transition cannot push the sample onto the
+      // wrong calendar date.
+      const probe = new Date(startMs + i * 86_400_000 + 43_200_000);
+      const { date } = localDayHour(probe, timeZone);
+      if (!dayMap.has(date)) dayMap.set(date, { date, visits: 0, revenueCents: 0 });
+    }
+
+    const hourTotals = Array.from({ length: 24 }, (_, hour) => ({ hour, visits: 0 }));
+    let totalVisits = 0;
+    let totalRevenueCents = 0;
+    let totalTxns = 0;
+
+    for (const row of hourRows) {
+      const instant = new Date(row.utc_hour);
+      const { date, hour } = localDayHour(instant, timeZone);
+      const visits = toInt(row.visits);
+      const revenue = toInt(row.revenue_cents);
+
+      const bucket = dayMap.get(date);
+      if (bucket) {
+        bucket.visits += visits;
+        bucket.revenueCents += revenue;
+      }
+      if (hour >= 0 && hour < 24) hourTotals[hour].visits += visits;
+
+      totalVisits += visits;
+      totalRevenueCents += revenue;
+      totalTxns += toInt(row.txns);
+    }
+
+    // One row per card that transacted in the window. Needed in full rather
+    // than pre-limited: new-vs-returning is a count over all of them, and
+    // LIMITing here would silently bias it.
+    const [cardRows] = await pool.execute<CardAggRow[]>(
+      `SELECT e.card_id,
+              cu.name                         AS customer_name,
+              COUNT(*)                        AS visits,
+              SUM(COALESCE(e.amount_cents, 0)) AS revenue_cents
+         FROM card_events e
+         JOIN loyalty_cards c ON c.id = e.card_id
+         JOIN customers cu    ON cu.id = c.customer_id
+        WHERE e.merchant_id = ?
+          AND e.created_at >= ?
+          AND e.event_type IN ('stamp', 'points_add')
+        GROUP BY e.card_id, cu.name`,
+      [ctx.merchantId, startSql]
+    );
+
+    const members: AnalyticsTopMember[] = cardRows.map((r) => ({
+      cardId: r.card_id,
+      customerName: r.customer_name,
+      visits: toInt(r.visits),
+      revenueCents: toInt(r.revenue_cents),
+    }));
+
+    // "Returning" is scoped to the selected range on purpose: a customer of
+    // two years who came in once this week is new *to this period*, which is
+    // the question the chart is actually asking.
+    const returningCards = members.filter((m) => m.visits > 1).length;
+    const newCards = members.length - returningCards;
+
+    const topByVisits = [...members]
+      .sort((a, b) => b.visits - a.visits || b.revenueCents - a.revenueCents)
+      .slice(0, 5);
+    const topByRevenue = [...members]
+      .filter((m) => m.revenueCents > 0)
+      .sort((a, b) => b.revenueCents - a.revenueCents || b.visits - a.visits)
+      .slice(0, 5);
+
+    return res.json({
+      range,
+      timezone: timeZone,
+      currencyCode,
+      series: Array.from(dayMap.values()).sort((a, b) => a.date.localeCompare(b.date)),
+      hours: hourTotals,
+      newCards,
+      returningCards,
+      topByVisits,
+      topByRevenue,
+      totalVisits,
+      totalRevenueCents,
+      // Denominator is captured amounts only — otherwise every skipped prompt
+      // drags the average toward zero. Same rule as /overview.
+      aovCents: totalTxns > 0 ? Math.round(totalRevenueCents / totalTxns) : null,
     });
   }
 );

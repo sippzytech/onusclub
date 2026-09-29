@@ -608,3 +608,63 @@ export const AnalyticsOverview = z.object({
   recentEvents: z.array(ActivityEvent),
 });
 export type AnalyticsOverview = z.infer<typeof AnalyticsOverview>;
+
+// ---------- Analytics detail (Day 17) ----------
+
+export const AnalyticsRange = z.enum(["7d", "30d", "90d", "12m"]);
+export type AnalyticsRange = z.infer<typeof AnalyticsRange>;
+
+// One point on the trend charts. `date` is a calendar date in the MERCHANT's
+// timezone, not UTC — a stamp at 00:30 in Amsterdam is 22:30 UTC the previous
+// day, and bucketing that into the wrong day is the kind of error nobody
+// notices because the chart still looks plausible.
+export const AnalyticsDayBucket = z.object({
+  date: z.string(), // YYYY-MM-DD, merchant-local
+  visits: z.number().int().nonnegative(),
+  revenueCents: z.number().int().nonnegative(),
+});
+export type AnalyticsDayBucket = z.infer<typeof AnalyticsDayBucket>;
+
+// Busiest-hours histogram. Always 24 entries, 0..23, merchant-local, so the
+// UI can render a fixed axis without filling gaps itself.
+export const AnalyticsHourBucket = z.object({
+  hour: z.number().int().min(0).max(23),
+  visits: z.number().int().nonnegative(),
+});
+export type AnalyticsHourBucket = z.infer<typeof AnalyticsHourBucket>;
+
+export const AnalyticsTopMember = z.object({
+  cardId: z.string(),
+  customerName: z.string().nullable(),
+  visits: z.number().int().nonnegative(),
+  revenueCents: z.number().int().nonnegative(),
+});
+export type AnalyticsTopMember = z.infer<typeof AnalyticsTopMember>;
+
+// Payload for GET /v1/analytics/detail?range=…
+//
+// "Visits" means stamp + points_add events: the moments a customer actually
+// came in and transacted. Deliberately excludes signup (joining is not a
+// visit) and expire (a cron, not a person).
+export const AnalyticsDetail = z.object({
+  range: AnalyticsRange,
+  // Echoed back so the UI can label axes honestly rather than assuming the
+  // viewer's own timezone matches the merchant's.
+  timezone: z.string(),
+  currencyCode: z.string().length(3),
+  series: z.array(AnalyticsDayBucket),
+  hours: z.array(AnalyticsHourBucket),
+  // A card counts as "returning" when it has more than one visit INSIDE the
+  // selected range. A long-standing customer with a single visit this week is
+  // new-to-this-period, which is what the chart is actually asking.
+  newCards: z.number().int().nonnegative(),
+  returningCards: z.number().int().nonnegative(),
+  topByVisits: z.array(AnalyticsTopMember),
+  topByRevenue: z.array(AnalyticsTopMember),
+  totalVisits: z.number().int().nonnegative(),
+  totalRevenueCents: z.number().int().nonnegative(),
+  // Null rather than 0 when nothing was captured — same reasoning as
+  // AnalyticsOverview.aovCents7d.
+  aovCents: z.number().int().nonnegative().nullable(),
+});
+export type AnalyticsDetail = z.infer<typeof AnalyticsDetail>;

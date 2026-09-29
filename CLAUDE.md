@@ -136,7 +136,10 @@ What works end-to-end:
   longer holds. **Delivery to an arbitrary third-party address has not actually been
   observed**, so treat "real customer email works" as likely-but-unconfirmed until
   someone watches one land.
-- ⚠️ `/dashboard/analytics` is still a placeholder page
+- ✅ **Analytics page** (Day 17): trends, busiest hours, new-vs-returning, top members.
+  Charts are hand-rolled inline SVG so the page ships zero client JS. Day/hour bucketing
+  is converted to the merchant's timezone **in Node via `Intl`**, not in SQL — see the
+  Day 17 ROADMAP entry for why `CONVERT_TZ` and fixed offsets were both rejected.
 - ⚠️ `merchants.brand_color` has **no write path anywhere** — no API, no UI. It is
   whatever the schema default made it, and it feeds card/pass background colour as the
   middle tier of `defaults < brand colour < saved design`. Ships with merchant logo upload.

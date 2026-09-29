@@ -1490,6 +1490,102 @@ async function main(): Promise<void> {
     "every activity row needs its card and program joined in"
   );
 
+  // ---------- Day 17: analytics detail ----------
+
+  interface AnalyticsDetailShape {
+    range: string;
+    timezone: string;
+    currencyCode: string;
+    series: Array<{ date: string; visits: number; revenueCents: number }>;
+    hours: Array<{ hour: number; visits: number }>;
+    newCards: number;
+    returningCards: number;
+    topByVisits: Array<{ cardId: string; visits: number; revenueCents: number }>;
+    topByRevenue: Array<{ cardId: string; visits: number; revenueCents: number }>;
+    totalVisits: number;
+    totalRevenueCents: number;
+    aovCents: number | null;
+  }
+
+  console.log("→ analytics detail defaults to 30d");
+  const adet = await call<AnalyticsDetailShape>("GET", "/v1/analytics/detail", undefined, jwt);
+  assert(adet.range === "30d", `expected default range 30d, got ${adet.range}`);
+  assert(adet.timezone.length > 0, "detail should echo the merchant timezone");
+
+  console.log("→ series is gap-filled across the whole window");
+  // 30 days back plus today. Gap-filling matters: without it a quiet day
+  // vanishes and the x-axis silently compresses.
+  assert(adet.series.length === 31, `expected 31 day buckets, got ${adet.series.length}`);
+  const adetSorted = [...adet.series].sort((a, b) => a.date.localeCompare(b.date));
+  assert(
+    JSON.stringify(adetSorted) === JSON.stringify(adet.series),
+    "series should come back in ascending date order"
+  );
+
+  console.log("→ hours histogram always has 24 buckets, 0..23");
+  assert(adet.hours.length === 24, `expected 24 hour buckets, got ${adet.hours.length}`);
+  assert(
+    adet.hours.every((h, i) => h.hour === i),
+    "hour buckets should be 0..23 in order"
+  );
+
+  console.log("→ totals agree with the series");
+  const adetSeriesVisits = adet.series.reduce((sum, d) => sum + d.visits, 0);
+  assert(
+    adetSeriesVisits === adet.totalVisits,
+    `series visits ${adetSeriesVisits} != totalVisits ${adet.totalVisits}`
+  );
+  const adetHourVisits = adet.hours.reduce((sum, h) => sum + h.visits, 0);
+  assert(
+    adetHourVisits === adet.totalVisits,
+    `hour visits ${adetHourVisits} != totalVisits ${adet.totalVisits}`
+  );
+
+  console.log("→ new + returning accounts for every card that visited");
+  assert(
+    adet.newCards + adet.returningCards >= adet.topByVisits.length,
+    "top-by-visits cannot contain more cards than new+returning"
+  );
+
+  console.log("→ top lists are ranked and capped at 5");
+  assert(adet.topByVisits.length <= 5, "topByVisits should cap at 5");
+  assert(adet.topByRevenue.length <= 5, "topByRevenue should cap at 5");
+  assert(
+    adet.topByVisits.every((m, i, arr) => i === 0 || arr[i - 1].visits >= m.visits),
+    "topByVisits should be descending"
+  );
+  assert(
+    adet.topByRevenue.every((m, i, arr) => i === 0 || arr[i - 1].revenueCents >= m.revenueCents),
+    "topByRevenue should be descending"
+  );
+
+  console.log("→ 7d range returns a shorter window than 30d");
+  const adet7 = await call<AnalyticsDetailShape>("GET", "/v1/analytics/detail?range=7d", undefined, jwt);
+  assert(adet7.range === "7d", "range echo wrong for 7d");
+  assert(adet7.series.length === 8, `expected 8 day buckets for 7d, got ${adet7.series.length}`);
+  assert(
+    adet7.totalVisits <= adet.totalVisits,
+    "7d visits cannot exceed 30d visits"
+  );
+
+  console.log("→ a garbage range falls back to 30d rather than erroring");
+  const adetJunk = await call<AnalyticsDetailShape>(
+    "GET",
+    "/v1/analytics/detail?range=not-a-range",
+    undefined,
+    jwt
+  );
+  assert(adetJunk.range === "30d", `junk range should fall back to 30d, got ${adetJunk.range}`);
+
+  console.log("→ analytics detail requires auth");
+  let adetUnauth = false;
+  try {
+    await call("GET", "/v1/analytics/detail");
+  } catch (err) {
+    adetUnauth = String(err).includes("401");
+  }
+  assert(adetUnauth, "/v1/analytics/detail did not require auth");
+
   console.log("✓ smoke test passed");
 }
 

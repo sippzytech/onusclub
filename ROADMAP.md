@@ -84,6 +84,40 @@ Each day below corresponds to a git branch + a commit. Run `git log --oneline --
 - METABASE.md runbook with 7 starter SQL queries.
 - Smoke test: 70 assertions.
 
+### Day 17 — Analytics page (trends, busiest hours, top members)
+- `/dashboard/analytics` stops being a "Coming soon" card. Day 15 had already captured
+  everything it needed; this is the page that reads it.
+- New **`GET /v1/analytics/detail?range=7d|30d|90d|12m`** — gap-filled daily series,
+  24-bucket hour histogram, new-vs-returning, top members by visits and by spend. Kept
+  **separate from `/overview`**, which the dashboard hits on every page load. Both queries
+  ride the existing `(merchant_id, created_at)` index — no new index, no migration.
+- **Timezone is the whole story.** `card_events.created_at` is UTC, merchants are
+  `Europe/Amsterdam`, and bucketing UTC into *named* days and hours silently lies: a stamp
+  at 00:30 Amsterdam is 22:30 UTC the previous day. Both SQL fixes were rejected —
+  `CONVERT_TZ` with a named zone returns **NULL rather than an error** when the server's
+  tz tables are unpopulated (silently empty charts), and a fixed offset is wrong for half
+  the year because Amsterdam is +01:00 in winter and +02:00 in summer. So MySQL groups by
+  UTC hour and **Node re-buckets via `Intl`**, DST-correct by construction since each hour
+  converts at its own instant. Verified against planted events: `2026-09-26T22:30Z` →
+  local `2026-09-27` hour `00`; `2026-09-28T10:00Z` → local `2026-09-28` hour `12`.
+- mysql2 pinned to `timezone: "Z"`. It defaulted to `'local'` — the Node process zone —
+  which was UTC only because neither compose file sets `TZ`. A `TZ` anywhere would have
+  shifted every timestamp and taken the bucketing with it.
+- **Charts are hand-rolled inline SVG**, following the `card-art.ts` precedent: pure
+  functions of their props, no interactivity, so they server-render. The page is still
+  **1.31 kB of client JS — byte-identical to the placeholder it replaced.** Visits and
+  revenue are separate charts on purpose; a shared axis would need a second y-scale, and
+  dual-axis charts invite correlations the scaling invented.
+- Empty states are deliberate: revenue capture is optional per scan, so "no revenue" is
+  ordinary. The page explains where the number comes from rather than drawing a confident
+  zero.
+- Smoke +9 assertions: gap-filling, 24-hour bucket integrity, series/hours/total
+  agreement, ranking and caps, the 7d window, junk range falling back to 30d, and auth.
+- **Not built**: RFM segments (deferred until the shape is proven — they also need a
+  thresholds settings UI) and demographics (we collect neither age nor gender, so those
+  Perkstar panels would be fabricated). The placeholder's old promise of "member journey
+  conversion" is also still outstanding.
+
 ### Day 16 — Card design system (stamp art + per-program editor + Apple strip)
 - ✅ **Pushed, deployed and verified on a physical iPhone (2026-09-18.)** Shipped as
   `80a9ac9` + `9f9c4d2`, plus the follow-up fix `8bdc4bf`. That line of work became
@@ -123,7 +157,8 @@ Each day below corresponds to a git branch + a commit. Run `git log --oneline --
 - Decisions recorded in `docs/card-design/README.md`: mirror Perkstar's full template
   catalogue using *original* single-colour tintable SVG motifs (94 names extracted; T–Z
   missing from the capture). `"icon-tile"` is a placeholder until those motifs exist.
-- `/dashboard/card-builder` is **no longer a placeholder**; `/dashboard/analytics` still is.
+- `/dashboard/card-builder` is **no longer a placeholder**. (`/dashboard/analytics` was
+  still one at the time of writing — resolved in Day 17.)
 
 ### Day 15 — Revenue capture + dashboard come-alive
 - **The lever from the Perkstar tear-down**: no POS integration, ever. Staff optionally type the sale amount and every monetary number is derived from that one input.
