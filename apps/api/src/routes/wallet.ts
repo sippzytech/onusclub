@@ -6,6 +6,7 @@ import { authContext, requireAuth } from "../auth/middleware.js";
 import { env } from "../config.js";
 import { ApiError } from "../errors.js";
 import { buildSaveJwt, saveUrl } from "../wallet/loyalty.js";
+import { objectOnCurrentIssuer } from "../wallet/state.js";
 import { walletEnabled } from "../wallet/client.js";
 import { sendEmail } from "../email/client.js";
 import { walletInviteEmail } from "../email/templates.js";
@@ -45,11 +46,12 @@ walletRouter.get(
     if (!(await walletEnabled())) {
       return res.json({ available: false, url: null });
     }
-    if (!row.google_wallet_object_id) {
-      // Object hasn't been mirrored to Google yet (Wallet may have been
-      // offline when the card was enrolled). The save JWT would refer to a
-      // non-existent object, so report unavailable instead of issuing a
-      // broken link.
+    if (!objectOnCurrentIssuer(row.google_wallet_object_id)) {
+      // Either the object was never mirrored to Google (Wallet offline at
+      // enrolment) or it belongs to a previous issuer and no longer resolves.
+      // Both cases would produce a save JWT pointing at a non-existent object,
+      // so report unavailable rather than hand out a link that opens to
+      // nothing. The object is recreated on the card's next stamp.
       return res.json({ available: false, url: null });
     }
 
@@ -94,7 +96,7 @@ walletRouter.post(
     if (!row.customer_email) {
       return res.status(400).json({ ok: false, reason: "no email on file for this customer" });
     }
-    if (!row.google_wallet_object_id) {
+    if (!objectOnCurrentIssuer(row.google_wallet_object_id)) {
       return res
         .status(400)
         .json({ ok: false, reason: "wallet object not yet created; retry shortly" });

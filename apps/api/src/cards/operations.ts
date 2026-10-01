@@ -23,6 +23,7 @@ import {
   ensureLoyaltyClass,
   patchLoyaltyObject,
 } from "../wallet/loyalty.js";
+import { objectOnCurrentIssuer } from "../wallet/state.js";
 import type { WalletEvent } from "../wallet/state.js";
 import { sendApnsPushBatch } from "../wallet-apple/apns.js";
 
@@ -301,7 +302,14 @@ export async function syncCardToWallet(
     }
 
     await ensureLoyaltyClass(merchantBranding, programForWallet, row.google_wallet_class_id);
-    if (!row.google_wallet_object_id) {
+
+    // Not a plain null check: a card enrolled under a previous issuer carries
+    // an object id that no longer resolves. Without this, every pre-existing
+    // card takes the PATCH branch after an issuer change, PATCHes an object
+    // that was never created, gets a 404, and the error is swallowed because
+    // wallet calls are best-effort — so the card silently stops syncing while
+    // stamps carry on working. Treat a foreign id as absent and create.
+    if (!objectOnCurrentIssuer(row.google_wallet_object_id)) {
       await createLoyaltyObject(merchantBranding, programForWallet, cardForWallet);
     } else {
       await patchLoyaltyObject(programForWallet, cardForWallet);

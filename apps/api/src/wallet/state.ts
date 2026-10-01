@@ -55,6 +55,23 @@ export function objectId(cardId: string): string {
 }
 
 /**
+ * Is a stored google_wallet_object_id usable right now?
+ *
+ * Object ids embed the issuer ("<issuerId>.c_<cardId>"), so one written under
+ * a previous GOOGLE_WALLET_ISSUER_ID no longer resolves. A plain null check
+ * treats such an id as valid and sends the caller at an object that does not
+ * exist on the current issuer — a PATCH that 404s into a swallowed error, or a
+ * save link that opens to nothing. Both fail silently, which is why this is a
+ * shared helper rather than three copies of `!== null`.
+ */
+export function objectOnCurrentIssuer(storedObjectId: string | null): boolean {
+  return (
+    typeof storedObjectId === "string" &&
+    storedObjectId.startsWith(`${WALLET_ISSUER_ID}.`)
+  );
+}
+
+/**
  * Shown on the Wallet pass when a merchant has not uploaded their own logo
  * (there is no logo-upload UI yet — see "Wallet / card visual customization"
  * in ROADMAP.md), so in practice this is what every pass currently renders.
