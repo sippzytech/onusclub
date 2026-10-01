@@ -78,12 +78,20 @@ The Google Wallet service-account key already lives at `/docker/stampdeck/secret
 
 ## Google Wallet
 
-- **Issuer ID**: `3388000000023150410`
+- **Issuer ID**: `3388000000023208694` — console account `BCR2DN6D5KYJPGBL` ("On Us Club"), on the **Netherlands** payments profile `4896-3145-4976`. Live in prod since 2026-10-01.
 - **Service account email**: `wallet-issuer@sippzy-wallet.iam.gserviceaccount.com`
 - **Key path (VPS)**: `/docker/stampdeck/secrets/wallet-sa.json` (mounted into api container as `/secrets/wallet-sa.json`)
 - **Env vars** the api reads: `GOOGLE_WALLET_ISSUER_ID`, `GOOGLE_WALLET_SA_KEY_PATH`
 - Fully integrated since Day 4 (`apps/api/src/wallet/`). Apple Wallet lives in `apps/api/src/wallet-apple/`.
-- ⚠️ The issuer is **still in Google's demo mode** — only allowlisted test Google accounts can save a pass. Production approval is a Business Console form submission, not a code change. See ROADMAP.md "Wallet production approval".
+- ⚠️ Still in Google's **demo mode**. Publishing access was requested 2026-10-02; Google said 2–3 days. On approval, every Active class publishes immediately — no code change.
+
+### The old issuer, and the one thing that must not be deleted
+
+The original issuer `3388000000023150410` (console `BCR2DN5TV76KB735`) is **retired**. It was bound to an **India** payments profile (`2385-6594-2270`) whose country can never be changed, and that profile makes PAN/GSTIN mandatory — which a Dutch eenmanszaak cannot supply, permanently blocking publishing access. Google support confirmed they will not re-associate an issuer; the supported fix is a new business profile. Google has been asked to disable the old merchant account.
+
+🚨 **`2385-6594-2270` must NOT be disabled.** It is the *organization profile for Google Cloud*, attached to the GCP project `sippzy-wallet` that hosts the service account above — the one still signing every pass on the **new** issuer. Disabling it could take out the signing identity. Only the merchant account `BCR2DN5TV76KB735` is safe to disable.
+
+Switching issuers is an env-var change, never a code change — `GOOGLE_WALLET_ISSUER_ID` is not hardcoded anywhere. But see `objectOnCurrentIssuer()` in `wallet/state.ts`: stored `google_wallet_object_id` values embed the issuer, so a stale one must be treated as absent or pre-existing cards silently stop syncing.
 
 ## Schema
 

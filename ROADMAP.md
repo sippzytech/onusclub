@@ -227,7 +227,7 @@ Each day below corresponds to a git branch + a commit. Run `git log --oneline --
 ## Deferred — saved for later (with the why)
 
 ### Wallet production approval *(UNBLOCKED as of 2026-08-23 — now actionable)*
-- Issuer `3388000000023150410` is still in Google's demo mode until we submit.
+- **Update 2026-10-02**: the original issuer `3388000000023150410` turned out to be unapprovable — it sat on an India payments profile whose country is immutable and which requires PAN/GSTIN. Google support confirmed issuers cannot be re-associated. A new business + issuer `3388000000023208694` was created on the Netherlands profile `4896-3145-4976`, production cut over to it, and publishing access requested. Everything below describes the original attempt.
 - Until approved, only Google accounts on the test users allowlist can save passes.
 - **Apple Wallet is not affected** — Apple Developer Program accepts individual enrollment, our `.pkpass` flow is production-ready and live.
 - **Both prior blockers are now cleared** (confirmed 2026-08-23):

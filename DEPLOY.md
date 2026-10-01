@@ -85,7 +85,7 @@ REPORTING_PASSWORD=<from openssl rand>
 JWT_SECRET=<from openssl rand>
 NEXTAUTH_SECRET=<from openssl rand>
 
-GOOGLE_WALLET_ISSUER_ID=3388000000023150410
+GOOGLE_WALLET_ISSUER_ID=3388000000023208694
 
 RESEND_API_KEY=<paste your real Resend key here>
 EMAIL_FROM=OnUsClub <onboarding@resend.dev>

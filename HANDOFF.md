@@ -107,8 +107,8 @@ concluding the feature is broken has already cost one session.
 
 ### Gotcha: local dev used to write to the PRODUCTION Wallet issuer
 
-There is only one Google Wallet issuer — `3388000000023150410` — and it is the
-production one. `apps/api/.env.example` used to seed it as the *dev* default, so every
+The production Wallet issuer is now `3388000000023208694`; the retired one was
+`3388000000023150410`. Either way it is a **production** issuer, never a sandbox. `apps/api/.env.example` used to seed it as the *dev* default, so every
 local `pnpm smoke` run created real LoyaltyClasses on the live issuer. That is how ~40
 classes named `Smoke Café <timestamp>` and `Pw Café <timestamp>` ended up there.
 
@@ -345,7 +345,9 @@ reintroduce a parallel `?? ?? ??` chain — that is precisely how this broke.
 
 ### B — Submit Google Wallet issuer for production approval (Sanchit's keyboard, ~half day)
 
-This is form-filling on <https://pay.google.com/business/console/> for existing issuer `3388000000023150410`. **Not something Claude does — Sanchit has to log in personally.** Claude in Antigravity should walk Sanchit through it if asked, but should not attempt to automate.
+**Superseded 2026-10-02** — see the Google Wallet section of `CLAUDE.md`. The original issuer could never be approved (India payments profile, PAN/GSTIN mandatory), so a new business + issuer `3388000000023208694` was created on the Netherlands profile and production cut over to it. Publishing access has been requested on the new issuer; the checklist below is kept only as a record of what the form asks for.
+
+This was form-filling on <https://pay.google.com/business/console/>. **Not something Claude does — Sanchit has to log in personally.** Claude in Antigravity should walk Sanchit through it if asked, but should not attempt to automate.
 
 **Which Google account to log in with**: almost certainly **`sippzy.official@gmail.com`** — that's the identity the whole `sippzy` GCP project + service account + Resend account was built under, and it's the sole test-user on the current demo allowlist. To verify before filling anything: open the console in an incognito window, sign in with `sippzy.official@gmail.com`, and check that issuer `3388000000023150410` is visible. If not, wrong account.
 
