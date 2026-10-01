@@ -31,8 +31,23 @@ services:
       NODE_ENV: development
       PORT: 4000
       DATABASE_URL: mysql://stampdeck:stampdeck_dev_pass@mysql:3306/stampdeck
-      GOOGLE_WALLET_ISSUER_ID: "3388000000023150410"
-      GOOGLE_WALLET_SA_KEY_PATH: /secrets/wallet-sa.json
+      # OFF by default, and this block is why. It overrides env_file, so
+      # setting these in apps/api/.env does nothing — a trap that already cost
+      # us ~7 junk classes on the production issuer.
+      #
+      # There is only one real issuer and it is production. Pointed at it,
+      # every `pnpm smoke` run creates real LoyaltyClasses named after test
+      # merchants, and the Google Wallet API has **no delete operation** for
+      # classes: insert, get, patch, update, list, addmessage, and that is all.
+      # Whatever you create there is there forever.
+      #
+      # To deliberately test Google Wallet, override from the shell for one run:
+      #   GOOGLE_WALLET_ISSUER_ID=33880... GOOGLE_WALLET_SA_KEY_PATH=/secrets/wallet-sa.json \
+      #     docker compose -f docker-compose.dev.yml up -d api
+      # then bring it back up without them. Apple Wallet is unaffected and is
+      # the wallet worth testing locally anyway.
+      GOOGLE_WALLET_ISSUER_ID: "${GOOGLE_WALLET_ISSUER_ID:-0}"
+      GOOGLE_WALLET_SA_KEY_PATH: "${GOOGLE_WALLET_SA_KEY_PATH:-/tmp/nonexistent.json}"
       JWT_SECRET: dev_jwt_secret_change_me
       BASE_URL_WEB: http://localhost:3001
       # BASE_URL_API intentionally not set here so apps/api/.env wins. Set it
