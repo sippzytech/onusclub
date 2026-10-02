@@ -10,6 +10,142 @@ See also: [CLAUDE.md](./CLAUDE.md) for stack + conventions, [DEPLOY.md](./DEPLOY
 
 ---
 
+## Backlog — consolidated 2026-10-02
+
+Everything open, ranked. Reviewed in full on 2026-10-02 after Google Wallet went to
+production. Items marked 🔴 are live exposures rather than features.
+
+### 🔴 P0 — open exposures
+
+**1. Production data is hosted in India.**
+`srv1573651.hstgr.cloud` / `187.127.149.147` resolves to **Mumbai, IN** (Hostinger). The
+MySQL database holds EU data subjects' names, emails, phone numbers, birthdates and full
+visit histories. India has no EU adequacy decision, so this is a third-country transfer
+needing Standard Contractual Clauses, a Transfer Impact Assessment, and disclosure in the
+privacy policy — none of which exist. Also check what `onusclub.com/privacy` currently
+claims about hosting.
+*Fix*: move to an EU region (Hostinger has NL/DE) — a VPS migration plus DNS, with the
+Apple certs and wallet SA key to carry across. Note "data must never leave Europe" is
+stricter than GDPR actually requires, but EU hosting is far simpler than defending SCCs.
+
+**2. The marketing site throws away every lead.**
+`components/FinalCTA.tsx` `handleSubmit()` validates, calls `setSubmitted(true)`, and
+**never sends the data anywhere**. No `fetch`, no API route — the site has no `app/api`
+directory at all. The visitor sees a success state; nobody receives anything. The footer
+newsletter form in `ui/footer-section.tsx` does the same. Every demo request since launch
+is gone.
+
+**3. The site promises a trial that does not exist.**
+The CTA reads **"Start 14-day free trial"** and links to `#demo` — an anchor to the form
+that discards. There is no signup link to `app.onusclub.com` anywhere on the site, and no
+trial mechanism in the product.
+
+**4. Resend's daily cap will break broadcasts.**
+Free tier is 3,000/month but **100/day**, and the daily cap binds first. One broadcast to
+150 customers fails halfway. Pro is $20/mo for 50,000. Move before any real broadcast use,
+and make the broadcast runner aware of send limits rather than discovering them mid-run.
+
+### P1 — next builds
+
+**5. Google Wallet hero image** *(~half a day)*. The card design system feeds the customer
+page, the Apple strip and the editor preview — but never Google Wallet, so Android passes
+show no stamp art. Deferred originally as "low value while in demo mode"; that expired
+2026-10-02. Needs a public per-card PNG endpoint plus `heroImage` on the object patch. The
+hard part is cache-busting: Google caches hero images hard, and a grid frozen at 1/6
+forever is worse than none.
+
+**6. Signup + lead capture on the marketing site** *(~1 day)*. Replace `#demo` with a real
+signup link to `app.onusclub.com/signup`, keep "Book a demo" as the secondary CTA, and POST
+both forms somewhere durable. Cheapest credible store is a `leads` table on the existing
+API plus a notification email.
+
+**7. Trial periods with dynamic length** *(~1-2 days, pairs with billing)*. Per-merchant
+trial with a configurable day count, not a hardcoded 14. Needs `trial_ends_at` on
+`merchants`, a gate on expiry, and in-app "N days left" messaging. The existing premium
+flag is the natural place to hang it.
+
+**8. Merchant logo upload** *(~1 day)*. Every Google pass currently shows the OnUsClub badge
+as the merchant's logo, and customers now see it. `logo_url`, `brand_color` and `hero_url`
+columns exist with **no write path anywhere**. The `ensureLoyaltyClass()` PATCH fix shipped
+2026-09-27, so changes now actually propagate.
+
+**9. Payment gateway — recommend Stripe Billing.** For a Netherlands-first SMB product the
+instinct is Mollie (NL-native, iDEAL at ~1.8% + €0.25 vs Stripe's higher rate). But the
+trial/tiering/proration logic in items 7 and 13 is exactly what Stripe Billing does and
+what Mollie's recurring API does not. Stripe supports iDEAL, so Dutch customers still pay
+the way they expect. Paying ~1% more per transaction to avoid hand-rolling proration and
+trial-to-paid conversion is the right trade at this stage; revisit if iDEAL volume gets
+large.
+
+### P2 — the admin/master dashboard
+
+A distinct product surface for OnUsClub staff, not a dashboard feature. Items 10-13 below
+are one project.
+
+**10. Master dashboard** — every merchant in one place, with the ability to inspect and
+edit their data, including adjusting a customer's stamps or points.
+**11. Per-merchant revenue / sales view** — the analytics engine already computes this
+per-merchant; this aggregates across all.
+**12. Full customer view across merchants** — stamps, points, every `card_event`, and a
+per-customer visit timeline. The `card_events` table already holds all of it.
+**13. Hard tenant isolation** — no merchant may ever reach it.
+
+⚠️ **Design note**: today *every* authenticated user is a merchant, and tenant scoping is
+`WHERE merchant_id = ?` on every query. A super-admin role is the first thing that
+deliberately breaks that invariant, which makes it the highest-risk feature on this list.
+It needs a separate role on `staff_users`, a distinct route namespace, and its own
+authorisation tests — not a boolean on the existing session. CLAUDE.md's "all tenant-scoped
+queries must filter by merchant_id" currently has no enforcement mechanism; build one
+before adding a role that can bypass it.
+
+### P3 — planned
+
+**14. RFM segments** — analytics follow-up; needs a thresholds settings page.
+**15. Geo / proximity notifications** — `locations.latitude` / `longitude` have existed
+since Day 1 (migration 001) and **nothing reads or writes them**. The cheap version is not
+custom geofencing: both Apple (`locations[]` on the pass) and Google support OS-level
+location triggers, so the phone shows the pass near the shop with no backend work. Needs a
+lat/long input on the location form.
+**16. Template gallery** — engine shipped Day 16; blocked on ~90 commissioned motifs.
+**17. CSV customer import/export** — cafés arrive with spreadsheets.
+**18. Weekly merchant digest email** — retention; gated on item 4.
+**19. Security review** — candidate areas: no rate limiting anywhere, no enforced
+request-scoped tenant context, `qr_token` as a bearer credential on public routes, CSRF
+posture on the Next API routes, and dependency scanning (Dependabot/CodeQL are not
+configured). Run `/security-review` per branch, and do a dedicated pass before the master
+dashboard lands.
+**20. Testing** — the 117-assertion smoke suite plus CI is the backbone and is healthy.
+The real gap is browser-level E2E; **Playwright** is the natural fit (free, headless in CI)
+and would cover the scan flow and wallet buttons that smoke can only hit at API level. No
+need for a paid tool like TestRigor at this size.
+
+### Small / cosmetic
+
+- **`/contact` page** on onusclub.com — the Google-registered support URL points at the
+  homepage. The footer already advertises `support@onusclub.com`; confirm that mailbox
+  actually exists.
+- **MCC reads "Internet Cafes"** in the Google Business Profile — cosmetic, no effect on
+  Wallet.
+- **`sippzy.com` legacy Traefik routers** — DNS is gone; config still references them.
+- **Local dev DB** — months of accumulated smoke merchants break `pnpm smoke` locally on an
+  inactivity assertion. CI is unaffected (fresh MySQL per run).
+- **`scripts/resync-wallet-class-logos.ts`** — written 2026-09-27, never needed: every class
+  on the new issuer was created after the logo fix. Kept for future issuer work.
+
+### Decisions already made
+
+- **Analytics stays free, not premium-gated.** Decided 2026-10-02. It is the screen that
+  makes the product demoable; gating it works against adoption. Built ungated.
+- **Not feasible as described: logging customers who pass by without entering.** Wallet
+  passes never report location to us — geofence triggers are handled entirely by iOS and
+  Android, and the OS tells you nothing. Capturing "walked past but did not come in" would
+  need our own app with background-location permission, which is a separate product, a
+  consent burden under GDPR (location is personal data), and a battery/ratings problem.
+  What *is* achievable: proximity notifications (item 15) and the visit timeline we already
+  have from `card_events`.
+
+---
+
 ## Done — day-by-day
 
 Each day below corresponds to a git branch + a commit. Run `git log --oneline --all` to see them, or browse on GitHub.
