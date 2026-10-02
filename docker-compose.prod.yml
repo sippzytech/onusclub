@@ -48,6 +48,11 @@ services:
       BASE_URL_API: https://${DOMAIN_API}
       RESEND_API_KEY: ${RESEND_API_KEY}
       EMAIL_FROM: ${EMAIL_FROM:-OnUsClub <onboarding@resend.dev>}
+      # Lead capture from the marketing site. This block lists every variable
+      # explicitly — adding one to .env alone does nothing, and the symptom is
+      # the endpoint answering 503 as though it were never configured.
+      LEADS_INGEST_SECRET: ${LEADS_INGEST_SECRET:-}
+      LEADS_NOTIFY_EMAIL: ${LEADS_NOTIFY_EMAIL:-onusclub.official@gmail.com}
       APPLE_TEAM_ID: ${APPLE_TEAM_ID:-}
       APPLE_PASS_TYPE_ID: ${APPLE_PASS_TYPE_ID:-}
       APPLE_PASS_P12_PATH: ${APPLE_PASS_P12_PATH:-/secrets/apple/onusclub-pass.p12}

@@ -30,6 +30,13 @@ jobs:
       - name: Typecheck (all workspaces)
         run: pnpm -r run typecheck
 
+      # Catches a var added to the api's env schema but never passed through
+      # docker-compose.prod.yml. The container would simply never receive it,
+      # and the feature would look deliberately disabled in production while
+      # .env looked correct. Has happened twice.
+      - name: Check env vars are wired through prod compose
+        run: node scripts/check-env-wiring.mjs
+
       - name: Build api
         run: pnpm --filter @onusclub/api run build
 
