@@ -28,14 +28,21 @@ claims about hosting.
 Apple certs and wallet SA key to carry across. Note "data must never leave Europe" is
 stricter than GDPR actually requires, but EU hosting is far simpler than defending SCCs.
 
-**2. The marketing site throws away every lead.**
+**2. The marketing site throws away every lead.** ✅ **FIXED 2026-10-03** — see Day 18.
+Kept here because the shape of the bug is worth remembering: it failed silently and
+looked like success.
+
 `components/FinalCTA.tsx` `handleSubmit()` validates, calls `setSubmitted(true)`, and
 **never sends the data anywhere**. No `fetch`, no API route — the site has no `app/api`
 directory at all. The visitor sees a success state; nobody receives anything. The footer
 newsletter form in `ui/footer-section.tsx` does the same. Every demo request since launch
 is gone.
 
-**3. The site promises a trial that does not exist.**
+**3. The site promises a trial that does not exist.** 🔶 **HALF FIXED 2026-10-03** — the
+CTAs now link to `app.onusclub.com/signup` and the copy reads "Get started free", so
+nothing is promised that signup does not deliver. The trial *mechanism* is still item 7;
+restore trial wording when it ships.
+
 The CTA reads **"Start 14-day free trial"** and links to `#demo` — an anchor to the form
 that discards. There is no signup link to `app.onusclub.com` anywhere on the site, and no
 trial mechanism in the product.
@@ -54,7 +61,7 @@ show no stamp art. Deferred originally as "low value while in demo mode"; that e
 hard part is cache-busting: Google caches hero images hard, and a grid frozen at 1/6
 forever is worse than none.
 
-**6. Signup + lead capture on the marketing site** *(~1 day)*. Replace `#demo` with a real
+**6. Signup + lead capture on the marketing site** ✅ **DONE 2026-10-03.** Originally: Replace `#demo` with a real
 signup link to `app.onusclub.com/signup`, keep "Book a demo" as the secondary CTA, and POST
 both forms somewhere durable. Cheapest credible store is a `leads` table on the existing
 API plus a notification email.
@@ -127,8 +134,9 @@ need for a paid tool like TestRigor at this size.
 - **MCC reads "Internet Cafes"** in the Google Business Profile — cosmetic, no effect on
   Wallet.
 - **`sippzy.com` legacy Traefik routers** — DNS is gone; config still references them.
-- **Local dev DB** — months of accumulated smoke merchants break `pnpm smoke` locally on an
-  inactivity assertion. CI is unaffected (fresh MySQL per run).
+- ~~**Local dev DB** — accumulated smoke merchants break `pnpm smoke` locally.~~
+  ✅ Done 2026-10-03: 53 historical test merchants had `crons_enabled` set false, which
+  stops the inactivity sweep finding them without deleting anything.
 - **`scripts/resync-wallet-class-logos.ts`** — written 2026-09-27, never needed: every class
   on the new issuer was created after the logo fix. Kept for future issuer work.
 
@@ -219,6 +227,39 @@ Each day below corresponds to a git branch + a commit. Run `git log --oneline --
 - Staff/team accounts: /dashboard/team page, owner-only CRUD on staff_users, staff role can log in and use the dashboard.
 - METABASE.md runbook with 7 starter SQL queries.
 - Smoke test: 70 assertions.
+
+### Day 18 — Lead capture, and a signup route into the product
+- **The marketing site had been discarding every enquiry since launch.** Both forms
+  validated input, called `setSubmitted(true)`, and stopped there — no `fetch`, no
+  `app/api` directory, no outbound call anywhere in the project. Each visitor was told
+  "we'll be in touch". Nobody ever received anything.
+- New **`POST /v1/public/leads`** + migration `009_leads.sql`. The marketing site calls it
+  **server-side** from its own `/api/leads` handler, so the browser never touches
+  `api.onusclub.com` — the same rule the dashboard follows. That choice is why this uses a
+  shared secret instead of CORS: opening CORS for one marketing form would weaken the whole
+  api, and would make this a genuinely public write endpoint in a codebase with **no rate
+  limiting anywhere**. An unset secret therefore means **closed (503)**, not open.
+- Deliberate details: only `source` + `email` required (validation that rejects a real
+  prospect is worse than null columns); repeat submissions inside 24h merge via `COALESCE`
+  so a double-click is one lead and omitted fields survive; honeypot answered 200 and
+  dropped, because a visible rejection tells the bot which field caught it; `ip_hash`
+  stores SHA-256 and never the address; the notification email is sent **after** the INSERT
+  and is best-effort, since the row is the record and a Resend outage must not lose a lead.
+- Site: both forms only show success once the lead is actually stored, the demo form gained
+  a real error state (previously failure and success were indistinguishable), primary CTAs
+  point at `app.onusclub.com/signup` — there had been **no route from the site into the
+  product at all** — and "Start 14-day free trial" became "Get started free", since no trial
+  exists yet.
+- `support@onusclub.com` deliberately untouched: it appears 14 times across Privacy, Terms
+  and GDPR as the contact for data-subject requests. If that mailbox does not work, the fix
+  is to make it work, not to point legal documents at a Gmail.
+- **`scripts/check-env-wiring.mjs`**, now in CI. `docker-compose.prod.yml` lists every env
+  var explicitly, and `LEADS_INGEST_SECRET` was added to `config.ts` and `.env.example` but
+  not to compose — so the endpoint answered 503 in production while `.env` looked perfect.
+  Second time that class of bug shipped (the first left local dev pointed at the production
+  Wallet issuer), so it is now a mechanical check rather than something to remember.
+- Smoke +7 assertions, CI gets the secret so the real path is exercised rather than the 503
+  branch.
 
 ### Day 17 — Analytics page (trends, busiest hours, top members)
 - `/dashboard/analytics` stops being a "Coming soon" card. Day 15 had already captured
