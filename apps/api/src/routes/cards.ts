@@ -58,6 +58,12 @@ interface CountRow extends RowDataPacket {
 }
 
 interface InviteRow extends RowDataPacket {
+  // Must stay in sync with the SELECT in sendWalletInviteEmail(). RowDataPacket
+  // carries an index signature, so a column that is used but never selected
+  // reads as `any` and type-checks cleanly — which is exactly how the Apple
+  // Wallet link in enrolment emails shipped as ".../c/undefined/apple-pass"
+  // from Day 11 until 2026-10-02.
+  qr_token: string;
   google_wallet_object_id: string | null;
   business_name: string;
   customer_name: string | null;
@@ -133,7 +139,7 @@ async function sendWalletInviteEmail(
 ): Promise<boolean> {
   try {
     const [rows] = await pool.execute<InviteRow[]>(
-      `SELECT c.google_wallet_object_id,
+      `SELECT c.qr_token, c.google_wallet_object_id,
               m.business_name,
               cu.name AS customer_name, cu.email AS customer_email,
               p.reward_text, p.config_json AS program_config
@@ -165,9 +171,16 @@ async function sendWalletInviteEmail(
     }
     const cfg = parseJson<{ stamps_required?: number }>(row.program_config);
     const { appleWalletEnabled } = await import("../wallet-apple/client.js");
-    const applePassUrl = (await appleWalletEnabled())
-      ? `${env.BASE_URL_API.replace(/\/$/, "")}/v1/public/c/${row.qr_token}/apple-pass`
-      : null;
+    const applePassUrl =
+      (await appleWalletEnabled()) && row.qr_token
+        ? `${env.BASE_URL_API.replace(/\/$/, "")}/v1/public/c/${row.qr_token}/apple-pass`
+        : null;
+    if (!row.qr_token) {
+      // Template-literal interpolation of undefined is silent; it just yields
+      // the string "undefined" in the URL. Say so instead of shipping a dead
+      // link to a customer who will only open the email once.
+      logger.error({ cardId }, "invite: qr_token missing — Apple Wallet link omitted");
+    }
     const { subject, html, text } = walletInviteEmail({
       businessName: row.business_name,
       customerName: row.customer_name,
