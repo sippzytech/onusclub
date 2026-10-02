@@ -1586,6 +1586,87 @@ async function main(): Promise<void> {
   }
   assert(adetUnauth, "/v1/analytics/detail did not require auth");
 
+  // ---------- Day 18: marketing-site lead capture ----------
+
+  // Mirrors the CI env. The endpoint deliberately 503s when unset, so without
+  // a secret there is nothing here worth asserting.
+  const leadsSecret = process.env.LEADS_INGEST_SECRET ?? "";
+
+  if (!leadsSecret) {
+    console.log("→ leads: LEADS_INGEST_SECRET unset, asserting the endpoint is closed");
+    let closed = false;
+    try {
+      await call("POST", "/v1/public/leads", { source: "demo", email: "x@example.com" });
+    } catch (err) {
+      closed = String(err).includes("503");
+    }
+    assert(closed, "leads endpoint should 503 when no secret is configured");
+  } else {
+    const leadEmail = `lead-${Date.now()}@example.com`;
+
+    const postLead = async (body: unknown, secret = leadsSecret): Promise<number> => {
+      const res = await fetch(`${BASE}/v1/public/leads`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-leads-secret": secret },
+        body: JSON.stringify(body),
+      });
+      return res.status;
+    };
+
+    console.log("→ leads: missing secret should 401");
+    assert(
+      (await postLead({ source: "demo", email: leadEmail }, "wrong")) === 401,
+      "bad leads secret did not 401"
+    );
+
+    console.log("→ leads: a valid demo lead is accepted");
+    assert(
+      (await postLead({
+        source: "demo",
+        email: leadEmail,
+        name: "Smoke Lead",
+        businessName: "Smoke Cafe",
+        businessType: "cafe",
+      })) === 201,
+      "valid demo lead was not accepted"
+    );
+
+    console.log("→ leads: a duplicate inside the window merges rather than inserting");
+    // 200 rather than 201 is the tell: merged, not created.
+    assert(
+      (await postLead({ source: "demo", email: leadEmail, phone: "+31600000000" })) === 200,
+      "duplicate lead should merge and return 200"
+    );
+
+    console.log("→ leads: honeypot is accepted but discarded");
+    assert(
+      (await postLead({
+        source: "demo",
+        email: `bot-${Date.now()}@example.com`,
+        website: "http://spam.example",
+      })) === 200,
+      "honeypot submission should return 200 without creating a lead"
+    );
+
+    console.log("→ leads: a malformed email is rejected");
+    assert(
+      (await postLead({ source: "demo", email: "not-an-email" })) === 400,
+      "invalid lead email did not 400"
+    );
+
+    console.log("→ leads: an unknown source is rejected");
+    assert(
+      (await postLead({ source: "carrier-pigeon", email: `s-${Date.now()}@example.com` })) === 400,
+      "invalid lead source did not 400"
+    );
+
+    console.log("→ leads: newsletter signups are accepted");
+    assert(
+      (await postLead({ source: "newsletter", email: `news-${Date.now()}@example.com` })) === 201,
+      "newsletter lead was not accepted"
+    );
+  }
+
   console.log("✓ smoke test passed");
 }
 

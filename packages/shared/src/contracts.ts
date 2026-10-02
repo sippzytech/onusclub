@@ -668,3 +668,32 @@ export const AnalyticsDetail = z.object({
   aovCents: z.number().int().nonnegative().nullable(),
 });
 export type AnalyticsDetail = z.infer<typeof AnalyticsDetail>;
+
+// ---------- Marketing site leads (Day 18) ----------
+
+export const LeadSource = z.enum(["demo", "newsletter"]);
+export type LeadSource = z.infer<typeof LeadSource>;
+
+// Body for POST /v1/public/leads.
+//
+// Only `source` and `email` are required: the newsletter form collects nothing
+// else, and a half-filled demo form is still a lead worth keeping. Validation
+// that rejects a real prospect is worse than a row with null columns.
+export const LeadInput = z.object({
+  source: LeadSource,
+  email: z.string().email().max(200),
+  name: z.string().max(200).optional(),
+  phone: z.string().max(40).optional(),
+  businessName: z.string().max(200).optional(),
+  businessType: z.string().max(100).optional(),
+  message: z.string().max(5000).optional(),
+  referer: z.string().max(500).optional(),
+  // Honeypot. Hidden in the markup, so a human never fills it and a bot that
+  // fills every input does. A filled value is answered 200 and dropped — a
+  // visible rejection just teaches the bot to try again.
+  website: z.string().max(200).optional(),
+});
+export type LeadInput = z.infer<typeof LeadInput>;
+
+export const LeadResult = z.object({ ok: z.boolean() });
+export type LeadResult = z.infer<typeof LeadResult>;

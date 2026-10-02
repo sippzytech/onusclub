@@ -64,6 +64,10 @@ jobs:
       BASE_URL_API: http://localhost:4000
       RESEND_API_KEY: ""
       EMAIL_FROM: OnUsClub <ci@example.com>
+      # Lead capture. Set so smoke exercises the real path; unset would make
+      # the endpoint 503, which is the safe default but tests nothing.
+      LEADS_INGEST_SECRET: ci-leads-secret-not-used-anywhere-real
+      LEADS_NOTIFY_EMAIL: ci@example.com
       # APPLE_PASS_TYPE_ID needs to match what the smoke script sends
       # (`pass.com.onusclub.loyalty`) so the auth-required Day 12 routes
       # 401 (as smoke asserts) instead of 404'ing on the passType mismatch.

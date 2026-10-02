@@ -15,6 +15,17 @@ const EnvSchema = z.object({
   // Empty string → degrade to console-only email (matches the wallet pattern).
   RESEND_API_KEY: z.string().optional().default(""),
   EMAIL_FROM: z.string().default("OnUsClub <onboarding@resend.dev>"),
+  // Shared secret the marketing site presents on POST /v1/public/leads.
+  //
+  // Empty → the endpoint returns 503 and stores nothing. That is the safe
+  // default on purpose: this is the only unauthenticated write surface in the
+  // api, and there is no rate limiting anywhere in the codebase, so an
+  // accidentally-open version would be an open invitation. The marketing site
+  // calls it server-side, so the secret never reaches a browser.
+  LEADS_INGEST_SECRET: z.string().optional().default(""),
+  // Where "new lead" notifications go. A lead nobody sees is the same as the
+  // lead being discarded, which is the bug this feature exists to fix.
+  LEADS_NOTIFY_EMAIL: z.string().default("onusclub.official@gmail.com"),
   // Apple Wallet. All empty → endpoint returns 503 "not configured".
   // P12_PASSWORD empty is the canonical "wallet offline" signal.
   APPLE_TEAM_ID: z.string().optional().default(""),
