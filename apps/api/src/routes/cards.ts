@@ -24,6 +24,7 @@ import {
   syncCardToWallet,
 } from "../cards/operations.js";
 import { buildSaveJwt, saveUrl } from "../wallet/loyalty.js";
+import { objectOnCurrentIssuer } from "../wallet/state.js";
 import { sendEmail } from "../email/client.js";
 import { walletInviteEmail } from "../email/templates.js";
 
@@ -150,8 +151,11 @@ async function sendWalletInviteEmail(
       logger.info({ cardId }, "email skipped — no customer email");
       return false;
     }
-    if (!row.google_wallet_object_id) {
-      logger.info({ cardId }, "email skipped — wallet object not yet created");
+    if (!objectOnCurrentIssuer(row.google_wallet_object_id)) {
+      // Covers both "never created" and "created under a previous issuer".
+      // Sending an invite whose Google Wallet link resolves to nothing is
+      // worse than not sending it — the customer only opens it once.
+      logger.info({ cardId }, "email skipped — wallet object not on current issuer");
       return false;
     }
     const token = await buildSaveJwt(cardId);

@@ -226,7 +226,18 @@ Each day below corresponds to a git branch + a commit. Run `git log --oneline --
 
 ## Deferred — saved for later (with the why)
 
-### Wallet production approval *(UNBLOCKED as of 2026-08-23 — now actionable)*
+### Wallet production approval ✅ **DONE — approved 2026-10-02**
+
+Google Wallet is **out of demo mode**. Any Google account can now save a pass; the
+allowlist no longer applies. Approved against issuer `3388000000023208694` /
+merchant `BCR2DN6D5KYJPGBL`, region NL. **No code change was required** — the
+LoyaltyClass / LoyaltyObject / save-JWT flow has worked since Day 4; the issuer simply
+flipped state. This was the longest-running open item in the project, first raised on
+Day 4.
+
+Getting there took a detour worth remembering: the original issuer could never have been
+approved, and nothing in the console said so. Details below.
+
 - **Update 2026-10-02**: the original issuer `3388000000023150410` turned out to be unapprovable — it sat on an India payments profile whose country is immutable and which requires PAN/GSTIN. Google support confirmed issuers cannot be re-associated. A new business + issuer `3388000000023208694` was created on the Netherlands profile `4896-3145-4976`, production cut over to it, and publishing access requested. Everything below describes the original attempt.
 - Until approved, only Google accounts on the test users allowlist can save passes.
 - **Apple Wallet is not affected** — Apple Developer Program accepts individual enrollment, our `.pkpass` flow is production-ready and live.

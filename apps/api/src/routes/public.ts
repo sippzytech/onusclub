@@ -27,6 +27,7 @@ import { env } from "../config.js";
 import { ApiError } from "../errors.js";
 import { syncCardToWallet } from "../cards/operations.js";
 import { buildSaveJwt, saveUrl } from "../wallet/loyalty.js";
+import { objectOnCurrentIssuer } from "../wallet/state.js";
 
 export const publicRouter: Router = Router();
 
@@ -304,9 +305,13 @@ publicRouter.get(
       rewardsRedeemed = state.rewards_redeemed;
     }
 
-    // Issue a fresh save URL only if the wallet object exists.
+    // Issue a fresh save URL only if the wallet object exists ON THE CURRENT
+    // ISSUER. A stored id from a previous issuer is still non-null but no
+    // longer resolves, so a plain truthiness check would hand a customer an
+    // "Add to Google Wallet" button that opens to nothing. The object is
+    // recreated on the card's next stamp, and the button reappears then.
     let walletSaveUrl: string | null = null;
-    if (row.google_wallet_object_id) {
+    if (objectOnCurrentIssuer(row.google_wallet_object_id)) {
       const token = await buildSaveJwt(row.card_id);
       if (token) walletSaveUrl = saveUrl(token);
     }

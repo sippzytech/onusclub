@@ -83,7 +83,7 @@ The Google Wallet service-account key already lives at `/docker/stampdeck/secret
 - **Key path (VPS)**: `/docker/stampdeck/secrets/wallet-sa.json` (mounted into api container as `/secrets/wallet-sa.json`)
 - **Env vars** the api reads: `GOOGLE_WALLET_ISSUER_ID`, `GOOGLE_WALLET_SA_KEY_PATH`
 - Fully integrated since Day 4 (`apps/api/src/wallet/`). Apple Wallet lives in `apps/api/src/wallet-apple/`.
-- ⚠️ Still in Google's **demo mode**. Publishing access was requested 2026-10-02; Google said 2–3 days. On approval, every Active class publishes immediately — no code change.
+- ✅ **PRODUCTION APPROVED 2026-10-02.** Out of demo mode — any Google account can save a pass, not just allowlisted testers. Google confirmed against issuer `3388000000023208694` / merchant `BCR2DN6D5KYJPGBL`, region NL. No code change was needed: the LoyaltyClass, LoyaltyObject and save-to-Wallet JWT flow have worked since Day 4.
 
 ### The old issuer, and the one thing that must not be deleted
 
