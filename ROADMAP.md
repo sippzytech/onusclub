@@ -17,16 +17,59 @@ production. Items marked 🔴 are live exposures rather than features.
 
 ### 🔴 P0 — open exposures
 
-**1. Production data is hosted in India.**
-`srv1573651.hstgr.cloud` / `187.127.149.147` resolves to **Mumbai, IN** (Hostinger). The
-MySQL database holds EU data subjects' names, emails, phone numbers, birthdates and full
-visit histories. India has no EU adequacy decision, so this is a third-country transfer
-needing Standard Contractual Clauses, a Transfer Impact Assessment, and disclosure in the
-privacy policy — none of which exist. Also check what `onusclub.com/privacy` currently
-claims about hosting.
-*Fix*: move to an EU region (Hostinger has NL/DE) — a VPS migration plus DNS, with the
-Apple certs and wallet SA key to carry across. Note "data must never leave Europe" is
-stricter than GDPR actually requires, but EU hosting is far simpler than defending SCCs.
+**1. Production is hosted in India.** 🔶 **DEFERRED 2026-10-03 — deliberately, with a
+trigger. Re-read this before onboarding anyone real.**
+
+`srv1573651.hstgr.cloud` / `187.127.149.147` is **Mumbai, IN** (Hostinger). India has no
+EU adequacy decision, so EU customer data there is a third-country transfer requiring
+SCCs, a Transfer Impact Assessment and disclosure in the privacy policy — none of which
+exist.
+
+**Why it is deferred**: GDPR protects *natural persons*. Every merchant and customer row
+today is test data (`Smoke Café …`, `@example.com`), so there is no data subject and
+therefore no exposure. Buying a second VPS now would mean 2-3 months of cost with no
+revenue and nothing to protect.
+
+🚨 **The trigger — migrate BEFORE whichever comes first:**
+- the first real merchant is onboarded
+- any marketing or outreach that could produce one
+- a pilot café "just to test" — this is the one that will catch you out
+
+It is not "before launch" and not "at the end". It is **before the first real person's
+name enters the database**.
+
+**What is already real**: the `leads` table. The demo form on onusclub.com captures real
+names, emails and phone numbers. Low volume while unmarketed, but it means the privacy
+policy should be accurate about the processing region, and a rising lead count is the
+trigger arriving early.
+
+**Deferring is safe because** migration difficulty scales with data volume and local
+state, not with features. Docker Compose, versioned SQL migrations and file-based secrets
+all migrate identically in three months.
+
+⚠️ **The one exception is item 8, merchant logo upload.** Implemented as local-disk
+writes it creates a volume of customer-uploaded images that must also be migrated. Decide
+*before* building it: keep `logo_url` as a URL, or use object storage — the Backblaze B2
+code from Day 13 is already written and unwired.
+
+**When the trigger fires** (~half a day, minutes of downtime):
+- Hostinger has **no Netherlands VPS**. Regions are France, Germany, Lithuania, UK.
+  **Germany** is the pick — EU, ~10 ms to Amsterdam. Avoid the UK; it runs on a
+  periodically-reviewed adequacy decision.
+- **Do NOT use Hostinger's "change location".** It is a reinstall that permanently
+  deletes all data, backups and snapshots. Buy a second VPS, migrate, verify, cancel the
+  old one — parallel running is what makes this low-risk.
+- **Move OnUsClub only.** The box also runs MenuDeck, n8n, Metabase and the shared
+  Traefik; none of them hold OnUsClub data. Metabase is confirmed *not* connected to
+  OnUsClub (it serves MenuDeck and sippzy lead capture), so there is no cross-border
+  query path to worry about.
+- **Lower the DNS TTL first.** `api.` and `app.onusclub.com` are at **3600s**; drop to 60s
+  at least two hours ahead or the cutover window is an hour instead of minutes. DNS is on
+  NS1, via the Netlify panel.
+- **`/docker/stampdeck/secrets/apple/` is the irreplaceable part.** Copy byte-for-byte and
+  checksum both sides. Lose it and every Apple pass customers already hold stops updating,
+  with no quick path to re-sign. Worth backing up off the box **today**, migration or not —
+  a VPS failure has the same consequence.
 
 **2. The marketing site throws away every lead.** ✅ **FIXED 2026-10-03** — see Day 18.
 Kept here because the shape of the bug is worth remembering: it failed silently and
