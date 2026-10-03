@@ -1586,6 +1586,97 @@ async function main(): Promise<void> {
   }
   assert(adetUnauth, "/v1/analytics/detail did not require auth");
 
+  // ---------- Day 21: merchant branding ----------
+
+  interface Branding {
+    brandColor: string | null;
+    logoUrl: string | null;
+  }
+
+  console.log("→ a new merchant has no logo, so passes fall back to the OnUsClub badge");
+  const brand0 = await call<Branding>("GET", "/v1/me/branding", undefined, jwt);
+  assert(brand0.logoUrl === null, `new merchant should have no logo, got ${brand0.logoUrl}`);
+
+  // Smallest valid PNG that clears the 200x200 floor: a 256x256 IHDR is enough
+  // for the header inspection, which never decodes pixels.
+  const pngHeader = Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    Buffer.from([0, 0, 0, 0x0d]),
+    Buffer.from("IHDR"),
+    (() => {
+      const dims = Buffer.alloc(8);
+      dims.writeUInt32BE(256, 0);
+      dims.writeUInt32BE(256, 4);
+      return dims;
+    })(),
+    Buffer.from([8, 6, 0, 0, 0]),
+    Buffer.alloc(64), // filler so the body is not suspiciously tiny
+  ]);
+
+  console.log("→ uploading a logo returns a cache-busted public url");
+  const brand1 = await call<Branding>(
+    "PATCH",
+    "/v1/me/branding",
+    { logoBase64: pngHeader.toString("base64"), brandColor: "#7B2D26" },
+    jwt
+  );
+  assert(brand1.logoUrl !== null, "logo url should be set after upload");
+  assert(
+    brand1.logoUrl!.includes("/logo.png?v="),
+    `logo url should carry a version token, got ${brand1.logoUrl}`
+  );
+  assert(brand1.brandColor === "#7B2D26", `brand colour wrong: ${brand1.brandColor}`);
+
+  console.log("→ the public url serves the image without auth (Google fetches it)");
+  const logoPath = new URL(brand1.logoUrl!).pathname + new URL(brand1.logoUrl!).search;
+  const logoRes = await fetch(`${BASE}${logoPath}`);
+  assert(logoRes.status === 200, `logo should be publicly readable, got ${logoRes.status}`);
+  assert(
+    logoRes.headers.get("content-type") === "image/png",
+    "logo should be served with its real content type"
+  );
+
+  console.log("→ re-uploading identical bytes keeps the same url, so caches stay warm");
+  const brand2 = await call<Branding>(
+    "PATCH",
+    "/v1/me/branding",
+    { logoBase64: pngHeader.toString("base64") },
+    jwt
+  );
+  assert(brand2.logoUrl === brand1.logoUrl, "identical bytes should produce an identical url");
+
+  console.log("→ junk and undersized images are refused");
+  let notImage = false;
+  try {
+    await call("PATCH", "/v1/me/branding", { logoBase64: Buffer.from("nope").toString("base64") }, jwt);
+  } catch (err) {
+    notImage = String(err).includes("400");
+  }
+  assert(notImage, "a non-image upload should 400");
+
+  let badHex = false;
+  try {
+    await call("PATCH", "/v1/me/branding", { brandColor: "red" }, jwt);
+  } catch (err) {
+    badHex = String(err).includes("400");
+  }
+  assert(badHex, "a non-hex brand colour should 400");
+
+  console.log("→ a logo can be removed, and the public url stops resolving");
+  const brand3 = await call<Branding>("PATCH", "/v1/me/branding", { logoBase64: null }, jwt);
+  assert(brand3.logoUrl === null, "logo url should clear on removal");
+  const goneRes = await fetch(`${BASE}${logoPath}`);
+  assert(goneRes.status === 404, `removed logo should 404, got ${goneRes.status}`);
+
+  console.log("→ branding requires auth");
+  let brandUnauth = false;
+  try {
+    await call("GET", "/v1/me/branding");
+  } catch (err) {
+    brandUnauth = String(err).includes("401");
+  }
+  assert(brandUnauth, "/v1/me/branding did not require auth");
+
   // ---------- Day 20: RFM segments ----------
 
   interface Segments {

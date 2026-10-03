@@ -33,6 +33,8 @@ app.use(pinoHttp({ logger }));
 // before the global parser; body-parser marks the request as parsed, so the
 // general one below skips it rather than parsing twice.
 app.use("/v1/customers/import", express.json({ limit: "5mb" }));
+// Logo upload posts base64 image bytes, which inflate by about a third.
+app.use("/v1/me/branding", express.json({ limit: "5mb" }));
 app.use(express.json());
 
 app.get("/health", (_req: Request, res: Response<HealthResponse>) => {

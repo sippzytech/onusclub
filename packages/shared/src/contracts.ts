@@ -844,3 +844,30 @@ export const RfmOverview = z.object({
   totalClassified: z.number().int().nonnegative(),
 });
 export type RfmOverview = z.infer<typeof RfmOverview>;
+
+// ---------- Merchant branding (Day 21) ----------
+
+export const MerchantBrandingInput = z.object({
+  // Base64 image bytes, no data: prefix. The browser reads the file and posts
+  // it as JSON — the api has no multipart handling and one upload endpoint
+  // does not justify adding it, the same call made for CSV import.
+  // Omit to leave the current logo alone; null to remove it.
+  logoBase64: z.string().max(3_000_000).nullable().optional(),
+  // Hex, validated here and again at render because it reaches a
+  // customer-facing SVG. Sits below any saved card design in the precedence
+  // chain — see pass-builder.ts.
+  brandColor: z
+    .string()
+    .regex(/^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/, "use a hex colour like #14271C")
+    .nullable()
+    .optional(),
+});
+export type MerchantBrandingInput = z.infer<typeof MerchantBrandingInput>;
+
+export const MerchantBranding = z.object({
+  brandColor: z.string().nullable(),
+  // Public URL of the stored logo, cache-busted by content hash, or null when
+  // the merchant has not uploaded one and passes fall back to the OnUsClub badge.
+  logoUrl: z.string().nullable(),
+});
+export type MerchantBranding = z.infer<typeof MerchantBranding>;

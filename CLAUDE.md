@@ -148,9 +148,11 @@ What works end-to-end:
   Charts are hand-rolled inline SVG so the page ships zero client JS. Day/hour bucketing
   is converted to the merchant's timezone **in Node via `Intl`**, not in SQL — see the
   Day 17 ROADMAP entry for why `CONVERT_TZ` and fixed offsets were both rejected.
-- ⚠️ `merchants.brand_color` has **no write path anywhere** — no API, no UI. It is
-  whatever the schema default made it, and it feeds card/pass background colour as the
-  middle tier of `defaults < brand colour < saved design`. Ships with merchant logo upload.
+- ✅ **Merchant branding** (Day 21): `/dashboard/settings` writes `brand_color` and the
+  merchant's own logo, which until now had no write path at all. Logos are stored as a
+  BLOB in `merchant_assets` rather than on disk — it travels with `mysqldump` instead of
+  becoming a second thing to migrate — and served from a public, content-hashed URL
+  because Google fetches `programLogo` server-side and caches it by URI.
 
 ### Naming: three different names, on purpose
 

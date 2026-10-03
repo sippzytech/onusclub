@@ -1,15 +1,19 @@
 import { Router, type Request, type Response } from "express";
 import type { ResultSetHeader, RowDataPacket } from "mysql2";
 import {
+  MerchantBrandingInput,
   MerchantPreferencesInput,
   type Merchant,
   type MerchantPreferences,
   type SessionUser,
+  type MerchantBranding as MerchantBrandingResponse,
   type TrialStatus,
 } from "@onusclub/shared";
 import { pool } from "../db/pool.js";
 import { authContext, requireAuth } from "../auth/middleware.js";
 import { ApiError } from "../errors.js";
+import { env } from "../config.js";
+import { inspectImage } from "../merchants/image.js";
 
 export const meRouter: Router = Router();
 
@@ -31,6 +35,8 @@ interface MerchantRow extends RowDataPacket {
   is_premium: number;
   crons_enabled: number;
   trial_ends_at: Date | null;
+  brand_color: string | null;
+  logo_url: string | null;
 }
 
 /**
@@ -139,6 +145,96 @@ meRouter.patch(
     return res.json({
       isPremium: Boolean(m.is_premium),
       cronsEnabled: Boolean(m.crons_enabled),
+    });
+  }
+);
+
+// ---------------------------------------------------------------------------
+// Merchant branding: logo + brand colour.
+//
+// Until now `merchants.brand_color`, `logo_url` and `hero_url` existed in the
+// schema with no write path anywhere — brand_color sat permanently at its
+// migration default of '#000000' while feeding the middle tier of every card
+// and pass colour, and every Google Wallet pass showed the OnUsClub badge as
+// the merchant's own logo. This is that write path.
+// ---------------------------------------------------------------------------
+
+interface AssetVersionRow extends RowDataPacket {
+  version: string;
+}
+
+/** Public URL of a merchant's stored logo, cache-busted by content hash. */
+function logoUrlFor(merchantId: string, version: string): string {
+  const base = env.BASE_URL_API.replace(/\/$/, "");
+  return `${base}/v1/public/m/${merchantId}/logo.png?v=${version}`;
+}
+
+meRouter.get(
+  "/branding",
+  requireAuth,
+  async (req: Request, res: Response<MerchantBrandingResponse>) => {
+    const ctx = authContext(req);
+    const [rows] = await pool.execute<MerchantRow[]>(
+      "SELECT brand_color, logo_url FROM merchants WHERE id = ? LIMIT 1",
+      [ctx.merchantId]
+    );
+    return res.json({
+      brandColor: rows[0]?.brand_color ?? null,
+      logoUrl: rows[0]?.logo_url ?? null,
+    });
+  }
+);
+
+meRouter.patch(
+  "/branding",
+  requireAuth,
+  async (req: Request, res: Response<MerchantBrandingResponse>) => {
+    const ctx = authContext(req);
+    const input = MerchantBrandingInput.parse(req.body);
+
+    if (input.logoBase64 !== undefined) {
+      if (input.logoBase64 === null) {
+        await pool.execute("DELETE FROM merchant_assets WHERE merchant_id = ? AND kind = 'logo'", [
+          ctx.merchantId,
+        ]);
+        await pool.execute("UPDATE merchants SET logo_url = NULL WHERE id = ?", [ctx.merchantId]);
+      } else {
+        const buf = Buffer.from(input.logoBase64, "base64");
+        // Inspected from the file's own header, not the browser's claim about
+        // it: a mislabelled file would be handed to Google and Apple as
+        // something it is not.
+        const checked = inspectImage(buf);
+        if (!checked.ok) throw ApiError.badRequest(checked.reason);
+
+        await pool.execute<ResultSetHeader>(
+          `INSERT INTO merchant_assets (merchant_id, kind, content_type, bytes, version)
+           VALUES (?, 'logo', ?, ?, ?)
+           ON DUPLICATE KEY UPDATE content_type = VALUES(content_type),
+                                   bytes = VALUES(bytes),
+                                   version = VALUES(version)`,
+          [ctx.merchantId, checked.info.contentType, buf, checked.version]
+        );
+        await pool.execute("UPDATE merchants SET logo_url = ? WHERE id = ?", [
+          logoUrlFor(ctx.merchantId, checked.version),
+          ctx.merchantId,
+        ]);
+      }
+    }
+
+    if (input.brandColor !== undefined) {
+      await pool.execute("UPDATE merchants SET brand_color = ? WHERE id = ?", [
+        input.brandColor,
+        ctx.merchantId,
+      ]);
+    }
+
+    const [rows] = await pool.execute<MerchantRow[]>(
+      "SELECT brand_color, logo_url FROM merchants WHERE id = ? LIMIT 1",
+      [ctx.merchantId]
+    );
+    return res.json({
+      brandColor: rows[0]?.brand_color ?? null,
+      logoUrl: rows[0]?.logo_url ?? null,
     });
   }
 );

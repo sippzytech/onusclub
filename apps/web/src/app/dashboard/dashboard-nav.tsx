@@ -83,6 +83,7 @@ const TABS: Tab[] = [
   { href: "/dashboard/analytics", label: "Analytics", icon: IconBars },
   { href: "/dashboard/scan", label: "Stamp & scan", icon: IconScan },
   { href: "/dashboard/team", label: "Team", icon: IconTeam },
+  { href: "/dashboard/settings", label: "Settings", icon: IconGrid },
 ];
 
 export function DashboardNav(): JSX.Element {

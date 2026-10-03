@@ -342,6 +342,38 @@ publicRouter.get(
   }
 );
 
+// GET /v1/public/m/:merchantId/logo.png — the merchant's uploaded logo.
+//
+// Public because it has to be: Google fetches programLogo server-side when the
+// LoyaltyClass is written, and Apple pulls pass assets the same way. Neither
+// can present a session. The merchant id is not a secret — it already appears
+// in every class and object id.
+//
+// ?v= is ignored here. It carries the content hash so the URL changes when the
+// image does, which is the only way Google will refetch a logo it has already
+// cached. Same mechanism as the wallet hero.
+interface LogoRow extends RowDataPacket {
+  content_type: string;
+  bytes: Buffer;
+}
+
+publicRouter.get("/m/:merchantId/logo.png", async (req: Request, res: Response) => {
+  const merchantId = req.params.merchantId;
+  if (!/^[0-9a-f-]{36}$/i.test(merchantId)) throw ApiError.notFound("not found");
+
+  const [rows] = await pool.execute<LogoRow[]>(
+    "SELECT content_type, bytes FROM merchant_assets WHERE merchant_id = ? AND kind = 'logo' LIMIT 1",
+    [merchantId]
+  );
+  if (rows.length === 0) throw ApiError.notFound("not found");
+
+  res.setHeader("Content-Type", rows[0].content_type);
+  // Immutable: the ?v= hash changes whenever the bytes do, so a given URL
+  // genuinely never serves different content.
+  res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+  return res.send(rows[0].bytes);
+});
+
 // GET /v1/public/c/:qrToken/hero.png — the stamp grid as a PNG, for Google
 // Wallet's heroImage.
 //

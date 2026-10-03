@@ -149,7 +149,7 @@ trial with a configurable day count, not a hardcoded 14. Needs `trial_ends_at` o
 `merchants`, a gate on expiry, and in-app "N days left" messaging. The existing premium
 flag is the natural place to hang it.
 
-**8. Merchant logo upload** *(~1 day)*. Every Google pass currently shows the OnUsClub badge
+**8. Merchant logo upload** ✅ **DONE 2026-10-03.** Originally: Every Google pass currently shows the OnUsClub badge
 as the merchant's logo, and customers now see it. `logo_url`, `brand_color` and `hero_url`
 columns exist with **no write path anywhere**. The `ensureLoyaltyClass()` PATCH fix shipped
 2026-09-27, so changes now actually propagate.
