@@ -130,8 +130,12 @@ before it matters.
    redundant. A test that *proves* isolation is worth more than one that approximates it.
 
    ⚠️ **Its limit**: it covers the endpoints enumerated in it. **Every new `:id` endpoint
-   needs a case adding**, or the suite quietly stops being a guarantee.
-3. **Items 10-13** — the master dashboard.
+   needs a case adding**, or the suite quietly stops being a guarantee. The admin block
+   added on 2026-10-04 drives its paths from one array constant for exactly this reason —
+   a missing entry is visible, silence is not.
+3. ~~**Items 10-13** — the master dashboard.~~ ✅ **DONE 2026-10-04.** See P2 below for the
+   three decisions that overruled the obvious design, and docs/admin/README.md for how to
+   grant yourself access.
 4. **Item 18** weekly digest, **item 15** proximity notifications, then the small items
    (21, 22, 23, email-failure visibility).
 5. **Item 16** template gallery, whenever the commissioned motifs land.
@@ -180,25 +184,63 @@ large.
 A distinct product surface for OnUsClub staff, not a dashboard feature. Items 10-13 below
 are one project.
 
-**10. Master dashboard** — every merchant in one place, with the ability to inspect and
-edit their data, including adjusting a customer's stamps or points.
-**11. Per-merchant revenue / sales view** — the analytics engine already computes this
-per-merchant; this aggregates across all.
-**12. Full customer view across merchants** — stamps, points, every `card_event`, and a
-per-customer visit timeline. The `card_events` table already holds all of it.
-**13. Hard tenant isolation** — no merchant may ever reach it.
+**10-13. Master dashboard** ✅ **DONE 2026-10-04.** Shipped as six commits: the gate, the
+café list with health flags, cross-merchant customer search and timelines, balance
+corrections, account controls plus the audit viewer, and docs. Lives at `/admin` (web) and
+`/v1/admin` (api); **[docs/admin/README.md](./docs/admin/README.md)** is the reference,
+including how to grant access.
 
-⚠️ **Design note**: today *every* authenticated user is a merchant, and tenant scoping is
-`WHERE merchant_id = ?` on every query. A super-admin role is the first thing that
-deliberately breaks that invariant, which makes it the highest-risk feature on this list.
-It needs a separate role on `staff_users`, a distinct route namespace, and its own
-authorisation tests — not a boolean on the existing session. CLAUDE.md's "all tenant-scoped
-queries must filter by merchant_id" currently has no enforcement mechanism; build one
-before adding a role that can bypass it.
+Three decisions worth carrying forward, because each overrules something that looked
+obvious:
+
+- **Platform admin is a row in `platform_admins`, NOT a role on `staff_users`.** The design
+  note that used to sit here recommended a role; that was wrong, for reasons visible in the
+  code at the time. `role` travels in the JWT (7-day expiry, no denylist), so revoking a
+  role-based privilege would take a week. Worse, `verifyJwt` validated `userId` and
+  `merchantId` and never `role` — a token minted with `role: "superadmin"` verified cleanly.
+  And `POST /v1/staff` is one field away from being an escalation path the day merchants can
+  choose their staff's role. Membership is therefore checked against the **database on every
+  `/v1/admin/*` request**, never cached, so `DELETE` revokes instantly. The role allow-list
+  in `verifyJwt` closed the second hole permanently.
+- **No "profit" figure anywhere.** It is not computable: `card_events.amount_cents` is the
+  café's own self-reported sale amount, it is sparse (NULL = staff skipped the prompt, which
+  is not a €0 sale), and there is no cost-of-goods data. What ships instead is **health
+  flags** with stated thresholds — `never_used`, `dormant`, `dead_enrolments`,
+  `low_wallet_adoption`, `low_capture`, `onboarding`, `healthy` — each with the action it
+  implies. Plus `merchants.monthly_fee_cents`, typed in by hand, which is the only revenue
+  number and renders "—" when unset rather than €0.
+- **Balance adjustments go through the `points_batches` ledger, never `card_state`.**
+  `card_state.points_current` is a cache that `computePointsBalance` recomputes, so a direct
+  write would display correctly, update the wallet pass, and then be silently reverted by the
+  café's next transaction. `apps/api/scripts/smoke-admin.ts` asserts this the only way that
+  counts: grant points, transact as the merchant, re-read, check the grant survived.
+
+The honesty property to preserve: every adjustment also writes a `manual_adjust` row to
+`card_events`, so it appears on the **café's own dashboard** with the before/after and the
+stated reason. An operator changing a merchant's data invisibly is the real risk here, and
+the fix is that they cannot do it invisibly. Don't remove that.
+
+**13. Hard tenant isolation** — proven before the exception was introduced. The isolation
+suite in `apps/api/scripts/smoke.ts` asserts that no owner, no staff member, no
+unauthenticated caller and no forged-role token can reach any `/v1/admin` path. **That path
+list is a constant at the top of the admin block — add a line to it for every new admin
+endpoint**, so a missing denial test is a visible gap rather than silence.
+
+**Deliberately not in v1**: impersonation ("log in as this café" — owner's decision),
+deleting a merchant, editing programs or card design, editing customer PII, broadcasting as
+a merchant, bulk adjust, and cross-merchant identity merging (ships only as an "also a
+member at Café B" hint). Reasons for each are in docs/admin/README.md.
+
+**Still SQL-only, by design**: granting and revoking platform admin. A CI step asserts
+`platform_admins` is referenced nowhere in `apps/api/src/**/*.ts` except
+`src/admin/authorize.ts`, so a second read path with a weaker check cannot quietly appear.
 
 ### P3 — planned
 
-**14. RFM segments** ✅ **DONE 2026-10-03.** Shipped with sensible café defaults; the thresholds settings page still belongs with the master dashboard.
+**14. RFM segments** ✅ **DONE 2026-10-03.** Shipped with sensible café defaults. The same
+classifier now also powers the customer-mix panel on each café's admin detail page, so our
+view of "at risk" and theirs cannot drift. A settings page for editing the thresholds is
+still unbuilt — `DEFAULT_RFM_THRESHOLDS` in `packages/shared` is the single source.
 **15. Geo / proximity notifications** — `locations.latitude` / `longitude` have existed
 since Day 1 (migration 001) and **nothing reads or writes them**. The cheap version is not
 custom geofencing: both Apple (`locations[]` on the pass) and Google support OS-level
@@ -258,6 +300,122 @@ need for a paid tool like TestRigor at this size.
 ## Done — day-by-day
 
 Each day below corresponds to a git branch + a commit. Run `git log --oneline --all` to see them, or browse on GitHub.
+
+### Day 23 — Master admin dashboard (backlog items 10-13)
+
+Six commits. The first feature deliberately designed to read *across* tenants, which made
+the privilege model the whole job.
+
+**Migration `012_platform_admin`**: `platform_admins`, `admin_audit_log`,
+`merchants.monthly_fee_cents`.
+
+**Access is a table row, not a role** — overruling the design note that previously sat in
+the P2 backlog section. Three reasons, all properties of code that already existed:
+`role` travels in the JWT (7-day expiry, no denylist), so revoking a role-based privilege
+would take a week; `verifyJwt` validated `userId` and `merchantId` and **never `role`**, so
+a token minted with `role: "superadmin"` verified cleanly and arrived at handlers as a
+well-typed value; and `POST /v1/staff` is one field from being an escalation path the day
+merchants can choose their staff's role. Membership is checked against the **database on
+every `/v1/admin/*` request and deliberately not cached**, so `DELETE` revokes instantly,
+mid-session. `verifyJwt` now validates `role` against an allow-list, closing the second
+hole permanently.
+
+**Authorization is applied to the mount, not per route** —
+`app.use("/v1/admin", requireAuth, requirePlatformAdmin, adminRouter)` — inverting this
+codebase's convention on purpose: forgetting `requireAuth` on a normal route exposes one
+tenant to one tenant, while forgetting it on an admin route exposes every café to anyone
+with a login. A new admin endpoint cannot be written ungated. Denials answer **404, not
+403** (confirming the namespace exists is itself a leak) and log a pino `warn` with user,
+merchant, path and IP.
+
+**No "profit" figure, and that is a decision.** It is not computable:
+`card_events.amount_cents` is the café's own self-reported sale amount, it is sparse (NULL
+means staff skipped the prompt, which is not a €0 sale), and there is no cost-of-goods data
+anywhere. A number labelled "profit" built on that would be trusted. What ships instead is
+**health flags** with stated thresholds, each carrying the action it implies —
+`never_used`, `dormant`, `dead_enrolments`, `low_wallet_adoption`, `low_capture`,
+`onboarding`, `healthy`. `onboarding` is checked first and returned alone, so a café three
+days old doesn't appear as four problems and bury the ones that are real. Minimum-card
+counts matter as much as the percentages: "1 of 2 cards has a pass" is two customers, not a
+50% adoption problem.
+
+What counts as café *activity* is narrower than "has rows in `card_events`": `signup` is
+joining rather than visiting, `expire` is our own cron (counting it would make an abandoned
+café look alive forever), and `manual_adjust` is **us** — counting that would mean our own
+support fix marks a dormant café as active, so the metric would respond to our
+interventions rather than theirs. Asserted in smoke.
+
+**The ledger trap.** `card_state.points_current` is a cache of
+`SUM(points_batches.points_remaining)` which `computePointsBalance` recomputes. A points
+adjustment written to `card_state` would display correctly, update the wallet pass, and
+then be **silently reverted by the café's next real transaction**. So grants insert a batch
+row (`expires_at = NULL` — an administrative correction should not evaporate on the
+program's clock) and deductions go through `deductPointsFifo`, extracted from
+`redeemPointsCard` so the two cannot drift. The first draft of the *read* path had the same
+bug: caught by corrupting the cached column to 999 and checking what the page rendered. Both
+paths now use the ledger, and a disagreement is **surfaced** rather than quietly corrected.
+
+**`applyManualAdjust` does not reuse the existing primitives**, on purpose. `stampCardById`
+adds exactly +1 and throws at the threshold, so it cannot express a delta nor make the
+commonest correction (landing *on* the threshold when the tenth scan failed).
+`addPointsToCard` takes **euros** and writes `amount_cents` — routing an administrative
+grant through it would fabricate revenue and corrupt that café's sales total and AOV, so a
+support fix would quietly alter their business figures. It takes a **delta, not a target**:
+a target invites a lost update, where the operator reads 5 on a stale page, the café stamps
+twice, and "set to 7" discards those two stamps.
+
+**The café sees every adjustment.** The `manual_adjust` enum value had existed unused since
+migration 001; it now carries the before/after and the stated reason into the merchant's own
+card timeline and activity feed, reading e.g. `Adjusted by OnUsClub · +3 stamps · 1 → 4 ·
+"their third scan did not register"`. An operator changing a merchant's data invisibly is
+the real risk in this feature, and the fix is that they cannot do it invisibly.
+`card_events.staff_user_id` — present since 001 and written by nothing until now — carries
+who. `amount_cents` stays NULL and `setCardEventAmount` still refuses to attach money to a
+`manual_adjust`, so an adjustment can never pollute revenue or AOV.
+
+**`admin_audit_log`** is append-only with no edit or delete path, and `writeAuditLog` takes
+a `PoolConnection` so the audit row commits with the change it describes — a mutation that
+forgets to audit itself cannot commit. No FK on `merchant_id`: the log outlives what it
+describes, so a null café name at read time means "that café is gone", the case most worth
+having a record of.
+
+**Shape**: the café list is six `GROUP BY merchant_id` queries joined in Node, not a loop
+over merchants calling the single-tenant analytics helpers (6×N queries — noticeable at 20
+cafés, unusable at 200). Platform totals are summed from the same per-merchant aggregate the
+list renders, so the header and the rows cannot disagree; smoke asserts the equality.
+
+**Web** is a *sibling* of `/dashboard`, not a child: `DashboardShell` wants a merchant and
+renders a trial banner and plan card, all meaningless here, and `DashboardNav`'s `TABS` is a
+module constant so admin links there would ship in every café's bundle behind a flag.
+`AdminShell` is near-black rather than brand green and names the environment — someone who
+can adjust any customer's balance on any café's account should never be unsure which screen
+they are on. `requireAdminSession` calls `/v1/admin/whoami` and renders not-found on
+failure, not a redirect to `/login` which would confirm the route exists. There is
+deliberately **no `middleware.ts`**: Next middleware cannot cheaply reach the api, and a
+second half-authorization is mostly useful for being trusted by mistake.
+
+**Fixed on the way**: `merchants.trial_ends_at` is a MySQL `TIMESTAMP`, whose range ends
+2038-01-19. A trial date past that reached the database and returned an opaque 500. Now
+bounded in the contract with a message naming the date as the problem.
+
+**Guards**: a CI step asserts `platform_admins` is referenced nowhere in
+`apps/api/src/**/*.ts` except `src/admin/authorize.ts`, so a second read path with a weaker
+check cannot quietly appear. A new `apps/api/scripts/smoke-admin.ts` (32 blocks) covers the
+positive side and connects to MySQL because granting is SQL-only — it is the only thing in
+the repo that writes `platform_admins`. The main suite's isolation section drives the admin
+denial paths from **one array constant**, so a new endpoint without a denial test is a
+missing entry somebody has to edit rather than silence; it refuses an owner, a staff member,
+an unauthenticated caller, another merchant's owner, and a self-minted `superadmin` token.
+
+**Deliberately not in v1**: impersonation (owner's decision), deleting a merchant (the
+cascade is irreversible; smoke asserts the route does not exist), editing programs or card
+design (changes the deal for customers already holding a card), editing customer PII,
+broadcasting as a merchant, bulk adjust, and cross-merchant identity merging (ships only as
+an "also a member at Café B" hint, since `customers` is per-merchant by design and joining
+identities would let one café's correction alter another's data).
+
+See **[docs/admin/README.md](./docs/admin/README.md)** for the grant SQL and the full
+reasoning.
 
 ### Day 1 — skeleton
 - pnpm-workspaces monorepo (apps/api, apps/web, packages/shared).
@@ -369,7 +527,7 @@ Each day below corresponds to a git branch + a commit. Run `git log --oneline --
   `TRIAL_DAYS_DEFAULT` applies to new signups; NULL means no clock, which is what pre-existing
   rows keep. **The banner informs, it does not block** — there is no billing yet, so blocking
   would lose the account with nothing to convert to, and in a loyalty product it would strand
-  the café's customers mid-card. Admin control is SQL until the master dashboard exists.
+  the café's customers mid-card. Editable from `/admin/merchants/:id` since 2026-10-04.
 - **CSV import/export.** The detail that mattered: **Dutch Excel writes semicolon-delimited
   CSV**, because the list separator follows the OS locale. An importer assuming commas would
   fail on most real café files, and fail confusingly. Delimiter is sniffed, BOM stripped,

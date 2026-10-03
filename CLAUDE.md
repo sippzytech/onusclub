@@ -95,7 +95,14 @@ Switching issuers is an env-var change, never a code change — `GOOGLE_WALLET_I
 
 ## Schema
 
-See `apps/api/src/db/migrations/` — the numbered SQL files are the single source of truth, `001_initial.sql` through `008_card_event_amount.sql`. Core tables: `merchants`, `locations`, `loyalty_programs`, `customers`, `loyalty_cards`, `card_events`, `staff_users`, `auth_tokens`; later migrations add `broadcasts`, `sweep_runs`, `message_deliveries`, `apple_pass_registrations`, `points_batches`.
+See `apps/api/src/db/migrations/` — the numbered SQL files are the single source of truth, `001_initial.sql` through `012_platform_admin.sql`. Core tables: `merchants`, `locations`, `loyalty_programs`, `customers`, `loyalty_cards`, `card_events`, `staff_users`, `auth_tokens`; later migrations add `broadcasts`, `sweep_runs`, `message_deliveries`, `apple_pass_registrations`, `points_batches`, `leads`, `merchant_assets`, `platform_admins`, `admin_audit_log`.
+
+⚠️ **`loyalty_cards.card_state.points_current` is a CACHE, not the ledger.** The
+authoritative points balance is `SUM(points_batches.points_remaining)` over non-expired
+batches, which `computePointsBalance` recomputes on every write. Anything that changes a
+points balance must go through the batch rows; writing `card_state` directly displays
+correctly, updates the wallet pass, and is then silently reverted by the next real
+transaction. See `applyManualAdjust` in `apps/api/src/cards/operations.ts`.
 
 Polymorphism is in two JSON columns:
 
@@ -110,11 +117,26 @@ When adding a new `program_type`, define its config + state shapes in `packages/
 - API uses **ESM** (`"type": "module"`); imports use `.js` extensions in compiled output.
 - Env validated with zod at startup; the api fails fast if required vars are missing.
 - Secrets only via env vars or mounted files — never committed.
-- All tenant-scoped queries must filter by `merchant_id`. (Will be enforced via a request-scoped context once auth lands.)
+- All tenant-scoped queries must filter by `merchant_id`. Not enforced by a mechanism — an
+  audit found a query wrapper would be high-friction and mostly redundant — but **proven**
+  behaviourally by the cross-tenant isolation suite in `apps/api/scripts/smoke.ts`. Every
+  new `:id`-taking endpoint needs a case added there.
+- **The one deliberate exception is `apps/api/src/routes/admin/` and
+  `apps/api/src/admin/`**, which read across tenants on purpose. That is why they are their
+  own directories: "where is tenant scoping bypassed?" should be answerable with `ls`.
+  Authorization is applied once, to the `/v1/admin` mount in `index.ts`, not per route —
+  see `docs/admin/README.md`.
 
-## Status — Day 16 (current)
+## Status — Day 23 (current)
 
-**Deployed live at `api.onusclub.com` + `app.onusclub.com`**, from branch **`main`**, migrations `001`–`008` all applied.
+**Deployed live at `api.onusclub.com` + `app.onusclub.com`**, from branch **`main`**.
+
+⚠️ **Production is behind `main` on migrations.** As of 2026-10-04 the box had `001`–`009`
+applied; `010_trial_period`, `011_merchant_assets` and `012_platform_admin` are on `main`
+but not confirmed applied there. Check with
+`docker compose -f docker-compose.prod.yml exec api node dist/db/migrate.js` — it is
+idempotent and skips what is already in `_migrations`. Note that is the **compiled** runner;
+`pnpm db:migrate` is dev-image only and will fail in prod.
 
 **Branching**: `main` is the trunk — branch from it, merge back into it, deploy it. It was created on 2026-09-25; before that the repo had no trunk, just 16 unmerged `day-*` branches with `origin/HEAD` pointing at `day-1-skeleton` (which predates auth). Every legacy branch was verified to be an ancestor of `main` before the cut, so they hold nothing unique.
 
@@ -135,7 +157,9 @@ What works end-to-end:
 - ✅ Per-card delivery audit (broadcasts + sweeps) with manual retry
 - ✅ Premium feature gate (fake unlock for now) + crons-enabled kill-switch
 - ✅ Staff/team accounts (`/dashboard/team`, owner-only CRUD)
-- ✅ Smoke suite at 108 assertions, gated in CI on every PR
+- ✅ Smoke suite gated in CI on every PR, in two parts: `pnpm smoke` (black-box, includes
+  the cross-tenant isolation section) and `pnpm smoke:admin` (needs `DATABASE_URL`, because
+  granting platform admin is SQL-only)
 - ✅ **Card design system** (Day 16): shared SVG renderer, per-program design editor in
   `/dashboard/card-builder`, Apple Wallet `strip.png` artwork. See `docs/card-design/README.md`.
   Deployed and **verified on a physical iPhone 2026-09-18**.
@@ -153,6 +177,14 @@ What works end-to-end:
   BLOB in `merchant_assets` rather than on disk — it travels with `mysqldump` instead of
   becoming a second thing to migrate — and served from a public, content-hashed URL
   because Google fetches `programLogo` server-side and caches it by URI.
+- ✅ **Master admin dashboard** (Day 23): `/admin` — every café in one place with health
+  flags, cross-merchant customer search and timelines, balance corrections, account
+  controls and an append-only audit log. **[docs/admin/README.md](./docs/admin/README.md)**
+  is the reference, including the grant SQL. Three things to know before touching it:
+  access is a row in `platform_admins` checked per-request and never cached (not a JWT
+  role, so revocation is instant); there is no "profit" figure anywhere and that is
+  deliberate; and every balance adjustment is visible to the café on **their own**
+  dashboard, with the reason — don't remove that.
 
 ### Naming: three different names, on purpose
 
