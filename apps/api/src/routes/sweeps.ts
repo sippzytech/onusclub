@@ -79,17 +79,38 @@ function rowToDelivery(row: DeliveryRow): MessageDelivery {
   };
 }
 
-// GET /v1/sweeps — recent cron runs across both types.
+// GET /v1/sweeps — recent cron runs, with counters scoped to this merchant.
+//
+// sweep_runs has no merchant_id, and correctly so: a sweep is one platform-wide
+// cron pass over every tenant. But that means its own scanned/sent/failed
+// columns are platform totals, and returning them told each merchant how much
+// traffic every OTHER merchant had — a café with ten customers reading
+// "scanned 500". A cross-tenant leak, and wrong from their point of view too.
+//
+// The counters are therefore recomputed from message_deliveries, which does
+// carry merchant_id. Runs that touched nobody here are still listed, with
+// zeroes: "the sweep ran, none of yours were eligible" is useful, and hiding
+// them would look like the crons had stopped.
 sweepsRouter.get(
   "/",
   requireAuth,
-  async (_req: Request, res: Response<{ sweeps: SweepRun[] }>) => {
+  async (req: Request, res: Response<{ sweeps: SweepRun[] }>) => {
+    const ctx = authContext(req);
     const [rows] = await pool.execute<SweepRow[]>(
-      `SELECT id, sweep_type, status, scanned, sent, failed,
-              started_at, finished_at, error_message
-         FROM sweep_runs
-        ORDER BY started_at DESC
-        LIMIT 50`
+      `SELECT s.id, s.sweep_type, s.status,
+              COUNT(md.id)                                      AS scanned,
+              COALESCE(SUM(md.status = 'sent'), 0)              AS sent,
+              COALESCE(SUM(md.status = 'failed'), 0)            AS failed,
+              s.started_at, s.finished_at, s.error_message
+         FROM sweep_runs s
+         LEFT JOIN message_deliveries md
+                ON md.source_type = s.sweep_type
+               AND md.source_id = s.id
+               AND md.merchant_id = ?
+        GROUP BY s.id, s.sweep_type, s.status, s.started_at, s.finished_at, s.error_message
+        ORDER BY s.started_at DESC
+        LIMIT 50`,
+      [ctx.merchantId]
     );
     return res.json({ sweeps: rows.map(rowToSweep) });
   }
@@ -104,11 +125,22 @@ sweepsRouter.get(
     res: Response<{ sweep: SweepRun; deliveries: MessageDelivery[] }>
   ) => {
     const ctx = authContext(req);
+    // Same scoping as the list: the run's own columns are platform totals.
     const [rows] = await pool.execute<SweepRow[]>(
-      `SELECT id, sweep_type, status, scanned, sent, failed,
-              started_at, finished_at, error_message
-         FROM sweep_runs WHERE id = ? LIMIT 1`,
-      [req.params.id]
+      `SELECT s.id, s.sweep_type, s.status,
+              COUNT(md.id)                           AS scanned,
+              COALESCE(SUM(md.status = 'sent'), 0)   AS sent,
+              COALESCE(SUM(md.status = 'failed'), 0) AS failed,
+              s.started_at, s.finished_at, s.error_message
+         FROM sweep_runs s
+         LEFT JOIN message_deliveries md
+                ON md.source_type = s.sweep_type
+               AND md.source_id = s.id
+               AND md.merchant_id = ?
+        WHERE s.id = ?
+        GROUP BY s.id, s.sweep_type, s.status, s.started_at, s.finished_at, s.error_message
+        LIMIT 1`,
+      [ctx.merchantId, req.params.id]
     );
     if (rows.length === 0) throw ApiError.notFound("sweep run not found");
     const sweep = rowToSweep(rows[0]);

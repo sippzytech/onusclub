@@ -119,8 +119,18 @@ before it matters.
 1. **Item 8** — merchant logo upload. One day, and the last visibly-missing piece of the
    customer-facing product now that Google Wallet is live and every pass shows the OnUsClub
    badge as the merchant's logo.
-2. **Tenant-scoping enforcement** — the prerequisite pulled out of item 19, because items
-   10-13 depend on it.
+2. ~~**Tenant-scoping enforcement**~~ ✅ **DONE 2026-10-04.** Shipped as a behavioural
+   isolation suite in smoke rather than a code mechanism: two merchants, and every
+   `:id`-taking endpoint tried with the wrong tenant's token. 9 refusal checks plus list,
+   export and counter assertions.
+
+   Chosen over a query wrapper deliberately. An audit found 47 statements touching tenant
+   tables without naming `merchant_id`, but nearly all operate on an id already verified
+   upstream — a mechanism forcing scope on all of them would be high-friction and mostly
+   redundant. A test that *proves* isolation is worth more than one that approximates it.
+
+   ⚠️ **Its limit**: it covers the endpoints enumerated in it. **Every new `:id` endpoint
+   needs a case adding**, or the suite quietly stops being a guarantee.
 3. **Items 10-13** — the master dashboard.
 4. **Item 18** weekly digest, **item 15** proximity notifications, then the small items
    (21, 22, 23, email-failure visibility).

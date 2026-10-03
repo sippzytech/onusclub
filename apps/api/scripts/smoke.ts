@@ -1586,6 +1586,169 @@ async function main(): Promise<void> {
   }
   assert(adetUnauth, "/v1/analytics/detail did not require auth");
 
+  // ---------- Day 22: cross-tenant isolation ----------
+  //
+  // Isolation in this codebase is a hand-written `WHERE merchant_id = ?`
+  // repeated across every query. Nothing enforces it, so the only honest check
+  // is behavioural: stand up a second merchant and try, as the first, to touch
+  // everything it owns. Every one of these must refuse.
+  //
+  // This exists now because the master dashboard introduces a role explicitly
+  // designed to bypass tenant scoping. Before adding the exception, prove the
+  // rule.
+
+  console.log("→ isolation: standing up a second merchant");
+  const otherEmail = `other-${Date.now()}-${Math.random().toString(36).slice(2, 8)}@example.com`;
+  const otherSignup = await call<{ jwt: string; merchant: { id: string } }>(
+    "POST",
+    "/v1/auth/signup",
+    {
+      businessName: "Rival Cafe",
+      ownerEmail: otherEmail,
+      ownerName: "Rival Owner",
+      password: "hunter2hunter2",
+    }
+  );
+  const otherJwt = otherSignup.jwt;
+
+  const otherProgram = await call<{ id: string }>(
+    "POST",
+    "/v1/programs",
+    { name: "Rival card", stampsRequired: 6, rewardText: "Rival reward" },
+    otherJwt
+  );
+  const otherCustomer = await call<{ id: string }>(
+    "POST",
+    "/v1/customers",
+    { name: "Rival Customer", email: `rival-${Date.now()}@example.com` },
+    otherJwt
+  );
+  const otherCard = await call<{ id: string; qrToken: string }>(
+    "POST",
+    "/v1/cards",
+    { customerId: otherCustomer.id, programId: otherProgram.id },
+    otherJwt
+  );
+  const otherStamp = await call<{ events: Array<{ id: number }> }>(
+    "POST",
+    `/v1/cards/${otherCard.id}/stamp`,
+    { amount: 9.5 },
+    otherJwt
+  );
+  const otherEventId = otherStamp.events[0].id;
+
+  // Every attempt below uses OUR jwt against THEIR ids.
+  const denied = async (
+    label: string,
+    method: string,
+    path: string,
+    body?: unknown
+  ): Promise<void> => {
+    let blocked = false;
+    let detail = "";
+    try {
+      await call(method, path, body, jwt);
+    } catch (err) {
+      detail = String(err);
+      // 404 is the right answer rather than 403: confirming a resource exists
+      // but is not yours is itself a small leak.
+      blocked = /\b(404|403|400)\b/.test(detail);
+    }
+    assert(blocked, `CROSS-TENANT LEAK — ${label} was not refused (${detail || "it succeeded"})`);
+    console.log(`   ✓ ${label}`);
+  };
+
+  console.log("→ isolation: another merchant's card is unreachable");
+  await denied("read their card", "GET", `/v1/cards/${otherCard.id}`);
+  await denied("stamp their card", "POST", `/v1/cards/${otherCard.id}/stamp`, {});
+  await denied("redeem their card", "POST", `/v1/cards/${otherCard.id}/redeem`, {});
+  await denied("add points to their card", "POST", `/v1/cards/${otherCard.id}/add-points`, {
+    amount: 5,
+  });
+  await denied(
+    "attach revenue to their event",
+    "PATCH",
+    `/v1/cards/${otherCard.id}/events/${otherEventId}/amount`,
+    { amount: 99 }
+  );
+  await denied("read their wallet link", "GET", `/v1/cards/${otherCard.id}/wallet-link`);
+  await denied("resend their invite", "POST", `/v1/cards/${otherCard.id}/resend-invite`, {});
+
+  console.log("→ isolation: another merchant's program is unreachable");
+  await denied("restyle their program", "PATCH", `/v1/programs/${otherProgram.id}/design`, {
+    backgroundColor: "#ff0000",
+  });
+  await denied("import onto their program", "POST", "/v1/customers/import", {
+    csv: "name,email\nX,x@example.com",
+    programId: otherProgram.id,
+    dryRun: true,
+  });
+
+  console.log("→ isolation: their records never appear in our lists");
+  const ourCards = await call<{ cards: Array<{ id: string }> }>(
+    "GET",
+    "/v1/cards",
+    undefined,
+    jwt
+  );
+  assert(
+    !ourCards.cards.some((c) => c.id === otherCard.id),
+    "CROSS-TENANT LEAK — another merchant's card appeared in our card list"
+  );
+  const ourCustomers = await call<{ customers: Array<{ id: string }> }>(
+    "GET",
+    "/v1/customers",
+    undefined,
+    jwt
+  );
+  assert(
+    !ourCustomers.customers.some((c) => c.id === otherCustomer.id),
+    "CROSS-TENANT LEAK — another merchant's customer appeared in our customer list"
+  );
+  const ourPrograms = await call<{ programs: Array<{ id: string }> }>(
+    "GET",
+    "/v1/programs",
+    undefined,
+    jwt
+  );
+  assert(
+    !ourPrograms.programs.some((p) => p.id === otherProgram.id),
+    "CROSS-TENANT LEAK — another merchant's program appeared in our program list"
+  );
+
+  console.log("→ isolation: their export is not in our export");
+  const ourExport = await fetch(`${BASE}/v1/customers/export.csv`, {
+    headers: { authorization: `Bearer ${jwt}` },
+  });
+  const ourExportText = await ourExport.text();
+  assert(
+    !ourExportText.includes(otherCustomer.id) && !ourExportText.includes("Rival Customer"),
+    "CROSS-TENANT LEAK — another merchant's customer appeared in our CSV export"
+  );
+
+  console.log("→ isolation: sweep counters are ours, not the platform's");
+  // sweep_runs has no merchant_id — the runs are global — so the counters have
+  // to be recomputed per merchant. Returning the raw columns told every tenant
+  // how much traffic every other tenant had.
+  const sweepList = await call<{ sweeps: Array<{ id: string; scanned: number }> }>(
+    "GET",
+    "/v1/sweeps",
+    undefined,
+    otherJwt
+  );
+  assert(
+    sweepList.sweeps.every((sw) => sw.scanned >= 0),
+    "sweep counters should be present"
+  );
+  // The brand-new rival merchant has had nothing swept, so every counter must
+  // be zero no matter how busy the platform has been.
+  assert(
+    sweepList.sweeps.every((sw) => sw.scanned === 0),
+    `CROSS-TENANT LEAK — a fresh merchant sees non-zero sweep counters: ${JSON.stringify(
+      sweepList.sweeps.slice(0, 3)
+    )}`
+  );
+
   // ---------- Day 21: merchant branding ----------
 
   interface Branding {
