@@ -8,6 +8,7 @@ import type { ResultSetHeader, RowDataPacket } from "mysql2";
 import type { PoolConnection } from "mysql2/promise";
 import {
   euroToCents,
+  type CardDesign,
   type CardDetail,
   type CardEvent,
   type PointsCardState,
@@ -280,7 +281,9 @@ export async function syncCardToWallet(
     } else {
       const state = parseJson<StampCardState>(row.card_state);
       if (state.type !== "stamp") return;
-      const cfg = parseJson<{ stamps_required?: number }>(row.program_config);
+      const cfg = parseJson<{ stamps_required?: number; design?: Partial<CardDesign> }>(
+        row.program_config
+      );
       const stampsRequired = cfg.stamps_required ?? 0;
       if (stampsRequired <= 0) return;
       programForWallet = {
@@ -289,6 +292,10 @@ export async function syncCardToWallet(
         name: row.program_name,
         rewardText: row.reward_text,
         stampsRequired,
+        // Carries through to the Google heroImage. The Apple path already had
+        // the design; the Google path never did, which is why Android passes
+        // showed no stamp artwork at all.
+        design: cfg.design ?? null,
       };
       cardForWallet = {
         id: cardId,

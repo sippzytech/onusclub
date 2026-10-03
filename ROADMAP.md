@@ -97,7 +97,7 @@ and make the broadcast runner aware of send limits rather than discovering them 
 
 ### P1 — next builds
 
-**5. Google Wallet hero image** *(~half a day)*. The card design system feeds the customer
+**5. Google Wallet hero image** ✅ **DONE 2026-10-03.** Originally: The card design system feeds the customer
 page, the Apple strip and the editor preview — but never Google Wallet, so Android passes
 show no stamp art. Deferred originally as "low value while in demo mode"; that expired
 2026-10-02. Needs a public per-card PNG endpoint plus `heroImage` on the object patch. The

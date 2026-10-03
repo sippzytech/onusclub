@@ -11,6 +11,7 @@ import { Router, type Request, type Response } from "express";
 import type { ResultSetHeader, RowDataPacket } from "mysql2";
 import {
   CardDesignInput,
+  type CardDesign,
   PublicEnrolInput,
   type PointsCardState,
   type PublicCardView,
@@ -27,6 +28,7 @@ import { env } from "../config.js";
 import { ApiError } from "../errors.js";
 import { syncCardToWallet } from "../cards/operations.js";
 import { buildSaveJwt, saveUrl } from "../wallet/loyalty.js";
+import { buildHeroPng } from "../card-art/raster.js";
 import { objectOnCurrentIssuer } from "../wallet/state.js";
 
 export const publicRouter: Router = Router();
@@ -339,6 +341,65 @@ publicRouter.get(
     });
   }
 );
+
+// GET /v1/public/c/:qrToken/hero.png — the stamp grid as a PNG, for Google
+// Wallet's heroImage.
+//
+// Apple takes the artwork embedded in the .pkpass bundle. Google does not: the
+// LoyaltyObject carries a URI and Google fetches it server-side, so the image
+// has to be reachable publicly. Same access model as the rest of /c/:qrToken —
+// the 64-char qr_token is the credential.
+//
+// The ?v= parameter is ignored here on purpose. It exists so the URI changes
+// whenever the picture does, because Google caches hero images by URI and will
+// not refetch one it has already seen. Rendering is driven by the card's
+// current state either way, so the token only needs to vary, not to be read.
+interface HeroCardRow extends RowDataPacket {
+  card_state: unknown;
+  status: "active" | "blocked" | "expired";
+  program_type: "stamp" | "points";
+  program_config: unknown;
+  design: unknown;
+}
+
+publicRouter.get("/c/:qrToken/hero.png", async (req: Request, res: Response) => {
+  const qrToken = req.params.qrToken;
+  if (!/^[0-9a-f]{64}$/i.test(qrToken)) {
+    throw ApiError.notFound("card not found");
+  }
+
+  const [rows] = await pool.execute<HeroCardRow[]>(
+    `SELECT c.card_state, c.status, p.program_type, p.config_json AS program_config,
+            JSON_EXTRACT(p.config_json, '$.design') AS design
+       FROM loyalty_cards c
+       JOIN loyalty_programs p ON p.id = c.program_id
+      WHERE c.qr_token = ? LIMIT 1`,
+    [qrToken]
+  );
+  if (rows.length === 0) throw ApiError.notFound("card not found");
+  const row = rows[0];
+
+  // Stamp programs only, mirroring the Apple strip. A grid of 420/1000 would
+  // be nonsense, and the upper bound stops a mis-configured 500-stamp program
+  // emitting a wall of badges.
+  if (row.program_type !== "stamp") throw ApiError.notFound("no artwork for this card");
+
+  const state = parseJson<{ type?: string; stamps_current?: number }>(row.card_state);
+  const cfg = parseJson<{ stamps_required?: number }>(row.program_config);
+  const total = cfg.stamps_required ?? 0;
+  const current = state.stamps_current ?? 0;
+  if (total <= 0 || total > 30) throw ApiError.notFound("no artwork for this card");
+
+  const design = parseJson<Partial<CardDesign> | null>(row.design);
+  const png = buildHeroPng(design, current, total);
+  if (!png) throw ApiError.notFound("artwork unavailable");
+
+  res.setHeader("Content-Type", "image/png");
+  // Immutable: the ?v= token changes whenever the image does, so any given URL
+  // genuinely never changes content. Lets Google and any CDN cache hard.
+  res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+  return res.send(png);
+});
 
 // GET /v1/public/c/:qrToken/apple-pass — returns a signed .pkpass for iOS
 // Wallet. Same access model as /v1/public/c/:qrToken (the 64-char qr_token

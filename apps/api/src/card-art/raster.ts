@@ -107,3 +107,95 @@ export function buildStripSet(
 export function stripCacheSize(): number {
   return cache.size;
 }
+
+// ---------------------------------------------------------------------------
+// Google Wallet hero image
+//
+// Google's recommended hero is 1032×336 — 3.07:1, against Apple's 375×123 at
+// 3.05:1. Near enough identical that renderCardStrip draws both from the same
+// geometry with no second set of artwork, which is the whole point of the
+// shared renderer.
+//
+// Unlike Apple, Google does not accept an embedded image: the class/object
+// carries a URI that Google fetches server-side. So this is served from a
+// public endpoint and cached here, because Google may refetch and because
+// every stamp produces a different image.
+// ---------------------------------------------------------------------------
+
+export const HERO_W = 1032;
+export const HERO_H = 336;
+
+const heroCache = new Map<string, Buffer>();
+const HERO_MAX_ENTRIES = 240;
+
+/**
+ * PNG of the stamp grid at Google hero dimensions. Null on failure — the
+ * caller then patches the object without a hero rather than failing the sync.
+ */
+export function buildHeroPng(
+  designPatch: Partial<CardDesign> | null | undefined,
+  current: number,
+  total: number
+): Buffer | null {
+  const design: CardDesign = { ...DEFAULT_CARD_DESIGN, ...(designPatch ?? {}) };
+  const key = `hero|${cacheKey(design, current, total)}`;
+
+  const hit = heroCache.get(key);
+  if (hit) {
+    heroCache.delete(key);
+    heroCache.set(key, hit);
+    return hit;
+  }
+
+  try {
+    const { svg } = renderCardStrip({
+      current,
+      total,
+      design,
+      width: HERO_W,
+      height: HERO_H,
+    });
+    const png = Buffer.from(
+      new Resvg(svg, { fitTo: { mode: "width", value: HERO_W } }).render().asPng()
+    );
+
+    heroCache.set(key, png);
+    if (heroCache.size > HERO_MAX_ENTRIES) {
+      const oldest = heroCache.keys().next();
+      if (!oldest.done) heroCache.delete(oldest.value);
+    }
+    return png;
+  } catch (err) {
+    logger.error(
+      { err: (err as Error).message, current, total },
+      "card-art: hero rasterisation failed"
+    );
+    return null;
+  }
+}
+
+/**
+ * Cache-busting token for the hero URL.
+ *
+ * Google caches hero images by URI and will not refetch an unchanged one, so
+ * the URL has to change whenever the picture does — on every stamp, and on
+ * every design edit. Without this the pass would show the grid frozen at
+ * whatever it was the first time Google fetched it, which is worse than
+ * showing no grid at all: it would be confidently wrong.
+ *
+ * Derived rather than random so the same state yields the same URL, which
+ * keeps Google's cache working instead of defeating it.
+ */
+export function heroVersion(
+  designPatch: Partial<CardDesign> | null | undefined,
+  current: number,
+  total: number
+): string {
+  const design: CardDesign = { ...DEFAULT_CARD_DESIGN, ...(designPatch ?? {}) };
+  let hash = 0;
+  const key = cacheKey(design, current, total);
+  for (let i = 0; i < key.length; i += 1) {
+    hash = (hash * 31 + key.charCodeAt(i)) | 0;
+  }
+  return `${current}-${total}-${(hash >>> 0).toString(36)}`;
+}

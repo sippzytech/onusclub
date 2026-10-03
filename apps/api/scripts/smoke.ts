@@ -1586,6 +1586,41 @@ async function main(): Promise<void> {
   }
   assert(adetUnauth, "/v1/analytics/detail did not require auth");
 
+  // ---------- Day 19: Google Wallet hero image ----------
+
+  console.log("→ hero.png renders at Google's 1032x336 for a stamp card");
+  const heroRes = await fetch(`${BASE}/v1/public/c/${scanCard.qrToken}/hero.png?v=smoke`);
+  assert(heroRes.status === 200, `hero.png should 200, got ${heroRes.status}`);
+  assert(
+    heroRes.headers.get("content-type") === "image/png",
+    "hero.png should be served as image/png"
+  );
+  const heroBuf = Buffer.from(await heroRes.arrayBuffer());
+  assert(
+    heroBuf.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])),
+    "hero.png is missing the PNG magic bytes"
+  );
+  // Dimensions live in the IHDR chunk at a fixed offset.
+  const heroW = heroBuf.readUInt32BE(16);
+  const heroH = heroBuf.readUInt32BE(20);
+  assert(heroW === 1032 && heroH === 336, `hero should be 1032x336, got ${heroW}x${heroH}`);
+
+  console.log("→ hero.png is cached immutably (the ?v= token is what changes)");
+  assert(
+    (heroRes.headers.get("cache-control") ?? "").includes("immutable"),
+    "hero.png should be immutably cacheable — Google caches by URI"
+  );
+
+  console.log("→ points cards have no stamp grid, so no hero");
+  const heroPoints = await fetch(`${BASE}/v1/public/c/${ptsCard.qrToken}/hero.png`);
+  assert(heroPoints.status === 404, `points hero should 404, got ${heroPoints.status}`);
+
+  console.log("→ hero.png 404s for unknown and malformed tokens");
+  const heroUnknown = await fetch(`${BASE}/v1/public/c/${"f".repeat(64)}/hero.png`);
+  assert(heroUnknown.status === 404, `unknown token hero should 404, got ${heroUnknown.status}`);
+  const heroMalformed = await fetch(`${BASE}/v1/public/c/not-a-token/hero.png`);
+  assert(heroMalformed.status === 404, `malformed token hero should 404, got ${heroMalformed.status}`);
+
   // ---------- Day 18: marketing-site lead capture ----------
 
   // Mirrors the CI env. The endpoint deliberately 503s when unset, so without

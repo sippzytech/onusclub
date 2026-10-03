@@ -1,4 +1,6 @@
-import type { PointsCardState, StampCardState } from "@onusclub/shared";
+import type { CardDesign, PointsCardState, StampCardState } from "@onusclub/shared";
+import { env } from "../config.js";
+import { buildHeroPng, heroVersion } from "../card-art/raster.js";
 import { WALLET_ISSUER_ID } from "./client.js";
 
 export interface MerchantBranding {
@@ -10,7 +12,7 @@ export interface MerchantBranding {
 
 // Program-shape passed into wallet builders. Type-discriminated so the
 // builders can pick the right labels + numbers without re-querying the DB.
-export type ProgramForWallet =
+export type ProgramForWallet = { design?: Partial<CardDesign> | null } & (
   | {
       programType: "stamp";
       id: string;
@@ -24,7 +26,8 @@ export type ProgramForWallet =
       name: string;
       rewardText: string;
       pointsForReward: number;
-    };
+    }
+);
 
 export type CardForWallet =
   | {
@@ -177,15 +180,60 @@ function renderBalanceBits(
   };
 }
 
+/**
+ * `heroImage` for a card's LoyaltyObject — the stamp grid, as Google's wide
+ * banner.
+ *
+ * Google does not take an embedded image the way Apple does; it stores a URI
+ * and fetches it itself. It also caches by URI and will not refetch an
+ * unchanged one, so the ?v= token has to move whenever the picture does.
+ * Without that the pass would show the grid frozen at whatever Google happened
+ * to fetch first — confidently wrong, which is worse than absent.
+ *
+ * Stamp programs only, with the same <= 30 bound as the Apple strip: a grid of
+ * 420/1000 is meaningless, and a mis-configured 500-stamp program should not
+ * emit a wall of badges. Returns undefined otherwise so the field is simply
+ * omitted.
+ *
+ * buildHeroPng is called here purely to confirm the image can actually be
+ * produced. Handing Google a URI that 404s leaves a broken-image band on the
+ * pass, so it is better to omit the field than to promise artwork that is not
+ * there.
+ */
+function heroImageFor(
+  program: ProgramForWallet,
+  card: CardForWallet
+): Record<string, unknown> | undefined {
+  if (program.programType !== "stamp" || card.state.type !== "stamp") return undefined;
+  const total = program.stampsRequired;
+  const current = card.state.stamps_current;
+  if (total <= 0 || total > 30) return undefined;
+  if (!buildHeroPng(program.design, current, total)) return undefined;
+
+  const base = env.BASE_URL_API.replace(/\/$/, "");
+  const version = heroVersion(program.design, current, total);
+  return {
+    sourceUri: { uri: `${base}/v1/public/c/${card.qrToken}/hero.png?v=${version}` },
+    contentDescription: {
+      defaultValue: {
+        language: "en-US",
+        value: `${current} of ${total} stamps collected`,
+      },
+    },
+  };
+}
+
 export function buildLoyaltyObject(
   merchant: MerchantBranding,
   program: ProgramForWallet,
   card: CardForWallet
 ): Record<string, unknown> {
   const bits = renderBalanceBits(program, card);
+  const hero = heroImageFor(program, card);
   return {
     id: objectId(card.id),
     classId: classId(merchant.id),
+    ...(hero ? { heroImage: hero } : {}),
     state: "ACTIVE",
     accountId: memberId(card.id),
     accountName: card.customerName ?? "Member",
@@ -282,9 +330,11 @@ export function buildLoyaltyObjectPatch(
   card: CardForWallet
 ): Record<string, unknown> {
   const bits = renderBalanceBits(program, card);
+  const hero = heroImageFor(program, card);
   return {
     accountId: memberId(card.id),
     accountName: card.customerName ?? "Member",
+    ...(hero ? { heroImage: hero } : {}),
     loyaltyPoints: {
       label: bits.label,
       balance: { string: bits.balanceString },
