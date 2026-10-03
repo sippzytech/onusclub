@@ -22,6 +22,9 @@ import { staffRouter } from "./routes/staff.js";
 import { sweepsRouter } from "./routes/sweeps.js";
 import { walletRouter } from "./routes/wallet.js";
 import { appleWalletRouter } from "./routes/apple-wallet.js";
+import { adminRouter } from "./routes/admin/index.js";
+import { requireAuth } from "./auth/middleware.js";
+import { requirePlatformAdmin } from "./admin/authorize.js";
 import { startMessagingCrons } from "./messaging/cron.js";
 
 const app = express();
@@ -57,6 +60,18 @@ app.use("/v1/public", publicRouter);
 app.use("/v1/staff", staffRouter);
 app.use("/v1", walletRouter);
 app.use("/v1/apple-wallet", appleWalletRouter);
+
+// Platform admin — the one router that reads across tenants.
+//
+// Authorization is applied HERE, to the mount, and deliberately not per route
+// the way every other router in this file does it. The asymmetry is the point:
+// forgetting `requireAuth` on a normal route exposes one tenant to one tenant,
+// while forgetting it on an admin route exposes every café on the platform to
+// anyone with a login. Mounting the gate once means a new admin endpoint
+// cannot be written ungated.
+//
+// requirePlatformAdmin answers 404 rather than 403 — see admin/authorize.ts.
+app.use("/v1/admin", requireAuth, requirePlatformAdmin, adminRouter);
 
 app.use(errorHandler);
 

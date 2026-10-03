@@ -871,3 +871,28 @@ export const MerchantBranding = z.object({
   logoUrl: z.string().nullable(),
 });
 export type MerchantBranding = z.infer<typeof MerchantBranding>;
+
+// ---------- Platform admin (Day 23) ----------
+//
+// The one surface that deliberately reads across tenants. Everything here is
+// operator-facing; no café ever sees these shapes.
+//
+// Membership is a row in `platform_admins`, checked against the database on
+// every request rather than carried in the JWT — see 012_platform_admin.sql.
+
+export const AdminWhoami = z.object({
+  userId: z.string(),
+  email: z.string().email(),
+  /** The admin's own merchant. Irrelevant to what they can reach; shown for orientation. */
+  merchantId: z.string(),
+});
+export type AdminWhoami = z.infer<typeof AdminWhoami>;
+
+/**
+ * A stated reason, required on every admin write.
+ *
+ * No default and no optionality. An adjustment with no reason recorded is
+ * indistinguishable from a mistake six months later, and the person who has
+ * to tell a café owner why their customer's stamps moved is us.
+ */
+export const AdminReason = z.string().trim().min(3).max(500);

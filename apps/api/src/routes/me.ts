@@ -14,6 +14,7 @@ import { authContext, requireAuth } from "../auth/middleware.js";
 import { ApiError } from "../errors.js";
 import { env } from "../config.js";
 import { inspectImage } from "../merchants/image.js";
+import { isPlatformAdmin } from "../admin/authorize.js";
 
 export const meRouter: Router = Router();
 
@@ -64,6 +65,12 @@ export interface MeResponse {
   merchant: Merchant;
   publicSlug: string;
   preferences: MerchantPreferences;
+  /**
+   * Whether to show the platform-admin link in the dashboard. Advisory UI
+   * only — the gate is `requirePlatformAdmin` on the /v1/admin mount, and
+   * nothing trusts this flag for access. False for every café, always.
+   */
+  isPlatformAdmin: boolean;
 }
 
 meRouter.get("/", requireAuth, async (req: Request, res: Response<MeResponse>) => {
@@ -106,6 +113,7 @@ meRouter.get("/", requireAuth, async (req: Request, res: Response<MeResponse>) =
       cronsEnabled: Boolean(m.crons_enabled),
     },
     trial: deriveTrial(m.trial_ends_at),
+    isPlatformAdmin: await isPlatformAdmin(ctx.userId),
   });
 });
 

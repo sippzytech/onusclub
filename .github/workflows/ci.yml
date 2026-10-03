@@ -37,6 +37,26 @@ jobs:
       - name: Check env vars are wired through prod compose
         run: node scripts/check-env-wiring.mjs
 
+      # Platform admin is the one privilege that reads across every tenant, and
+      # it is deliberately granted only by SQL — there is no API or UI for it.
+      # The `platform_admins` table must therefore have exactly one read path
+      # in the application: src/admin/authorize.ts, which checks it per request
+      # so that DELETE revokes access instantly.
+      #
+      # A second query against that table somewhere else is how this feature
+      # would quietly grow a weaker check (cached, trusted from the JWT, or
+      # joined into a query that forgets the staff_users join). Limited to .ts
+      # so the migration that creates the table doesn't trip it.
+      - name: Check platform_admins has a single read path
+        run: |
+          hits=$(grep -rn --include='*.ts' "platform_admins" apps/api/src/ \
+                   | grep -v "src/admin/authorize.ts" || true)
+          if [ -n "$hits" ]; then
+            echo "platform_admins is referenced outside src/admin/authorize.ts:"
+            echo "$hits"
+            exit 1
+          fi
+
       - name: Build api
         run: pnpm --filter @onusclub/api run build
 
@@ -152,6 +172,15 @@ jobs:
         env:
           SMOKE_BASE: http://localhost:4000
         run: pnpm --filter @onusclub/api run smoke
+
+      # Separate suite because granting platform admin is SQL-only, so it needs
+      # the database as well as the API. The assertion that matters most is that
+      # deleting the grant row locks the admin out immediately, on a token that
+      # is still valid — the whole reason the privilege is not a JWT role.
+      - name: Run admin smoke
+        env:
+          SMOKE_BASE: http://localhost:4000
+        run: pnpm --filter @onusclub/api run smoke:admin
 
       - name: Show api logs on failure
         if: failure()

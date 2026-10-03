@@ -1749,6 +1749,88 @@ async function main(): Promise<void> {
     )}`
   );
 
+  // ---------- Day 23: the platform-admin surface is unreachable ----------
+  //
+  // /v1/admin is the one router that reads across tenants, so "no café can
+  // reach it" is the single assertion protecting every merchant on the
+  // platform from every other one.
+  //
+  // The path list is a constant, iterated. An endpoint added to the admin
+  // router without a denial test here shows up as a missing entry in a list
+  // somebody has to edit, rather than as silence.
+  const ADMIN_PATHS: Array<[string, string]> = [
+    ["GET", "/v1/admin/whoami"],
+    // As the admin surface grows, every new route gets a line here.
+  ];
+
+  console.log("→ admin: no merchant session can reach /v1/admin");
+  const adminDenied = async (label: string, asJwt: string | undefined): Promise<void> => {
+    for (const [method, path] of ADMIN_PATHS) {
+      let blocked = false;
+      let detail = "";
+      try {
+        await call(method, path, undefined, asJwt);
+      } catch (err) {
+        detail = String(err);
+        // 404, not 403: confirming the namespace exists is itself a leak.
+        // 401 is the right answer for no token at all.
+        blocked = /\b(404|401)\b/.test(detail);
+      }
+      assert(
+        blocked,
+        `PLATFORM ADMIN LEAK — ${method} ${path} was not refused for ${label} (${
+          detail || "it succeeded"
+        })`
+      );
+    }
+    console.log(`   ✓ refused for ${label}`);
+  };
+
+  await adminDenied("no token", undefined);
+  await adminDenied("an owner", jwt);
+  await adminDenied("another merchant's owner", otherJwt);
+
+  console.log("→ admin: a staff session cannot reach it either");
+  const denyStaffEmail = `admin-deny-${Date.now()}@example.com`;
+  await call("POST", "/v1/staff", {
+    email: denyStaffEmail,
+    password: "deny-password-123",
+    name: "Denied Staff",
+  }, jwt);
+  const denyStaffLogin = await call<{ jwt: string }>("POST", "/v1/auth/login", {
+    email: denyStaffEmail,
+    password: "deny-password-123",
+  });
+  await adminDenied("a staff member", denyStaffLogin.jwt);
+
+  // The escalation path the design explicitly rejects.
+  //
+  // verifyJwt previously checked userId and merchantId but never role, so a
+  // token claiming role: "superadmin" verified cleanly. Platform admin is a
+  // database row precisely so that forging a role proves nothing — and the
+  // role allow-list means such a token no longer even authenticates.
+  if (process.env.JWT_SECRET) {
+    console.log("→ admin: a self-minted superadmin token is refused");
+    const jsonwebtoken = (await import("jsonwebtoken")).default;
+    const forged = jsonwebtoken.sign(
+      { userId: signup.user.id, merchantId: signup.merchant.id, role: "superadmin" },
+      process.env.JWT_SECRET,
+      { expiresIn: "5m" }
+    );
+    await adminDenied("a forged superadmin token", forged);
+
+    console.log("→ a forged role is rejected on ordinary routes too");
+    let forgedMeBlocked = false;
+    try {
+      await call("GET", "/v1/me", undefined, forged);
+    } catch (err) {
+      forgedMeBlocked = String(err).includes("401");
+    }
+    assert(forgedMeBlocked, "a token with an unknown role authenticated against /v1/me");
+  } else {
+    console.log("   (skipped forged-token check — JWT_SECRET not set in this environment)");
+  }
+
   // ---------- Day 21: merchant branding ----------
 
   interface Branding {
