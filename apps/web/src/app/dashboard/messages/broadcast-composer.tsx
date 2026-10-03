@@ -12,6 +12,7 @@ export function BroadcastComposer(): JSX.Element {
   const [minStamps, setMinStamps] = useState<string>("");
   const [withBirthdayThisMonth, setWithBirthdayThisMonth] = useState(false);
   const [programId, setProgramId] = useState<string>("");
+  const [rfmSegment, setRfmSegment] = useState<string>("");
   const [programs, setPrograms] = useState<Program[]>([]);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -40,6 +41,7 @@ export function BroadcastComposer(): JSX.Element {
               : {}),
             ...(withBirthdayThisMonth ? { withBirthdayThisMonth: true } : {}),
             ...(programId !== "" ? { programId } : {}),
+            ...(rfmSegment !== "" ? { rfmSegment } : {}),
           };
     const res = await fetch("/api/broadcasts", {
       method: "POST",
@@ -139,6 +141,28 @@ export function BroadcastComposer(): JSX.Element {
               />
               Have a birthday this month
             </label>
+            <div>
+              <label className="block text-xs font-medium text-gray-700">
+                Only a customer segment
+              </label>
+              <select
+                value={rfmSegment}
+                onChange={(e) => setRfmSegment(e.target.value)}
+                className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm"
+              >
+                <option value="">Any segment</option>
+                <option value="at_risk">At risk — regulars who have gone quiet</option>
+                <option value="champions">Champions — recent and frequent</option>
+                <option value="promising">Promising — coming back, not yet regular</option>
+                <option value="new">New — one visit so far</option>
+                <option value="sleeping">Sleeping — occasional, drifted away</option>
+                <option value="lost">Lost — long gone</option>
+              </select>
+              <p className="mt-1 text-xs text-gray-500">
+                Segments are on the Analytics page. &ldquo;At risk&rdquo; is usually the one
+                worth messaging.
+              </p>
+            </div>
             <div>
               <label className="block text-xs font-medium text-gray-700">
                 Only customers on a specific program

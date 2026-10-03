@@ -1586,6 +1586,71 @@ async function main(): Promise<void> {
   }
   assert(adetUnauth, "/v1/analytics/detail did not require auth");
 
+  // ---------- Day 20: RFM segments ----------
+
+  interface Segments {
+    thresholds: { recentDays: number; lapsedDays: number; frequentVisits: number };
+    currencyCode: string;
+    segments: Array<{ segment: string; customers: number; revenueCents: number }>;
+    totalClassified: number;
+  }
+
+  console.log("→ segments always return all six buckets in a fixed order");
+  const seg = await call<Segments>("GET", "/v1/analytics/segments", undefined, jwt);
+  const order = ["champions", "promising", "new", "at_risk", "sleeping", "lost"];
+  assert(
+    JSON.stringify(seg.segments.map((s) => s.segment)) === JSON.stringify(order),
+    `segments should be a fixed six in order, got ${seg.segments.map((s) => s.segment).join(",")}`
+  );
+  assert(seg.thresholds.recentDays > 0, "thresholds should be echoed back");
+
+  console.log("→ segment counts add up to the number of classified customers");
+  const segTotal = seg.segments.reduce((sum, s) => sum + s.customers, 0);
+  assert(
+    segTotal === seg.totalClassified,
+    `segment counts (${segTotal}) should equal totalClassified (${seg.totalClassified})`
+  );
+
+  console.log("→ this merchant's freshly-stamped cards land in a recent segment");
+  // Everything in this run was stamped moments ago, so nobody can be lapsed.
+  const lapsed = seg.segments
+    .filter((s) => s.segment === "sleeping" || s.segment === "lost")
+    .reduce((sum, s) => sum + s.customers, 0);
+  assert(lapsed === 0, `nothing stamped today should be sleeping or lost, got ${lapsed}`);
+
+  console.log("→ segments require auth");
+  let segUnauth = false;
+  try {
+    await call("GET", "/v1/analytics/segments");
+  } catch (err) {
+    segUnauth = String(err).includes("401");
+  }
+  assert(segUnauth, "/v1/analytics/segments did not require auth");
+
+  console.log("→ a broadcast to an empty segment sends to nobody, not everybody");
+  const emptySeg = await call<{ broadcastId: string }>(
+    "POST",
+    "/v1/broadcasts",
+    { header: "Segment test", body: "Ignore — automated.", audienceFilter: { rfmSegment: "lost" } },
+    jwt
+  );
+  let emptyFinal: { broadcast: { status: string; scanned: number } } | null = null;
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    emptyFinal = await call("GET", `/v1/broadcasts/${emptySeg.broadcastId}`, undefined, jwt);
+    if (emptyFinal.broadcast.status !== "running") break;
+    await new Promise((r) => setTimeout(r, 300));
+  }
+  // The failure this guards against is a filter that matches nobody being
+  // silently dropped, turning a targeted win-back into a message to everyone.
+  assert(
+    emptyFinal!.broadcast.scanned === 0,
+    `empty segment should scan 0, got ${emptyFinal!.broadcast.scanned}`
+  );
+  assert(
+    emptyFinal!.broadcast.status === "completed",
+    `empty-segment broadcast should complete, got ${emptyFinal!.broadcast.status}`
+  );
+
   // ---------- Day 19: customer CSV import / export ----------
 
   interface ImportResult {

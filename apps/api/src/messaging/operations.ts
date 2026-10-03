@@ -8,6 +8,7 @@
 
 import { randomUUID } from "node:crypto";
 import type { ResultSetHeader, RowDataPacket } from "mysql2";
+import { classifyRfm, type RfmSegment } from "@onusclub/shared";
 import { pool } from "../db/pool.js";
 import { logger } from "../logger.js";
 import { sendCustomCardMessage, setLoyaltyObjectState } from "../wallet/loyalty.js";
@@ -124,6 +125,43 @@ export interface AudienceFilter {
   minLifetimeStamps?: number;
   withBirthdayThisMonth?: boolean;
   programId?: string;
+  rfmSegment?: RfmSegment;
+}
+
+interface RfmAggRow extends RowDataPacket {
+  customer_id: string;
+  days_since: number;
+  visits: number;
+}
+
+/**
+ * Customer ids currently in an RFM segment.
+ *
+ * Classification happens in Node, not SQL, and the ids come back as an IN
+ * list. Expressing the thresholds a second time in SQL would mean two
+ * definitions of what "at risk" means, free to drift apart — and the one that
+ * decides who receives a win-back message is the one that must not be wrong.
+ * For an SMB this is hundreds of ids, which is a cheap price for a single
+ * source of truth.
+ */
+async function customerIdsInSegment(
+  merchantId: string,
+  segment: RfmSegment
+): Promise<string[]> {
+  const [rows] = await pool.execute<RfmAggRow[]>(
+    `SELECT c.customer_id,
+            DATEDIFF(NOW(), MAX(e.created_at)) AS days_since,
+            COUNT(*)                           AS visits
+       FROM card_events e
+       JOIN loyalty_cards c ON c.id = e.card_id
+      WHERE e.merchant_id = ?
+        AND e.event_type IN ('stamp', 'points_add')
+      GROUP BY c.customer_id`,
+    [merchantId]
+  );
+  return rows
+    .filter((r) => classifyRfm(Number(r.days_since), Number(r.visits)) === segment)
+    .map((r) => r.customer_id);
 }
 
 export async function startBroadcast(
@@ -178,6 +216,20 @@ async function runBroadcast(
     if (audienceFilter?.programId) {
       where.push("c.program_id = ?");
       params.push(audienceFilter.programId);
+    }
+    if (audienceFilter?.rfmSegment) {
+      const ids = await customerIdsInSegment(merchantId, audienceFilter.rfmSegment);
+      if (ids.length === 0) {
+        // Nobody is in this segment. Short-circuit rather than building
+        // `IN ()`, which is a MySQL syntax error, and rather than silently
+        // dropping the filter and messaging everyone — the worst possible
+        // outcome of an empty segment.
+        await pool.execute("UPDATE broadcasts SET scanned = 0, sent = 0, failed = 0, status = 'completed', finished_at = CURRENT_TIMESTAMP WHERE id = ?", [id]);
+        logger.info({ broadcastId: id, segment: audienceFilter.rfmSegment }, "broadcast: segment is empty");
+        return;
+      }
+      where.push(`c.customer_id IN (${ids.map(() => "?").join(",")})`);
+      params.push(...ids);
     }
     const [candidates] = await pool.execute<CandidateRow[]>(
       `SELECT c.id AS card_id, c.merchant_id, c.customer_id,

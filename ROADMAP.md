@@ -109,7 +109,7 @@ signup link to `app.onusclub.com/signup`, keep "Book a demo" as the secondary CT
 both forms somewhere durable. Cheapest credible store is a `leads` table on the existing
 API plus a notification email.
 
-**7. Trial periods with dynamic length** *(~1-2 days, pairs with billing)*. Per-merchant
+**7. Trial periods with dynamic length** ✅ **DONE 2026-10-03.** Originally: Per-merchant
 trial with a configurable day count, not a hardcoded 14. Needs `trial_ends_at` on
 `merchants`, a gate on expiry, and in-app "N days left" messaging. The existing premium
 flag is the natural place to hang it.
@@ -150,14 +150,14 @@ before adding a role that can bypass it.
 
 ### P3 — planned
 
-**14. RFM segments** — analytics follow-up; needs a thresholds settings page.
+**14. RFM segments** ✅ **DONE 2026-10-03.** Shipped with sensible café defaults; the thresholds settings page still belongs with the master dashboard.
 **15. Geo / proximity notifications** — `locations.latitude` / `longitude` have existed
 since Day 1 (migration 001) and **nothing reads or writes them**. The cheap version is not
 custom geofencing: both Apple (`locations[]` on the pass) and Google support OS-level
 location triggers, so the phone shows the pass near the shop with no backend work. Needs a
 lat/long input on the location form.
 **16. Template gallery** — engine shipped Day 16; blocked on ~90 commissioned motifs.
-**17. CSV customer import/export** — cafés arrive with spreadsheets.
+**17. CSV customer import/export** ✅ **DONE 2026-10-03.**
 **18. Weekly merchant digest email** — retention; gated on item 4.
 **19. Security review** — candidate areas: no rate limiting anywhere, no enforced
 request-scoped tenant context, `qr_token` as a bearer credential on public routes, CSRF
@@ -270,6 +270,57 @@ Each day below corresponds to a git branch + a commit. Run `git log --oneline --
 - Staff/team accounts: /dashboard/team page, owner-only CRUD on staff_users, staff role can log in and use the dashboard.
 - METABASE.md runbook with 7 starter SQL queries.
 - Smoke test: 70 assertions.
+
+### Day 20 — RFM segments
+- Recency / Frequency / Monetary, cut down to something a café with 60 customers can act
+  on. Classic RFM scores each dimension into quintiles and crosses them into 125 cells;
+  that needs a population large enough for quintiles to mean anything. **Six threshold-based
+  segments** instead, each with an obvious next action: champions, promising, new, at_risk,
+  sleeping, lost.
+- `classifyRfm()` lives in `packages/shared` — pure, so the API and the dashboard cannot
+  drift on what "at risk" means. Same reasoning as the card renderer. 13 cases checked
+  including boundaries and the one that matters: a daily regular who vanished six months
+  ago is **lost**, not champions.
+- **`GET /v1/analytics/segments`** is deliberately *not* range-scoped, unlike `/detail` —
+  recency only means something measured from now, and bounding it to "the last 30 days"
+  would make everyone outside the window look identically lapsed. Grouped by **customer**,
+  not card: someone holding a stamp card and a points card is one person.
+- **The payoff is `audienceFilter.rfmSegment` on broadcasts** — "message the 20 people about
+  to churn" instead of all 200. Classification runs in Node and feeds an `IN` list rather
+  than being re-expressed in SQL: two definitions of "at risk" free to drift apart is not a
+  trade worth making for a query that decides who gets a win-back message.
+- An empty segment **short-circuits to zero recipients**. `IN ()` is a MySQL syntax error,
+  and the tempting fallback — drop the filter — would turn a targeted win-back into a
+  message to the entire customer base. Covered by smoke.
+- Thresholds (30 days recent / 90 lapsed / 5 visits regular) are tuned for a café and
+  echoed in the API response, so the page states the rule rather than presenting the
+  buckets as self-evident. Editing them belongs with the master dashboard.
+- Smoke +6 assertions. Verified end to end against six planted cohorts, one per segment.
+
+### Day 19 — Google Wallet hero, trial periods, CSV import/export
+- **Google Wallet hero image.** The card design system fed the customer page, the Apple
+  strip and the editor preview — never Google Wallet, so Android passes showed no stamp
+  artwork at all. `renderCardStrip` already took width/height and its comment already named
+  the target, so no new artwork was needed. The subtle part is cache-busting: Google caches
+  hero images by URI and will not refetch an unchanged one, so a static URL would freeze
+  the grid at whatever it first saw — a card reading 1/6 forever while the header counted
+  up. The `?v=` token is derived from stamp count plus a design hash. Root cause of the gap:
+  `ProgramForWallet` never carried `design`; the Apple path always had it.
+- **Trial periods.** `merchants.status` had carried a 'trial' value since migration 001 with
+  nothing recording when it should end. Migration 010 adds `trial_ends_at`;
+  `TRIAL_DAYS_DEFAULT` applies to new signups; NULL means no clock, which is what pre-existing
+  rows keep. **The banner informs, it does not block** — there is no billing yet, so blocking
+  would lose the account with nothing to convert to, and in a loyalty product it would strand
+  the café's customers mid-card. Admin control is SQL until the master dashboard exists.
+- **CSV import/export.** The detail that mattered: **Dutch Excel writes semicolon-delimited
+  CSV**, because the list separator follows the OS locale. An importer assuming commas would
+  fail on most real café files, and fail confusingly. Delimiter is sniffed, BOM stripped,
+  headers matched through an English/Dutch alias table, dates read day-first. Dry run is
+  mandatory before writing — a café's list is often their only copy. Import never sends
+  invite emails: 200 customers would hit Resend's 100/day cap and silently deliver a third.
+- Also fixed a dead branch found while testing trials: `daysLeft` used `ceil`, which can
+  never return 0 for a live trial, so "ends today" was unreachable and the contract comment
+  claiming otherwise was wrong.
 
 ### Day 18 — Lead capture, and a signup route into the product
 - **The marketing site had been discarding every enquiry since launch.** Both forms

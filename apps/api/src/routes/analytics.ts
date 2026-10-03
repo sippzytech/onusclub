@@ -9,11 +9,15 @@ import { Router, type Request, type Response } from "express";
 import type { RowDataPacket } from "mysql2";
 import {
   AnalyticsRange,
+  DEFAULT_RFM_THRESHOLDS,
+  classifyRfm,
   type ActivityEvent,
   type AnalyticsDayBucket,
   type AnalyticsDetail,
   type AnalyticsOverview,
   type AnalyticsTopMember,
+  type RfmOverview,
+  type RfmSegment,
 } from "@onusclub/shared";
 import { pool } from "../db/pool.js";
 import { authContext, requireAuth } from "../auth/middleware.js";
@@ -356,6 +360,93 @@ analyticsRouter.get(
       // Denominator is captured amounts only — otherwise every skipped prompt
       // drags the average toward zero. Same rule as /overview.
       aovCents: totalTxns > 0 ? Math.round(totalRevenueCents / totalTxns) : null,
+    });
+  }
+);
+
+// ---------------------------------------------------------------------------
+// Day 20: GET /v1/analytics/segments — RFM
+//
+// Not range-scoped, unlike /detail. Recency only means anything measured from
+// now to a customer's last visit ever; bounding it to "the last 30 days" would
+// make everyone outside the window look identically lapsed.
+//
+// Grouped by CUSTOMER, not card. Someone holding a stamp card and a points
+// card is one person, and counting them twice would inflate every bucket.
+// ---------------------------------------------------------------------------
+
+interface SegmentRow extends RowDataPacket {
+  customer_id: string;
+  days_since: number;
+  visits: number;
+  revenue_cents: string | number | null;
+}
+
+analyticsRouter.get(
+  "/segments",
+  requireAuth,
+  async (req: Request, res: Response<RfmOverview>) => {
+    const ctx = authContext(req);
+
+    const [metaRows] = await pool.execute<MerchantMetaRow[]>(
+      "SELECT currency_code, timezone FROM merchants WHERE id = ? LIMIT 1",
+      [ctx.merchantId]
+    );
+    const currencyCode = metaRows[0]?.currency_code ?? "EUR";
+
+    // DATEDIFF works on dates, so this is whole days in UTC. At thresholds of
+    // 30 and 90 days a few hours of timezone skew cannot move anyone across a
+    // boundary in a way that matters, so it is deliberately not converted the
+    // way the hourly buckets in /detail are.
+    const [rows] = await pool.execute<SegmentRow[]>(
+      `SELECT c.customer_id,
+              DATEDIFF(NOW(), MAX(e.created_at)) AS days_since,
+              COUNT(*)                           AS visits,
+              SUM(COALESCE(e.amount_cents, 0))   AS revenue_cents
+         FROM card_events e
+         JOIN loyalty_cards c ON c.id = e.card_id
+        WHERE e.merchant_id = ?
+          AND e.event_type IN ('stamp', 'points_add')
+        GROUP BY c.customer_id`,
+      [ctx.merchantId]
+    );
+
+    // Thresholds are not configurable yet — the settings UI belongs with the
+    // master dashboard. Echoed back so the page can state the rule it is
+    // applying instead of presenting the buckets as self-evident.
+    const thresholds = DEFAULT_RFM_THRESHOLDS;
+
+    const order: RfmSegment[] = [
+      "champions",
+      "promising",
+      "new",
+      "at_risk",
+      "sleeping",
+      "lost",
+    ];
+    const tally = new Map<RfmSegment, { customers: number; revenueCents: number }>(
+      order.map((s) => [s, { customers: 0, revenueCents: 0 }])
+    );
+
+    for (const row of rows) {
+      const segment = classifyRfm(toInt(row.days_since), toInt(row.visits), thresholds);
+      const bucket = tally.get(segment);
+      if (!bucket) continue;
+      bucket.customers += 1;
+      bucket.revenueCents += toInt(row.revenue_cents);
+    }
+
+    return res.json({
+      thresholds,
+      currencyCode,
+      // Always all six in a fixed order, so the UI layout does not reflow as
+      // buckets empty and fill.
+      segments: order.map((segment) => ({
+        segment,
+        customers: tally.get(segment)!.customers,
+        revenueCents: tally.get(segment)!.revenueCents,
+      })),
+      totalClassified: rows.length,
     });
   }
 );

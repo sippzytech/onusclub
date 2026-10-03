@@ -498,6 +498,16 @@ export const PublicCardView = z.object({
 });
 export type PublicCardView = z.infer<typeof PublicCardView>;
 
+export const RfmSegment = z.enum([
+  "champions", // recent and frequent — ask these people for a Google review
+  "promising", // recent, a few visits — nudge toward becoming regulars
+  "new", // recent first visit — visit two is where loyalty sticks or dies
+  "at_risk", // used to come often, gone quiet — the win-back money
+  "sleeping", // occasional, gone quiet — cheap to re-engage, low expectation
+  "lost", // long gone — stop spending attention here
+]);
+export type RfmSegment = z.infer<typeof RfmSegment>;
+
 // ---------- Messaging (broadcasts + sweeps) ----------
 
 export const AudienceFilter = z.object({
@@ -508,6 +518,9 @@ export const AudienceFilter = z.object({
   withBirthdayThisMonth: z.boolean().optional(),
   // Send only to cards under this specific program id (must belong to merchant).
   programId: z.string().optional(),
+  // Send only to customers currently in this RFM segment. This is the point of
+  // segmentation: "message the 20 people about to churn" instead of all 200.
+  rfmSegment: RfmSegment.optional(),
 });
 export type AudienceFilter = z.infer<typeof AudienceFilter>;
 
@@ -752,3 +765,82 @@ export const CustomerImportResult = z.object({
   skipped: z.array(CustomerImportRowError),
 });
 export type CustomerImportResult = z.infer<typeof CustomerImportResult>;
+
+// ---------- RFM segments (Day 20) ----------
+//
+// Recency / Frequency / Monetary, reduced to something a café with 60
+// customers can act on.
+//
+// Classic RFM scores each dimension into quintiles and crosses them into 125
+// cells. That needs a population large enough for quintiles to mean anything;
+// on 60 customers it produces buckets of 12 and invents precision. Perkstar
+// ships 9 segments for the same reason it ships 100 templates — scale we do
+// not have yet.
+//
+// So: threshold-based, six segments, each with an obvious next action. R and F
+// decide the segment; M is reported alongside because "which of these is worth
+// most" is the follow-up question, not part of the classification.
+
+export const RfmThresholds = z.object({
+  // "Came in recently" — within this many days.
+  recentDays: z.number().int().positive().max(365),
+  // Beyond this many days a customer is written off as lost.
+  lapsedDays: z.number().int().positive().max(1095),
+  // Visits that make someone a regular rather than an occasional.
+  frequentVisits: z.number().int().positive().max(1000),
+});
+export type RfmThresholds = z.infer<typeof RfmThresholds>;
+
+// Tuned for a café: monthly-ish visits, a quarter before you give up. A barber
+// or a gym would want different numbers, which is why these are a parameter
+// and not constants buried in a query.
+export const DEFAULT_RFM_THRESHOLDS: RfmThresholds = {
+  recentDays: 30,
+  lapsedDays: 90,
+  frequentVisits: 5,
+};
+
+/**
+ * Classify one customer. Pure, so the API and the dashboard cannot drift on
+ * what "at risk" means — the same reason the card renderer lives in shared.
+ *
+ * Order matters: lapsed is checked first, so someone who used to visit daily
+ * but has not appeared in six months is `lost`, not `champions`.
+ */
+export function classifyRfm(
+  daysSinceLastVisit: number,
+  visits: number,
+  thresholds: RfmThresholds = DEFAULT_RFM_THRESHOLDS
+): RfmSegment {
+  if (daysSinceLastVisit > thresholds.lapsedDays) return "lost";
+
+  if (daysSinceLastVisit <= thresholds.recentDays) {
+    if (visits >= thresholds.frequentVisits) return "champions";
+    return visits >= 2 ? "promising" : "new";
+  }
+
+  // Quiet, but not yet written off. Whether that is worth chasing depends
+  // entirely on whether they used to be a regular.
+  return visits >= thresholds.frequentVisits ? "at_risk" : "sleeping";
+}
+
+export const RfmSegmentSummary = z.object({
+  segment: RfmSegment,
+  customers: z.number().int().nonnegative(),
+  // Lifetime captured spend for the segment. Null-amount events are excluded,
+  // same rule as everywhere else: a skipped prompt is not a zero sale.
+  revenueCents: z.number().int().nonnegative(),
+});
+export type RfmSegmentSummary = z.infer<typeof RfmSegmentSummary>;
+
+export const RfmOverview = z.object({
+  thresholds: RfmThresholds,
+  currencyCode: z.string().length(3),
+  // Always all six, in a fixed order, so the UI renders a stable layout
+  // instead of reflowing as buckets empty and fill.
+  segments: z.array(RfmSegmentSummary),
+  // Customers with at least one visit. Someone enrolled but never stamped has
+  // no recency to measure and is deliberately not forced into a bucket.
+  totalClassified: z.number().int().nonnegative(),
+});
+export type RfmOverview = z.infer<typeof RfmOverview>;

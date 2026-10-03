@@ -3,11 +3,13 @@ import {
   AnalyticsRange,
   centsToEuroString,
   type AnalyticsDetail,
+  type RfmOverview,
 } from "@onusclub/shared";
 import { apiFetch } from "@/lib/api";
 import { requireSession } from "@/lib/session";
 import { DashboardShell } from "../dashboard-shell";
 import { HourBars, NewVsReturning, TopList, TrendChart } from "./charts";
+import { Segments } from "./segments";
 
 export const dynamic = "force-dynamic";
 
@@ -43,10 +45,12 @@ export default async function AnalyticsPage({
   // URL a human can type.
   const range = AnalyticsRange.catch("30d").parse(searchParams.range);
 
-  const detail = await apiFetch<AnalyticsDetail>(
-    `/v1/analytics/detail?range=${range}`,
-    { jwt }
-  );
+  // Segments are deliberately not range-scoped — recency only means
+  // something measured from now — so they are a separate fetch.
+  const [detail, segments] = await Promise.all([
+    apiFetch<AnalyticsDetail>(`/v1/analytics/detail?range=${range}`, { jwt }),
+    apiFetch<RfmOverview>("/v1/analytics/segments", { jwt }),
+  ]);
 
   const money = (cents: number): string =>
     centsToEuroString(cents, detail.currencyCode);
@@ -104,6 +108,8 @@ export default async function AnalyticsPage({
             hint={detail.aovCents === null ? "Needs at least one captured amount" : undefined}
           />
         </div>
+
+        <Segments data={segments} />
 
         {!hasVisits ? (
           <div className="rounded-card bg-white border border-brand-green/10 p-10 text-center">
