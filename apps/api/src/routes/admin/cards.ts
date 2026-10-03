@@ -3,10 +3,11 @@
 
 import { Router, type Request, type Response } from "express";
 import type { RowDataPacket } from "mysql2";
-import type { AdminCardView } from "@onusclub/shared";
+import { AdminAdjustInput, type AdminAdjustResult, type AdminCardView } from "@onusclub/shared";
 import { pool } from "../../db/pool.js";
 import { ApiError } from "../../errors.js";
-import { getCardDetail } from "../../cards/operations.js";
+import { applyManualAdjust, getCardDetail } from "../../cards/operations.js";
+import { adminContext } from "../../admin/authorize.js";
 
 export const adminCardsRouter: Router = Router();
 
@@ -66,6 +67,26 @@ export async function ledgerPointsBalance(cardId: string): Promise<number> {
   );
   return Number(rows[0]?.balance ?? 0);
 }
+
+/**
+ * POST /v1/admin/cards/:id/adjust
+ *
+ * The one write the master dashboard makes to a café's data. All the care
+ * lives in `applyManualAdjust` — the batch-ledger handling, the range checks,
+ * the two audit rows inside one transaction. This route validates and
+ * attributes.
+ */
+adminCardsRouter.post("/:id/adjust", async (req: Request, res: Response<AdminAdjustResult>) => {
+  const actor = adminContext(req);
+  const input = AdminAdjustInput.parse(req.body);
+  const result = await applyManualAdjust(req.params.id, input.delta, input.reason, actor);
+  return res.json({
+    unit: result.unit,
+    before: result.before,
+    after: result.after,
+    detail: result.detail,
+  });
+});
 
 adminCardsRouter.get("/:id", async (req: Request, res: Response<AdminCardView>) => {
   const owner = await ownerOfCard(req.params.id);

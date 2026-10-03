@@ -57,8 +57,25 @@ function describe(e: CardEvent): string {
     }
     case "reset":
       return "Stamps reset";
-    case "manual_adjust":
-      return "Manual adjustment";
+    case "manual_adjust": {
+      // Changed by hand from the OnUsClub platform-admin dashboard.
+      //
+      // Shown to the merchant with the full before/after and the stated
+      // reason, not as a vague "manual adjustment". An operator altering a
+      // café's data invisibly is the real risk in that feature, and their
+      // customer may well ask them about it — so the café needs the actual
+      // reason, in their own view, without having to ask us.
+      const unit = (d?.unit as string | undefined) ?? "stamps";
+      const delta = d?.delta as number | undefined;
+      const before = d?.balance_before as number | undefined;
+      const after = d?.balance_after as number | undefined;
+      const reason = d?.reason as string | undefined;
+      const parts = ["Adjusted by OnUsClub"];
+      if (delta !== undefined) parts.push(`${delta > 0 ? "+" : ""}${delta} ${unit}`);
+      if (before !== undefined && after !== undefined) parts.push(`${before} → ${after}`);
+      if (reason) parts.push(`“${reason}”`);
+      return parts.join(" · ");
+    }
     default:
       return e.eventType;
   }

@@ -1775,6 +1775,9 @@ async function main(): Promise<void> {
       `/v1/admin/customers/${otherCustomer.id}`,
     ],
     ["GET", `/v1/admin/cards/${otherCard.id}`],
+    // The write. Most important line in this list: a merchant reaching this
+    // could move balances on any card on the platform.
+    ["POST", `/v1/admin/cards/${otherCard.id}/adjust`],
     // As the admin surface grows, every new route gets a line here.
   ];
 

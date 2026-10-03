@@ -10,6 +10,7 @@ import { apiFetch, ApiCallError } from "@/lib/api";
 import { requireAdminSession } from "@/lib/admin-session";
 import { AdminShell } from "../../admin-shell";
 import { EVENT_LABEL } from "../../event-label";
+import { AdjustForm } from "./adjust-form";
 
 export const dynamic = "force-dynamic";
 
@@ -134,6 +135,23 @@ export default async function AdminCardPage({
       </div>
 
       <section className="rounded-xl bg-white border border-slate-200 p-5 mt-4">
+        <h2 className="text-sm font-medium text-slate-900">Correct the balance</h2>
+        <p className="text-xs text-slate-500 mt-0.5 mb-4">
+          For fixing a scan that failed or a reward given twice. The change is written to
+          this card&apos;s history and appears on {view.merchantName}&apos;s own dashboard with
+          the reason you give — they will be able to see exactly what we did.
+        </p>
+        <AdjustForm
+          cardId={card.id}
+          unit={isPoints ? "points" : "stamps"}
+          // Points come from the ledger, not the cached column — the form's
+          // projected "x → y" has to agree with what the api will compute.
+          current={isPoints ? (view.pointsBalance ?? 0) : (state as StampCardState).stamps_current}
+          threshold={isPoints ? card.pointsForReward : card.stampsRequired}
+        />
+      </section>
+
+      <section className="rounded-xl bg-white border border-slate-200 p-5 mt-4">
         <h2 className="text-sm font-medium text-slate-900">
           History <span className="text-slate-400">({events.length})</span>
         </h2>
@@ -153,6 +171,23 @@ export default async function AdminCardPage({
                   {EVENT_LABEL[e.eventType] ?? e.eventType}
                 </span>
                 {e.note ? <span className="text-xs text-slate-600">{e.note}</span> : null}
+                {/* Our own adjustments carry the before/after in delta_json.
+                    Shown so the history reads as a ledger rather than a list
+                    of labels. */}
+                {e.eventType === "manual_adjust" &&
+                  (() => {
+                    const d = e.deltaJson as {
+                      balance_before?: number;
+                      balance_after?: number;
+                      by?: string;
+                    } | null;
+                    return d?.balance_before !== undefined ? (
+                      <span className="text-xs text-slate-500 tabular-nums">
+                        {d.balance_before} → {d.balance_after}
+                        {d.by ? ` · ${d.by}` : ""}
+                      </span>
+                    ) : null;
+                  })()}
                 <span className="ml-auto text-slate-500 tabular-nums whitespace-nowrap">
                   {e.amountCents !== null && <>{centsToEuroString(e.amountCents)} · </>}
                   {e.createdAt.slice(0, 16).replace("T", " ")}

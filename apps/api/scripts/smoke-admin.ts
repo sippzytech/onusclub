@@ -491,6 +491,240 @@ async function main(): Promise<void> {
       `balance label should read the ledger, got "${pointsDetail.cards[0].balanceLabel}"`
     );
 
+    // ---------- the adjustment ----------
+
+    interface AdjustResult {
+      unit: string;
+      before: number;
+      after: number;
+      detail: { card: { cardState: { stamps_current?: number; points_current?: number } } };
+    }
+
+    console.log("→ a stamp adjustment moves the balance by exactly the delta");
+    const adj = await call<AdjustResult>(
+      "POST",
+      `/v1/admin/cards/${card.id}/adjust`,
+      { delta: 3, reason: "smoke test: scan failed at the till" },
+      adminJwt
+    );
+    assert(adj.unit === "stamps", `expected stamps, got ${adj.unit}`);
+    assert(adj.before === 1 && adj.after === 4, `expected 1 → 4, got ${adj.before} → ${adj.after}`);
+    assert(
+      adj.detail.card.cardState.stamps_current === 4,
+      "the returned card should already reflect the new balance"
+    );
+
+    console.log("→ the café can see it on their own card, with the reason");
+    // Read with the MERCHANT's token, not the admin's. An operator changing a
+    // café's data invisibly is the real risk in this feature; this is the
+    // assertion that it cannot be invisible.
+    const asMerchant = await call<{
+      events: Array<{
+        eventType: string;
+        note: string | null;
+        amountCents: number | null;
+        deltaJson: { balance_before?: number; balance_after?: number; reason?: string };
+      }>;
+    }>("GET", `/v1/cards/${card.id}`, undefined, adminJwt);
+    const visible = asMerchant.events.find((e) => e.eventType === "manual_adjust");
+    assert(visible, "the adjustment is NOT visible to the merchant on their own card");
+    assert(
+      visible!.note !== null && visible!.note.includes("scan failed at the till"),
+      `the merchant-visible note must carry the reason: ${visible!.note}`
+    );
+    assert(
+      visible!.deltaJson.balance_before === 1 && visible!.deltaJson.balance_after === 4,
+      "the merchant-visible event must carry the before/after"
+    );
+    // setCardEventAmount refuses to attach money to a manual_adjust, so an
+    // adjustment can never pollute that café's revenue or AOV.
+    assert(
+      visible!.amountCents === null,
+      "a manual_adjust must never carry a sale amount"
+    );
+
+    console.log("→ the audit row carries the actor, the reason and the before/after");
+    const [auditRows] = await db.query<
+      Array<{
+        actor_email: string;
+        action: string;
+        reason: string;
+        target_id: string;
+        before_json: unknown;
+        after_json: unknown;
+      }>
+    >(
+      `SELECT actor_email, action, reason, target_id, before_json, after_json
+         FROM admin_audit_log
+        WHERE target_id = ? ORDER BY id DESC LIMIT 1`,
+      [card.id]
+    );
+    assert(auditRows.length === 1, "no admin_audit_log row was written");
+    const audit = auditRows[0];
+    const parse = (v: unknown): { balance?: number; delta?: number } =>
+      typeof v === "string" ? JSON.parse(v) : (v as { balance?: number; delta?: number });
+    assert(audit.actor_email === adminEmail, `audit actor wrong: ${audit.actor_email}`);
+    assert(audit.action === "card.adjust", `audit action wrong: ${audit.action}`);
+    assert(
+      audit.reason === "smoke test: scan failed at the till",
+      `audit reason wrong: ${audit.reason}`
+    );
+    assert(parse(audit.before_json).balance === 1, "audit before wrong");
+    assert(parse(audit.after_json).balance === 4, "audit after wrong");
+    assert(parse(audit.after_json).delta === 3, "audit delta wrong");
+
+    console.log("→ bad adjustments are refused, and change nothing");
+    const refused = async (label: string, body: unknown): Promise<void> => {
+      const status = await statusOf("POST", `/v1/admin/cards/${card.id}/adjust`, adminJwt, body);
+      assert(status === 400, `${label} should 400, got ${status === 0 ? "success" : status}`);
+    };
+    await refused("a missing reason", { delta: 1 });
+    await refused("a two-character reason", { delta: 1, reason: "no" });
+    await refused("a zero delta", { delta: 0, reason: "nothing to do" });
+    await refused("a fractional delta", { delta: 1.5, reason: "half a stamp" });
+    await refused("an absurd delta", { delta: 1_000_000_000, reason: "far too many" });
+    // 4 stamps on an 8-stamp card: -5 would go negative.
+    await refused("going below zero", { delta: -5, reason: "too far down" });
+    // 8-stamp card at 4: +5 would exceed the threshold, a state the ordinary
+    // stamp path refuses to create.
+    await refused("going past the threshold", { delta: 5, reason: "too far up" });
+
+    const unchanged = await call<{ pointsBalance: number | null; detail: AdjustResult["detail"] }>(
+      "GET",
+      `/v1/admin/cards/${card.id}`,
+      undefined,
+      adminJwt
+    );
+    assert(
+      unchanged.detail.card.cardState.stamps_current === 4,
+      "a refused adjustment must leave the balance alone"
+    );
+
+    console.log("→ landing exactly on the threshold is allowed");
+    const toThreshold = await call<AdjustResult>(
+      "POST",
+      `/v1/admin/cards/${card.id}/adjust`,
+      { delta: 4, reason: "smoke test: completing the card" },
+      adminJwt
+    );
+    assert(
+      toThreshold.after === 8,
+      `should reach exactly 8 of 8, got ${toThreshold.after}`
+    );
+
+    // ⚠️⚠️ THE BATCH-LEDGER REGRESSION.
+    //
+    // The whole reason applyManualAdjust exists rather than a card_state
+    // write. A points grant written straight to `card_state.points_current`
+    // would display correctly, update the wallet pass, and then be silently
+    // REVERTED by the café's next real transaction, because
+    // computePointsBalance recomputes from points_batches.
+    //
+    // So: grant, then transact as the merchant, then re-read. The grant has to
+    // survive. If this fails, the adjustment is writing the cache instead of
+    // the ledger.
+    console.log("→ a points grant survives the café's next transaction");
+    const grant = await call<AdjustResult>(
+      "POST",
+      `/v1/admin/cards/${pointsCard.id}/adjust`,
+      { delta: 50, reason: "smoke test: goodwill points" },
+      adminJwt
+    );
+    assert(grant.unit === "points", `expected points, got ${grant.unit}`);
+    assert(
+      grant.before === 25 && grant.after === 75,
+      `expected 25 → 75, got ${grant.before} → ${grant.after}`
+    );
+
+    // A real merchant transaction: +20 points for €10 at 2 points/euro.
+    await call("POST", `/v1/cards/${pointsCard.id}/add-points`, { amount: 10 }, adminJwt);
+
+    const afterTxn = await call<{ pointsBalance: number; pointsCacheStale: boolean }>(
+      "GET",
+      `/v1/admin/cards/${pointsCard.id}`,
+      undefined,
+      adminJwt
+    );
+    assert(
+      afterTxn.pointsBalance === 95,
+      `GRANT WAS REVERTED — expected 75 + 20 = 95, got ${afterTxn.pointsBalance}. ` +
+        "The adjustment is writing card_state instead of the points_batches ledger."
+    );
+    assert(
+      afterTxn.pointsCacheStale === false,
+      "the cache should agree with the ledger after a real transaction"
+    );
+
+    console.log("→ a points deduction goes through the ledger, FIFO");
+    const clawback = await call<AdjustResult>(
+      "POST",
+      `/v1/admin/cards/${pointsCard.id}/adjust`,
+      { delta: -40, reason: "smoke test: awarded twice by mistake" },
+      adminJwt
+    );
+    assert(
+      clawback.before === 95 && clawback.after === 55,
+      `expected 95 → 55, got ${clawback.before} → ${clawback.after}`
+    );
+    const [ledger] = await db.query<Array<{ bal: string | number }>>(
+      `SELECT COALESCE(SUM(points_remaining), 0) AS bal
+         FROM points_batches
+        WHERE card_id = ? AND points_remaining > 0
+          AND (expires_at IS NULL OR expires_at > NOW())`,
+      [pointsCard.id]
+    );
+    assert(
+      Number(ledger[0].bal) === 55,
+      `the ledger itself must total 55, got ${ledger[0].bal} — the deduction did not reach it`
+    );
+
+    console.log("→ a points deduction below the balance is refused");
+    const tooMuch = await statusOf("POST", `/v1/admin/cards/${pointsCard.id}/adjust`, adminJwt, {
+      delta: -500,
+      reason: "more than they have",
+    });
+    assert(tooMuch === 400, `over-deduction should 400, got ${tooMuch}`);
+    const [stillThere] = await db.query<Array<{ bal: string | number }>>(
+      `SELECT COALESCE(SUM(points_remaining), 0) AS bal
+         FROM points_batches
+        WHERE card_id = ? AND points_remaining > 0
+          AND (expires_at IS NULL OR expires_at > NOW())`,
+      [pointsCard.id]
+    );
+    assert(
+      Number(stillThere[0].bal) === 55,
+      `a refused deduction must not partially drain the ledger: ${stillThere[0].bal}`
+    );
+
+    console.log("→ an adjustment does not count as café activity");
+    // manual_adjust is excluded from TXN_TYPES on purpose: if it counted, our
+    // own support fix would mark a dormant café as active and the health
+    // metric would respond to our interventions rather than theirs.
+    const relist = await call<{ merchants: Array<{ id: string; eventsTotal: number }> }>(
+      "GET",
+      `/v1/admin/merchants?q=${encodeURIComponent(adminEmail)}`,
+      undefined,
+      adminJwt
+    );
+    const mine = relist.merchants[0];
+    // 1 stamp + 1 points_add (setup) + 1 points_add (the regression check) = 3.
+    // The four adjustments applied above must not appear.
+    assert(
+      mine.eventsTotal === 3,
+      `adjustments must not count as scans — expected 3 real transactions, got ${mine.eventsTotal}`
+    );
+
+    console.log("→ adjusting an unknown card 404s");
+    assert(
+      (await statusOf(
+        "POST",
+        "/v1/admin/cards/00000000-0000-0000-0000-000000000000/adjust",
+        adminJwt,
+        { delta: 1, reason: "no such card" }
+      )) === 404,
+      "adjusting an unknown card should 404"
+    );
+
     // ⚠️ The property the entire design exists for. Platform admin is a
     // database row rather than a JWT role so that revocation is immediate;
     // if this assertion ever fails, the check has been moved into the token

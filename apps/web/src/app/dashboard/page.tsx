@@ -32,6 +32,12 @@ function describeEvent(e: ActivityEvent): { label: string; tone: string } {
       return { label: "Joined", tone: "text-brand-gold" };
     case "expire":
       return { label: "Expired", tone: "text-brand-olive" };
+    case "manual_adjust":
+      // OnUsClub support changed this card's balance by hand. Surfaced in the
+      // merchant's own feed on purpose: an operator altering a café's data
+      // invisibly is the real risk in that feature, so it cannot be invisible.
+      // The reason is in the event's note, shown on the card's timeline.
+      return { label: "Adjusted by OnUsClub", tone: "text-amber-700" };
     default:
       return { label: e.eventType.replace(/_/g, " "), tone: "text-brand-olive" };
   }

@@ -27,6 +27,8 @@ import {
 import { objectOnCurrentIssuer } from "../wallet/state.js";
 import type { WalletEvent } from "../wallet/state.js";
 import { sendApnsPushBatch } from "../wallet-apple/apns.js";
+import { writeAuditLog } from "../admin/audit.js";
+import type { AdminActor } from "../admin/authorize.js";
 
 interface CardRow extends RowDataPacket {
   id: string;
@@ -219,7 +221,16 @@ async function loadCardOutsideTransaction(
 export async function syncCardToWallet(
   cardId: string,
   merchantId: string,
-  event: WalletEvent
+  event: WalletEvent,
+  // Whether to also push a notification to the customer's pass.
+  //
+  // Default true — every ordinary stamp, redeem and points transaction tells
+  // the customer what just happened, which is most of the value of a wallet
+  // pass. Set false for changes the customer did not initiate: a manual
+  // adjustment made from the platform-admin dashboard must correct the pass
+  // without pushing "You earned a stamp!" for something they never did, or
+  // alarming them about a reduction they have not been told about yet.
+  notify = true
 ): Promise<void> {
   try {
     const [rows] = await pool.execute<SyncRow[]>(
@@ -328,15 +339,17 @@ export async function syncCardToWallet(
       logger.error({ err, cardId }, "apple wallet push failed");
     });
 
-    await sendCardMessage({
-      event,
-      businessName: row.business_name,
-      rewardText: row.reward_text,
-      currentValue,
-      thresholdValue,
-      unitLabel,
-      cardId,
-    });
+    if (notify) {
+      await sendCardMessage({
+        event,
+        businessName: row.business_name,
+        rewardText: row.reward_text,
+        currentValue,
+        thresholdValue,
+        unitLabel,
+        cardId,
+      });
+    }
   } catch (err) {
     logger.error({ err, cardId, event }, "wallet sync failed");
   }
@@ -708,6 +721,52 @@ export async function addPointsToCard(
 }
 
 /**
+ * Take `amount` points off a card, oldest non-expired batch first.
+ *
+ * Extracted so redemption and manual adjustment deduct identically. Two
+ * copies of a FIFO loop over a ledger would eventually disagree about which
+ * batch to drain, and the symptom would be points expiring on the wrong date
+ * — nearly impossible to notice and very hard to explain.
+ *
+ * Locks the batch rows. Reading inside a FOR UPDATE on the parent card row
+ * already serialises callers, but the explicit lock here guards if that is
+ * ever relaxed.
+ *
+ * Caller must have verified the balance. The trailing check is the backstop:
+ * if a race somehow gets past it, abort rather than half-deduct.
+ */
+async function deductPointsFifo(
+  conn: PoolConnection,
+  cardId: string,
+  amount: number
+): Promise<void> {
+  const [batches] = await conn.execute<PointsBatchRow[]>(
+    `SELECT id, points_remaining, expires_at
+       FROM points_batches
+      WHERE card_id = ?
+        AND points_remaining > 0
+        AND (expires_at IS NULL OR expires_at > NOW())
+      ORDER BY earned_at ASC
+      FOR UPDATE`,
+    [cardId]
+  );
+
+  let toDeduct = amount;
+  for (const batch of batches) {
+    if (toDeduct <= 0) break;
+    const fromThis = Math.min(batch.points_remaining, toDeduct);
+    await conn.execute<ResultSetHeader>(
+      "UPDATE points_batches SET points_remaining = points_remaining - ? WHERE id = ?",
+      [fromThis, batch.id]
+    );
+    toDeduct -= fromThis;
+  }
+  if (toDeduct > 0) {
+    throw ApiError.badRequest("insufficient batched points");
+  }
+}
+
+/**
  * Redeem a points-program reward: deduct `points_for_reward` from the oldest
  * non-expired batches (FIFO). Throws 400 if balance is below threshold.
  */
@@ -727,37 +786,7 @@ export async function redeemPointsCard(
       );
     }
 
-    // FIFO deduction. Lock the rows so a concurrent addPoints can't insert
-    // between read and update. Reading inside a FOR UPDATE on the parent
-    // card row already serializes here, but the explicit FOR UPDATE on the
-    // batch rows guards if we ever relax that.
-    const [batches] = await conn.execute<PointsBatchRow[]>(
-      `SELECT id, points_remaining, expires_at
-         FROM points_batches
-        WHERE card_id = ?
-          AND points_remaining > 0
-          AND (expires_at IS NULL OR expires_at > NOW())
-        ORDER BY earned_at ASC
-        FOR UPDATE`,
-      [cardId]
-    );
-
-    let toDeduct = config.points_for_reward;
-    for (const batch of batches) {
-      if (toDeduct <= 0) break;
-      const fromThis = Math.min(batch.points_remaining, toDeduct);
-      await conn.execute<ResultSetHeader>(
-        "UPDATE points_batches SET points_remaining = points_remaining - ? WHERE id = ?",
-        [fromThis, batch.id]
-      );
-      toDeduct -= fromThis;
-    }
-    if (toDeduct > 0) {
-      // Should be unreachable — balance check above guarantees enough points
-      // — but if a race somehow lets us through, abort cleanly rather than
-      // half-deduct.
-      throw ApiError.badRequest("insufficient batched points for redemption");
-    }
+    await deductPointsFifo(conn, cardId, config.points_for_reward);
 
     const newBalance = await computePointsBalance(conn, cardId);
     const newState: PointsCardState = {
@@ -853,6 +882,283 @@ export async function setCardEventAmount(
 
   const { detail } = await loadCardOutsideTransaction(cardId, merchantId);
   return detail;
+}
+
+// ---------------------------------------------------------------------------
+// Manual adjustment — the only write the platform-admin dashboard makes to a
+// café's data.
+//
+// Lives here, beside the other primitives, rather than in the admin routes,
+// because it has to obey exactly the same invariants. It deliberately does NOT
+// reuse them:
+//
+//  - `stampCardById` adds exactly +1 and throws at the threshold. Unusable for
+//    a delta, and unusable for a correction *to* the threshold, which is the
+//    common case ("their tenth scan failed").
+//  - `addPointsToCard` takes EUROS and writes `amount_cents`. Routing an
+//    administrative grant through it would fabricate revenue, and corrupt that
+//    café's sales total and AOV — a support fix would silently alter their
+//    business figures.
+//
+// ⚠️ The trap, stated once: for points cards `card_state.points_current` is a
+// CACHE of SUM(points_batches.points_remaining). Writing it directly would
+// display correctly, update the wallet pass, and then be silently reverted by
+// the café's next real transaction, because `computePointsBalance` recomputes
+// from the ledger. So grants insert a batch row and deductions go through
+// `deductPointsFifo`. The ledger is the only thing that persists.
+// ---------------------------------------------------------------------------
+
+/** Absolute bound on one adjustment. A four-figure correction is already a conversation. */
+export const MAX_ADJUST_DELTA = 10_000;
+
+export interface ManualAdjustResult {
+  detail: CardDetail;
+  unit: "stamps" | "points";
+  before: number;
+  after: number;
+}
+
+/**
+ * Move a card's balance by `delta`, with a stated reason, attributed to the
+ * admin who did it.
+ *
+ * Takes a DELTA, not a target. A target ("set this to 7") invites a lost
+ * update: the operator reads 5 on a page rendered a minute ago, the café
+ * stamps twice, and "set to 7" silently discards those two stamps. A delta
+ * composes with whatever else happened.
+ */
+export async function applyManualAdjust(
+  cardId: string,
+  delta: number,
+  reason: string,
+  actor: AdminActor
+): Promise<ManualAdjustResult> {
+  if (!Number.isInteger(delta) || delta === 0) {
+    throw ApiError.badRequest("delta must be a non-zero whole number");
+  }
+  if (Math.abs(delta) > MAX_ADJUST_DELTA) {
+    throw ApiError.badRequest(`delta must be between -${MAX_ADJUST_DELTA} and ${MAX_ADJUST_DELTA}`);
+  }
+  if (reason.trim().length < 3) {
+    throw ApiError.badRequest("a reason is required");
+  }
+
+  // The admin surface does not know or care which café owns the card, but
+  // every function below is tenant-scoped and must stay that way. Resolve the
+  // tenant, then pass it in — rather than adding unscoped variants that could
+  // later be called from a merchant-facing route.
+  const [ownerRows] = await pool.execute<RowDataPacket[]>(
+    `SELECT c.merchant_id, p.program_type
+       FROM loyalty_cards c
+       JOIN loyalty_programs p ON p.id = c.program_id
+      WHERE c.id = ? LIMIT 1`,
+    [cardId]
+  );
+  if (ownerRows.length === 0) throw ApiError.notFound("card not found");
+  const merchantId = ownerRows[0].merchant_id as string;
+  const programType = ownerRows[0].program_type as "stamp" | "points";
+
+  let unit: "stamps" | "points";
+  let before: number;
+  let after: number;
+
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+
+    if (programType === "points") {
+      unit = "points";
+      const { state, config } = await loadPointsCardForUpdate(conn, cardId, merchantId);
+      // From the ledger, not from state — see the warning above. The cached
+      // column may already have drifted, and adjusting a drifted number would
+      // bake the drift in.
+      before = await computePointsBalance(conn, cardId);
+      after = before + delta;
+
+      if (after < 0) {
+        throw ApiError.badRequest(
+          `cannot remove ${Math.abs(delta)} points — the balance is ${before}`
+        );
+      }
+
+      if (delta > 0) {
+        // expires_at NULL on purpose: an administrative grant is a correction
+        // for something that went wrong, and having it quietly evaporate on
+        // the program's expiry clock would recreate the original complaint.
+        await conn.execute<ResultSetHeader>(
+          `INSERT INTO points_batches
+             (id, card_id, merchant_id, points_earned, points_remaining, expires_at)
+           VALUES (?, ?, ?, ?, ?, NULL)`,
+          [randomUUID(), cardId, merchantId, delta, delta]
+        );
+      } else {
+        await deductPointsFifo(conn, cardId, -delta);
+      }
+
+      // Recomputed rather than assumed: this is the value the next
+      // transaction will also arrive at, so the cache cannot drift.
+      const newBalance = await computePointsBalance(conn, cardId);
+      const newState: PointsCardState = {
+        type: "points",
+        points_current: newBalance,
+        // Lifetime moves with the correction — a grant really was earned and a
+        // clawback really was not — but never below the live balance, which
+        // would be an impossible card.
+        total_lifetime: Math.max(newBalance, state.total_lifetime + delta),
+        rewards_redeemed: state.rewards_redeemed,
+        total_expired: state.total_expired,
+      };
+      after = newBalance;
+
+      await conn.execute<ResultSetHeader>(
+        `UPDATE loyalty_cards
+            SET card_state = ?, last_event_at = CURRENT_TIMESTAMP
+          WHERE id = ? AND merchant_id = ?`,
+        [JSON.stringify(newState), cardId, merchantId]
+      );
+      await writeAdjustEvent(conn, {
+        merchantId,
+        cardId,
+        actor,
+        reason,
+        delta,
+        unit,
+        before,
+        after,
+        threshold: config.points_for_reward,
+      });
+    } else {
+      unit = "stamps";
+      const { state, stampsRequired } = await loadCardForUpdate(conn, cardId, merchantId);
+      before = state.stamps_current;
+      after = before + delta;
+
+      if (after < 0) {
+        throw ApiError.badRequest(
+          `cannot remove ${Math.abs(delta)} stamps — the card has ${before}`
+        );
+      }
+      // Above the threshold is a state the ordinary stamp path refuses to
+      // create, so creating it here would leave a card the café cannot stamp
+      // and cannot explain. Landing exactly ON the threshold is allowed and is
+      // the common case.
+      if (after > stampsRequired) {
+        throw ApiError.badRequest(
+          `that would leave ${after} stamps on a ${stampsRequired}-stamp card — ` +
+            "redeem the reward instead"
+        );
+      }
+
+      const newState: StampCardState = {
+        type: "stamp",
+        stamps_current: after,
+        total_lifetime: Math.max(after, state.total_lifetime + delta),
+        rewards_redeemed: state.rewards_redeemed,
+      };
+
+      await conn.execute<ResultSetHeader>(
+        `UPDATE loyalty_cards
+            SET card_state = ?, last_event_at = CURRENT_TIMESTAMP
+          WHERE id = ? AND merchant_id = ?`,
+        [JSON.stringify(newState), cardId, merchantId]
+      );
+      await writeAdjustEvent(conn, {
+        merchantId,
+        cardId,
+        actor,
+        reason,
+        delta,
+        unit,
+        before,
+        after,
+        threshold: stampsRequired,
+      });
+    }
+
+    await conn.commit();
+  } catch (err) {
+    await conn.rollback();
+    throw err;
+  } finally {
+    conn.release();
+  }
+
+  // notify: false — the pass must show the corrected balance, but the customer
+  // did nothing. Pushing "You earned a stamp!" for a change they never made,
+  // or announcing a reduction nobody has explained to them yet, is worse than
+  // letting them see the right number the next time they look.
+  await syncCardToWallet(cardId, merchantId, "stamp", false);
+  const { detail } = await loadCardOutsideTransaction(cardId, merchantId);
+  return { detail, unit, before, after };
+}
+
+/**
+ * The two audit rows for one adjustment, both inside the caller's transaction.
+ *
+ * Two layers, and the first is the one that matters:
+ *
+ *  - `card_events` with `event_type = 'manual_adjust'` — the enum value has
+ *    existed since migration 001 and has never been used. It puts the change
+ *    where the MERCHANT can see it, on their own dashboard, labelled "Adjusted
+ *    by OnUsClub". An operator changing a café's data invisibly is the real
+ *    risk in this feature; the fix is that they cannot do it invisibly.
+ *    `staff_user_id` carries who.
+ *
+ *    Note `amount_cents` stays NULL and `setCardEventAmount` refuses to attach
+ *    money to a `manual_adjust`, so an adjustment can never pollute that
+ *    café's revenue or AOV.
+ *
+ *  - `admin_audit_log` — operator-side, with before/after. Written on the same
+ *    connection, so it commits with the change: a mutation that forgets to
+ *    audit itself cannot commit.
+ */
+async function writeAdjustEvent(
+  conn: PoolConnection,
+  e: {
+    merchantId: string;
+    cardId: string;
+    actor: AdminActor;
+    reason: string;
+    delta: number;
+    unit: "stamps" | "points";
+    before: number;
+    after: number;
+    threshold: number;
+  }
+): Promise<void> {
+  await conn.execute<ResultSetHeader>(
+    `INSERT INTO card_events
+       (merchant_id, card_id, staff_user_id, event_type, delta_json, amount_cents, note)
+     VALUES (?, ?, ?, 'manual_adjust', ?, NULL, ?)`,
+    [
+      e.merchantId,
+      e.cardId,
+      e.actor.userId,
+      JSON.stringify({
+        unit: e.unit,
+        delta: e.delta,
+        balance_before: e.before,
+        balance_after: e.after,
+        threshold: e.threshold,
+        reason: e.reason,
+        by: e.actor.email,
+      }),
+      // Shown verbatim on the café's own dashboard. Their customer may well
+      // ask them about it, so the café needs the reason, not a reference.
+      `${e.delta > 0 ? "+" : ""}${e.delta} ${e.unit} by OnUsClub support: ${e.reason}`,
+    ]
+  );
+
+  await writeAuditLog(conn, {
+    actor: e.actor,
+    action: "card.adjust",
+    merchantId: e.merchantId,
+    targetType: "card",
+    targetId: e.cardId,
+    reason: e.reason,
+    before: { unit: e.unit, balance: e.before },
+    after: { unit: e.unit, balance: e.after, delta: e.delta },
+  });
 }
 
 export type ScanLookup =

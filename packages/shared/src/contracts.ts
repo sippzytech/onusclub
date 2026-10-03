@@ -1226,6 +1226,30 @@ export const AdminCardView = z.object({
 });
 export type AdminCardView = z.infer<typeof AdminCardView>;
 
+/**
+ * Body for POST /v1/admin/cards/:id/adjust.
+ *
+ * A DELTA, not a target. "Set this to 7" invites a lost update: the operator
+ * reads 5 on a page rendered a minute ago, the café stamps twice, and "set to
+ * 7" silently discards those two stamps. A delta composes with whatever else
+ * happened in between.
+ *
+ * `reason` has no default and is not optional — see AdminReason.
+ */
+export const AdminAdjustInput = z.object({
+  delta: z.number().int().refine((n) => n !== 0, "delta cannot be zero"),
+  reason: AdminReason,
+});
+export type AdminAdjustInput = z.infer<typeof AdminAdjustInput>;
+
+export const AdminAdjustResult = z.object({
+  unit: z.enum(["stamps", "points"]),
+  before: z.number().int().nonnegative(),
+  after: z.number().int().nonnegative(),
+  detail: CardDetail,
+});
+export type AdminAdjustResult = z.infer<typeof AdminAdjustResult>;
+
 export const AdminPlatformMetrics = z.object({
   merchants: z.object({
     total: z.number().int().nonnegative(),
