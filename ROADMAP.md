@@ -90,10 +90,29 @@ The CTA reads **"Start 14-day free trial"** and links to `#demo` — an anchor t
 that discards. There is no signup link to `app.onusclub.com` anywhere on the site, and no
 trial mechanism in the product.
 
-**4. Resend's daily cap will break broadcasts.**
-Free tier is 3,000/month but **100/day**, and the daily cap binds first. One broadcast to
-150 customers fails halfway. Pro is $20/mo for 50,000. Move before any real broadcast use,
-and make the broadcast runner aware of send limits rather than discovering them mid-run.
+**4. Resend's daily cap.** 🔶 **CORRECTED 2026-10-03 — not an exposure, and not about
+broadcasts. Moved to the first-real-customer checklist alongside item 1.**
+
+The original claim here was wrong: broadcasts do not send email. `dispatch()` calls
+`sendCustomCardMessage` — Google Wallet push, plus Apple APNs — and never touches Resend.
+
+Email volume tracks **signups**, not messaging. The only senders are the enrolment invite
+(one per new customer), the manual resend button, magic-link and password-reset, and the
+lead notification to ourselves. CSV import deliberately sends none.
+
+So the free tier's **100/day** (which binds long before the 3,000/month headline) means
+100 new customer enrolments in a day. The realistic scenario is a café's launch day where
+150 people scan the QR and 50 get a card with no email — and even then it degrades rather
+than breaks: `email/client.ts` logs the failure and returns `{ ok: false }`, the card is
+still created, and the customer is already on the card page where they can add it to their
+wallet.
+
+Pro is $20/mo for 50,000 and needs **no code change**. Buy it when the first real café is
+onboarded, not before.
+
+**The real gap is visibility, not the cap.** A hit limit shows up only as `"email send
+failed"` in the API log — no counter, no alert, nothing in the dashboard. Worth fixing
+before it matters.
 
 ### P1 — next builds
 
