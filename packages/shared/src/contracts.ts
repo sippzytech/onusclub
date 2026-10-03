@@ -1122,6 +1122,110 @@ export const AdminMerchantDetail = z.object({
 });
 export type AdminMerchantDetail = z.infer<typeof AdminMerchantDetail>;
 
+// ---------- Admin: customers and cards ----------
+//
+// The support view. When a café emails "my customer says their stamps
+// disappeared", this is where that gets answered: find the person by name,
+// email or phone across every café, and read the whole timeline.
+
+/** One row in the cross-merchant customer search. */
+export const AdminCustomerHit = z.object({
+  id: z.string(),
+  merchantId: z.string(),
+  merchantName: z.string(),
+  name: z.string().nullable(),
+  email: z.string().nullable(),
+  phone: z.string().nullable(),
+  createdAt: z.string(),
+  cards: z.number().int().nonnegative(),
+  visits: z.number().int().nonnegative(),
+  lastVisitAt: z.string().nullable(),
+});
+export type AdminCustomerHit = z.infer<typeof AdminCustomerHit>;
+
+export const AdminCustomerSearch = z.object({
+  query: z.string(),
+  /** Capped; `truncated` says so rather than silently showing the first N. */
+  customers: z.array(AdminCustomerHit),
+  truncated: z.boolean(),
+});
+export type AdminCustomerSearch = z.infer<typeof AdminCustomerSearch>;
+
+export const AdminCustomerCard = z.object({
+  id: z.string(),
+  programId: z.string(),
+  programName: z.string(),
+  programType: z.string(),
+  rewardText: z.string(),
+  status: z.string(),
+  /** Rendered as text by the api, which knows the program type. */
+  balanceLabel: z.string(),
+  qrToken: z.string(),
+  hasGooglePass: z.boolean(),
+  appleRegistrations: z.number().int().nonnegative(),
+  createdAt: z.string(),
+  lastEventAt: z.string().nullable(),
+});
+export type AdminCustomerCard = z.infer<typeof AdminCustomerCard>;
+
+export const AdminCustomerDetail = z.object({
+  customer: AdminCustomerHit,
+  cards: z.array(AdminCustomerCard),
+  /** Every event across all of this customer's cards, newest first. */
+  events: z.array(
+    z.object({
+      id: z.number().int(),
+      cardId: z.string(),
+      programName: z.string(),
+      eventType: z.string(),
+      amountCents: z.number().int().nullable(),
+      note: z.string().nullable(),
+      /** Who did it, when we know. Set for staff scans and for our own adjustments. */
+      actorEmail: z.string().nullable(),
+      createdAt: z.string(),
+    })
+  ),
+  /**
+   * The same person at other cafés, matched on email or phone.
+   *
+   * A hint, not an identity merge: `customers` is per-merchant by design and
+   * joining them would mean one café's correction could alter another's
+   * records. Shown because "this person is also a regular at Café B" is
+   * genuinely useful context when answering a support question.
+   */
+  alsoMemberAt: z.array(
+    z.object({ merchantId: z.string(), merchantName: z.string(), customerId: z.string() })
+  ),
+});
+export type AdminCustomerDetail = z.infer<typeof AdminCustomerDetail>;
+
+export const AdminCardView = z.object({
+  merchantId: z.string(),
+  merchantName: z.string(),
+  customerId: z.string(),
+  detail: CardDetail,
+  /**
+   * ⚠️ The authoritative points balance, summed from `points_batches`. Null
+   * for stamp cards.
+   *
+   * `detail.card.cardState.points_current` is a *cache* of this sum, written
+   * back on each transaction. Showing that column as the balance here would
+   * mean displaying a drifted value as fact — on the one screen used to answer
+   * "my customer says their points are wrong". So the ledger is returned
+   * separately and the UI renders it instead.
+   */
+  pointsBalance: z.number().int().nonnegative().nullable(),
+  /**
+   * True when the cached column disagrees with the ledger.
+   *
+   * Surfaced rather than silently corrected: a drift means something wrote
+   * `card_state` without going through the batch ledger, and the admin card
+   * view is the right place to find out.
+   */
+  pointsCacheStale: z.boolean(),
+});
+export type AdminCardView = z.infer<typeof AdminCardView>;
+
 export const AdminPlatformMetrics = z.object({
   merchants: z.object({
     total: z.number().int().nonnegative(),

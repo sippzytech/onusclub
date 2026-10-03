@@ -285,6 +285,212 @@ async function main(): Promise<void> {
       "an unknown merchant id should 404"
     );
 
+    // ---------- customers and timelines ----------
+    //
+    // Stand up a customer with a stamped card so the timeline, balance label
+    // and wallet-adoption readout all have something real to report.
+
+    console.log("→ setting up a customer with a stamped card");
+    const program = await call<{ id: string }>(
+      "POST",
+      "/v1/programs",
+      { name: "Admin smoke card", stampsRequired: 8, rewardText: "Free smoke" },
+      adminJwt
+    );
+    const customerEmail = `smoke-cust-${stamp}@example.com`;
+    const customer = await call<{ id: string }>(
+      "POST",
+      "/v1/customers",
+      { name: "Timeline Tester", email: customerEmail },
+      adminJwt
+    );
+    const card = await call<{ id: string }>(
+      "POST",
+      "/v1/cards",
+      { customerId: customer.id, programId: program.id },
+      adminJwt
+    );
+    await call("POST", `/v1/cards/${card.id}/stamp`, { amount: 4.5 }, adminJwt);
+
+    console.log("→ an empty customer search is refused rather than returning everyone");
+    const empty = await call<{ customers: unknown[] }>(
+      "GET",
+      "/v1/admin/customers?q=",
+      undefined,
+      adminJwt
+    );
+    assert(
+      empty.customers.length === 0,
+      "an empty query must not select the entire customer table"
+    );
+    const tooShort = await call<{ customers: unknown[] }>(
+      "GET",
+      "/v1/admin/customers?q=a",
+      undefined,
+      adminJwt
+    );
+    assert(tooShort.customers.length === 0, "a one-character query should return nothing");
+
+    console.log("→ search finds the customer by email, across tenants");
+    const hits = await call<{
+      customers: Array<{ id: string; merchantName: string; visits: number; cards: number }>;
+      truncated: boolean;
+    }>("GET", `/v1/admin/customers?q=${encodeURIComponent(customerEmail)}`, undefined, adminJwt);
+    assert(hits.customers.length === 1, `expected one hit, got ${hits.customers.length}`);
+    assert(hits.customers[0].id === customer.id, "search returned the wrong customer");
+    assert(
+      hits.customers[0].cards === 1 && hits.customers[0].visits === 1,
+      `expected 1 card and 1 visit, got ${hits.customers[0].cards}/${hits.customers[0].visits}`
+    );
+    assert(hits.truncated === false, "one result should not be reported as truncated");
+
+    console.log("→ the customer detail carries the balance, the card and the timeline");
+    const cdetail = await call<{
+      customer: { id: string; visits: number };
+      cards: Array<{
+        id: string;
+        balanceLabel: string;
+        hasGooglePass: boolean;
+        appleRegistrations: number;
+      }>;
+      events: Array<{ eventType: string; amountCents: number | null }>;
+      alsoMemberAt: unknown[];
+    }>("GET", `/v1/admin/customers/${customer.id}`, undefined, adminJwt);
+    assert(cdetail.customer.id === customer.id, "detail returned the wrong customer");
+    assert(cdetail.cards.length === 1, "expected exactly one card");
+    assert(
+      cdetail.cards[0].balanceLabel === "1 of 8 stamps",
+      `balance label wrong: ${cdetail.cards[0].balanceLabel}`
+    );
+    // Both the signup event and the stamp, so the timeline spans enrolment as
+    // well as activity.
+    assert(
+      cdetail.events.some((e) => e.eventType === "stamp" && e.amountCents === 450),
+      `the stamp and its €4.50 should appear in the timeline: ${JSON.stringify(cdetail.events)}`
+    );
+
+    console.log("→ the card view resolves without the caller knowing the tenant");
+    const cardView = await call<{
+      merchantId: string;
+      customerId: string;
+      pointsBalance: number | null;
+      pointsCacheStale: boolean;
+      detail: { card: { id: string; programType: string }; events: unknown[] };
+    }>("GET", `/v1/admin/cards/${card.id}`, undefined, adminJwt);
+    assert(
+      cardView.pointsBalance === null,
+      "a stamp card has no points ledger, so pointsBalance must be null"
+    );
+    assert(
+      cardView.pointsCacheStale === false,
+      "a stamp card can never have a stale points cache"
+    );
+    assert(
+      cardView.merchantId === signup.merchant.id,
+      "the card view resolved the wrong owning merchant"
+    );
+    assert(cardView.customerId === customer.id, "the card view resolved the wrong customer");
+    assert(cardView.detail.card.id === card.id, "the card view returned the wrong card");
+    assert(cardView.detail.events.length >= 1, "the card should have at least the stamp event");
+    assert(
+      (await statusOf("GET", "/v1/admin/cards/00000000-0000-0000-0000-000000000000", adminJwt)) ===
+        404,
+      "an unknown card id should 404"
+    );
+    assert(
+      (await statusOf(
+        "GET",
+        "/v1/admin/customers/00000000-0000-0000-0000-000000000000",
+        adminJwt
+      )) === 404,
+      "an unknown customer id should 404"
+    );
+
+    // ⚠️ The batch-ledger trap, on the read side.
+    //
+    // `card_state.points_current` is a cache of SUM(points_batches). The admin
+    // card view must report the ledger, because this is the screen used to
+    // answer "my customer says their points are wrong" — showing a drifted
+    // cache there would make us confidently repeat the bug.
+    //
+    // Proven by corrupting the cache directly and checking the view ignores it.
+    console.log("→ points balances come from the ledger, not the cached column");
+    const pointsProgram = await call<{ id: string }>(
+      "POST",
+      "/v1/programs",
+      {
+        name: "Admin smoke points",
+        programType: "points",
+        pointsForReward: 100,
+        pointsPerEuro: 2,
+        rewardText: "Free points drink",
+      },
+      adminJwt
+    );
+    const pointsCustomer = await call<{ id: string }>(
+      "POST",
+      "/v1/customers",
+      { name: "Points Tester", email: `smoke-pts-${stamp}@example.com` },
+      adminJwt
+    );
+    const pointsCard = await call<{ id: string }>(
+      "POST",
+      "/v1/cards",
+      { customerId: pointsCustomer.id, programId: pointsProgram.id },
+      adminJwt
+    );
+    await call("POST", `/v1/cards/${pointsCard.id}/add-points`, { amount: 12.5 }, adminJwt);
+
+    const beforeCorruption = await call<{ pointsBalance: number; pointsCacheStale: boolean }>(
+      "GET",
+      `/v1/admin/cards/${pointsCard.id}`,
+      undefined,
+      adminJwt
+    );
+    assert(
+      beforeCorruption.pointsBalance === 25,
+      `12.50 at 2 points/euro should be 25 points, got ${beforeCorruption.pointsBalance}`
+    );
+    assert(
+      beforeCorruption.pointsCacheStale === false,
+      "the cache should agree with the ledger immediately after a real transaction"
+    );
+
+    await db.execute(
+      "UPDATE loyalty_cards SET card_state = JSON_SET(card_state, '$.points_current', 999) WHERE id = ?",
+      [pointsCard.id]
+    );
+
+    const afterCorruption = await call<{
+      pointsBalance: number;
+      pointsCacheStale: boolean;
+      detail: { card: { cardState: { points_current: number } } };
+    }>("GET", `/v1/admin/cards/${pointsCard.id}`, undefined, adminJwt);
+    assert(
+      afterCorruption.pointsBalance === 25,
+      `the ledger still totals 25 — the view must not read the cache, got ${afterCorruption.pointsBalance}`
+    );
+    assert(
+      afterCorruption.detail.card.cardState.points_current === 999,
+      "the corrupted cache should still be reported, so a drift is visible rather than hidden"
+    );
+    assert(
+      afterCorruption.pointsCacheStale === true,
+      "a disagreement between cache and ledger must be flagged"
+    );
+
+    console.log("→ the points balance label on the customer view uses the ledger too");
+    const pointsDetail = await call<{ cards: Array<{ balanceLabel: string }> }>(
+      "GET",
+      `/v1/admin/customers/${pointsCustomer.id}`,
+      undefined,
+      adminJwt
+    );
+    assert(
+      pointsDetail.cards[0].balanceLabel === "25 of 100 points",
+      `balance label should read the ledger, got "${pointsDetail.cards[0].balanceLabel}"`
+    );
+
     // ⚠️ The property the entire design exists for. Platform admin is a
     // database row rather than a JWT role so that revocation is immediate;
     // if this assertion ever fails, the check has been moved into the token

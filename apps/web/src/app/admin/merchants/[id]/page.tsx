@@ -10,6 +10,7 @@ import { apiFetch, ApiCallError } from "@/lib/api";
 import { requireAdminSession } from "@/lib/admin-session";
 import { AdminShell } from "../../admin-shell";
 import { FLAG_COPY, HealthBadge } from "../../health-badge";
+import { EVENT_LABEL } from "../../event-label";
 
 export const dynamic = "force-dynamic";
 
@@ -20,20 +21,6 @@ const SEGMENT_LABEL: Record<RfmSegment, string> = {
   at_risk: "At risk",
   sleeping: "Sleeping",
   lost: "Lost",
-};
-
-const EVENT_LABEL: Record<string, string> = {
-  stamp: "Stamp",
-  redeem: "Reward redeemed",
-  points_add: "Points added",
-  review_reward: "Review reward",
-  signup: "Joined",
-  expire: "Card expired",
-  reset: "Card reset",
-  // The operator-side label. The café sees its own wording for this on their
-  // dashboard — "Adjusted by OnUsClub" — so they always know when we touched
-  // their data.
-  manual_adjust: "Adjusted by us",
 };
 
 function Row({
@@ -90,6 +77,14 @@ export default async function AdminMerchantDetailPage({
         </>
       }
       title={m.businessName}
+      actions={
+        <Link
+          href={`/admin/customers?merchantId=${m.id}`}
+          className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 hover:border-slate-500 transition-colors"
+        >
+          Browse customers
+        </Link>
+      }
     >
       <div className="flex flex-wrap items-center gap-2 mb-4">
         <HealthBadge flag={flag} />
@@ -309,7 +304,9 @@ export default async function AdminMerchantDetailPage({
                 <span className="text-slate-900">
                   {EVENT_LABEL[e.eventType] ?? e.eventType}
                 </span>
-                <span className="text-slate-600">{e.customerName ?? "Unnamed customer"}</span>
+                <Link href={`/admin/cards/${e.cardId}`} className="text-slate-600 hover:underline">
+                  {e.customerName ?? "Unnamed customer"}
+                </Link>
                 <span className="text-[11px] text-slate-400">{e.programName}</span>
                 {e.note ? <span className="text-[11px] text-slate-500">{e.note}</span> : null}
                 <span className="ml-auto text-slate-500 tabular-nums whitespace-nowrap">

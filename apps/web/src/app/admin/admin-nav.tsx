@@ -15,6 +15,7 @@ interface Tab {
 const TABS: Tab[] = [
   { href: "/admin", label: "Overview" },
   { href: "/admin/merchants", label: "Cafés" },
+  { href: "/admin/customers", label: "Find a customer" },
 ];
 
 export function AdminNav(): JSX.Element {

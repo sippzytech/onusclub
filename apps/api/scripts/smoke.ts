@@ -1767,6 +1767,14 @@ async function main(): Promise<void> {
     // regression that let the handler run would leak something real and fail
     // loudly rather than 404 for the wrong reason.
     ["GET", `/v1/admin/merchants/${otherSignup.merchant.id}`],
+    ["GET", "/v1/admin/customers?q=rival"],
+    [
+      "GET",
+      // Same reasoning as the merchant id above: a real id belonging to
+      // someone else, so a regression leaks something and fails loudly.
+      `/v1/admin/customers/${otherCustomer.id}`,
+    ],
+    ["GET", `/v1/admin/cards/${otherCard.id}`],
     // As the admin surface grows, every new route gets a line here.
   ];
 
