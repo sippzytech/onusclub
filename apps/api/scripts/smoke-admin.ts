@@ -244,9 +244,17 @@ async function main(): Promise<void> {
       metrics.health.reduce((a, h) => a + h.merchants, 0) === metrics.merchants.total,
       "each café must be counted under exactly one health flag"
     );
+    // MRR is asserted as a DELTA later, not as an absolute. This suite runs
+    // against whatever database it is pointed at — in CI that is empty, but
+    // locally it is a dev database with other cafés in it, some of which may
+    // well have a fee recorded. "Platform MRR is 0" was the first version of
+    // this and it failed for exactly that reason: a global claim about data
+    // the test does not own.
+    const baselineMrrCents = metrics.revenue.mrrCents;
+    const baselineFeeSet = metrics.revenue.feeSet;
     assert(
-      metrics.revenue.mrrCents === 0 && metrics.revenue.feeSet === 0,
-      "no fee has been recorded for anyone yet, so MRR must be exactly 0"
+      metrics.revenue.feeSet + metrics.revenue.feeUnset <= metrics.merchants.total,
+      "every café is either fee-set or fee-unset, and suspended ones count as neither"
     );
     assert(
       metrics.revenue.feeUnset > 0,
@@ -773,14 +781,23 @@ async function main(): Promise<void> {
     assert(pj(patchAudit[0].after_json).monthlyFeeCents === 2900, "audit after fee wrong");
 
     console.log("→ MRR now counts this café, and stops counting it when suspended");
+    // Deltas against the baseline captured earlier, not absolutes: other cafés
+    // in the database may already have fees recorded, and this suite does not
+    // own them.
     const withMrr = await call<{ revenue: { mrrCents: number; feeSet: number } }>(
       "GET",
       "/v1/admin/metrics",
       undefined,
       adminJwt
     );
-    assert(withMrr.revenue.mrrCents === 2900, `MRR should be 2900, got ${withMrr.revenue.mrrCents}`);
-    assert(withMrr.revenue.feeSet === 1, "exactly one café should have a fee recorded");
+    assert(
+      withMrr.revenue.mrrCents - baselineMrrCents === 2900,
+      `MRR should have risen by exactly 2900, went ${baselineMrrCents} → ${withMrr.revenue.mrrCents}`
+    );
+    assert(
+      withMrr.revenue.feeSet - baselineFeeSet === 1,
+      "exactly one more café should now have a fee recorded"
+    );
 
     await call(
       "PATCH",
@@ -797,8 +814,9 @@ async function main(): Promise<void> {
     // Whatever a suspended café agreed to pay, they are not being served and
     // must not be counted as revenue.
     assert(
-      suspendedMrr.revenue.mrrCents === 0,
-      `a suspended café must not count toward MRR, got ${suspendedMrr.revenue.mrrCents}`
+      suspendedMrr.revenue.mrrCents === baselineMrrCents,
+      `suspending must remove this café's 2900 from MRR, leaving the baseline ` +
+        `${baselineMrrCents} — got ${suspendedMrr.revenue.mrrCents}`
     );
     await call(
       "PATCH",
