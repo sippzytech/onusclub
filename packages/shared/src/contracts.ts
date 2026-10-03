@@ -101,7 +101,9 @@ export const TrialStatus = z.object({
   // either pre-dating trials or deliberately taken off one.
   endsAt: z.string().nullable(),
   // Whole days remaining, floored, never negative. Null when there is no
-  // clock. 0 means the trial ends today, not that it has ended.
+  // clock. 0 means the last day — under 24 hours left but not yet past the
+  // expiry — which reads as "ends today" rather than "has ended". Flooring is
+  // what makes that state reachable at all; with ceil it never occurs.
   daysLeft: z.number().int().nonnegative().nullable(),
   expired: z.boolean(),
 });
@@ -712,3 +714,41 @@ export type LeadInput = z.infer<typeof LeadInput>;
 
 export const LeadResult = z.object({ ok: z.boolean() });
 export type LeadResult = z.infer<typeof LeadResult>;
+
+// ---------- Customer CSV import / export (Day 19) ----------
+
+export const CustomerImportInput = z.object({
+  // Raw CSV text. The browser reads the file and posts its contents, which
+  // avoids multipart handling in an api that has none.
+  csv: z.string().min(1).max(2_000_000),
+  // Preview without writing. A café importing its only customer list should
+  // be able to see what will happen before it happens.
+  dryRun: z.boolean().optional().default(false),
+  // Optionally enrol every imported customer on this program. Deliberately
+  // does NOT send invite emails: importing 200 customers would hit Resend's
+  // 100/day cap and silently deliver half.
+  programId: z.string().uuid().optional(),
+});
+export type CustomerImportInput = z.infer<typeof CustomerImportInput>;
+
+export const CustomerImportRowError = z.object({
+  // 1-based, counting the header as line 1, so it matches what the merchant
+  // sees in their spreadsheet.
+  line: z.number().int().positive(),
+  reason: z.string(),
+});
+export type CustomerImportRowError = z.infer<typeof CustomerImportRowError>;
+
+export const CustomerImportResult = z.object({
+  dryRun: z.boolean(),
+  // Which separator was detected — worth surfacing, since a misdetection is
+  // the most likely cause of a file that "imports" as one giant column.
+  delimiter: z.string(),
+  totalRows: z.number().int().nonnegative(),
+  created: z.number().int().nonnegative(),
+  enrolled: z.number().int().nonnegative(),
+  // Matched an existing customer by email or phone and were left alone.
+  duplicates: z.number().int().nonnegative(),
+  skipped: z.array(CustomerImportRowError),
+});
+export type CustomerImportResult = z.infer<typeof CustomerImportResult>;

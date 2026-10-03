@@ -4,12 +4,18 @@ import { requireSession } from "@/lib/session";
 import { DashboardShell } from "../dashboard-shell";
 import { AddCustomerForm } from "./add-customer-form";
 import { CustomersList } from "./customers-list";
+import { CustomerImportExport } from "./import-export";
 
 export const dynamic = "force-dynamic";
 
 export default async function CustomersPage(): Promise<JSX.Element> {
   const { jwt, user, merchant, preferences, trial } = await requireSession();
   const { customers } = await apiFetch<{ customers: Customer[] }>("/v1/customers", { jwt });
+  // Offered as an optional "give everyone a card" step on import.
+  const { programs } = await apiFetch<{ programs: Array<{ id: string; name: string }> }>(
+    "/v1/programs",
+    { jwt }
+  );
 
   return (
     <DashboardShell
@@ -36,6 +42,10 @@ export default async function CustomersPage(): Promise<JSX.Element> {
             <AddCustomerForm />
           </div>
         </section>
+      </div>
+
+      <div className="mt-4">
+        <CustomerImportExport programs={programs} />
       </div>
     </DashboardShell>
   );

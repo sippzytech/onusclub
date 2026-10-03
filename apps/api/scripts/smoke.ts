@@ -1586,6 +1586,129 @@ async function main(): Promise<void> {
   }
   assert(adetUnauth, "/v1/analytics/detail did not require auth");
 
+  // ---------- Day 19: customer CSV import / export ----------
+
+  interface ImportResult {
+    dryRun: boolean;
+    delimiter: string;
+    totalRows: number;
+    created: number;
+    enrolled: number;
+    duplicates: number;
+    skipped: Array<{ line: number; reason: string }>;
+  }
+
+  // Shaped like a real Dutch Excel export: semicolons, BOM, CRLF, Dutch
+  // headers, a quoted comma, a day-first date, a row with no contact details
+  // and a case-different duplicate.
+  const impEmail = `imp-${Date.now()}`;
+  const dutchCsv =
+    "\ufeffNaam;E-mail;Telefoon;Geboortedatum\r\n" +
+    `"Vries, Jan de";${impEmail}-a@example.com;+31 6 1111 1111;03/04/1990\r\n` +
+    `Sanne Bakker;${impEmail}-b@example.com;+31622222222;1985-11-23\r\n` +
+    "Geen Contact;;;\r\n" +
+    `Hoofdletters;${impEmail.toUpperCase()}-A@EXAMPLE.COM;;01/01/1991\r\n`;
+
+  console.log("→ import dry-run sniffs a semicolon file and writes nothing");
+  const impDry = await call<ImportResult>(
+    "POST",
+    "/v1/customers/import",
+    { csv: dutchCsv, dryRun: true },
+    jwt
+  );
+  assert(impDry.delimiter === ";", `expected semicolon delimiter, got ${impDry.delimiter}`);
+  assert(impDry.dryRun === true, "dry run should report itself");
+  assert(impDry.created === 2, `dry run should plan 2 creates, got ${impDry.created}`);
+  assert(impDry.duplicates === 1, `case-different email should dedupe, got ${impDry.duplicates}`);
+  assert(
+    impDry.skipped.some((r) => r.reason.includes("email or a phone")),
+    "a row with no contact details should be skipped with a reason"
+  );
+  // Header is line 1, so the contactless third data row is line 4 — matching
+  // what the merchant sees in their spreadsheet.
+  assert(
+    impDry.skipped.some((r) => r.line === 4),
+    `skipped line numbers should match the file, got ${JSON.stringify(impDry.skipped)}`
+  );
+
+  console.log("→ dry-run really did not write");
+  const afterDry = await call<{ customers: Array<{ email: string | null }> }>(
+    "GET",
+    "/v1/customers",
+    undefined,
+    jwt
+  );
+  assert(
+    !afterDry.customers.some((c) => (c.email ?? "").startsWith(impEmail)),
+    "dry run must not create customers"
+  );
+
+  console.log("→ real import creates customers and enrols them");
+  const impReal = await call<ImportResult>(
+    "POST",
+    "/v1/customers/import",
+    { csv: dutchCsv, programId: program.id },
+    jwt
+  );
+  assert(impReal.created === 2, `expected 2 created, got ${impReal.created}`);
+  assert(impReal.enrolled === 2, `expected 2 enrolled, got ${impReal.enrolled}`);
+
+  console.log("→ re-importing the same file is idempotent");
+  const impAgain = await call<ImportResult>(
+    "POST",
+    "/v1/customers/import",
+    { csv: dutchCsv },
+    jwt
+  );
+  assert(impAgain.created === 0, `re-import should create nothing, got ${impAgain.created}`);
+  assert(impAgain.duplicates === 3, `re-import should see 3 duplicates, got ${impAgain.duplicates}`);
+
+  console.log("→ importing onto someone else's program should 400");
+  let badProgram = false;
+  try {
+    await call(
+      "POST",
+      "/v1/customers/import",
+      { csv: dutchCsv, programId: "00000000-0000-4000-8000-000000000000" },
+      jwt
+    );
+  } catch (err) {
+    badProgram = String(err).includes("400");
+  }
+  assert(badProgram, "import with an unknown program did not 400");
+
+  console.log("→ export returns a downloadable CSV the importer can read back");
+  const expRes = await fetch(`${BASE}/v1/customers/export.csv`, {
+    headers: { authorization: `Bearer ${jwt}` },
+  });
+  assert(expRes.status === 200, `export should 200, got ${expRes.status}`);
+  assert(
+    (expRes.headers.get("content-type") ?? "").includes("text/csv"),
+    "export should be text/csv"
+  );
+  assert(
+    (expRes.headers.get("content-disposition") ?? "").includes("attachment"),
+    "export should download rather than render"
+  );
+  // Read bytes, not text: Response.text() decodes UTF-8 and strips a leading
+  // BOM per spec, so the BOM is invisible from the string side even though it
+  // is on the wire. Excel needs those three bytes or accented names arrive
+  // mangled.
+  const expBuf = Buffer.from(await expRes.arrayBuffer());
+  assert(
+    expBuf[0] === 0xef && expBuf[1] === 0xbb && expBuf[2] === 0xbf,
+    `export should start with a UTF-8 BOM, got ${[...expBuf.subarray(0, 3)].join(",")}`
+  );
+  const expText = expBuf.toString("utf8");
+  assert(
+    expText.includes('"Vries, Jan de"'),
+    "export should quote a value containing a comma"
+  );
+
+  console.log("→ export requires auth");
+  const expUnauth = await fetch(`${BASE}/v1/customers/export.csv`);
+  assert(expUnauth.status === 401, `export without auth should 401, got ${expUnauth.status}`);
+
   // ---------- Day 19: trial period ----------
 
   console.log("→ a new merchant starts on a trial clock");

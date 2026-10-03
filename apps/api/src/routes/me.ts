@@ -37,16 +37,17 @@ interface MerchantRow extends RowDataPacket {
  * Derive trial state from the stored expiry. Nothing about "how long is left"
  * is persisted, so it cannot drift out of step with the date it came from.
  *
- * daysLeft is ceil-based: with 18 hours remaining a merchant should read
- * "1 day left", not "0". It reaches 0 only on the final day, and the account is
- * expired once the timestamp is actually in the past.
+ * daysLeft floors, so the final day reads 0 and the banner can say "ends
+ * today" rather than overstating it as "1 day left". Ceil would never produce
+ * 0 for a live trial, leaving that state unreachable. Expired is strictly
+ * "the timestamp is in the past".
  */
 export function deriveTrial(endsAt: Date | null): TrialStatus {
   if (!endsAt) return { endsAt: null, daysLeft: null, expired: false };
   const ms = endsAt.getTime() - Date.now();
   return {
     endsAt: endsAt.toISOString(),
-    daysLeft: Math.max(0, Math.ceil(ms / 86_400_000)),
+    daysLeft: Math.max(0, Math.floor(ms / 86_400_000)),
     expired: ms <= 0,
   };
 }

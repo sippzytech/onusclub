@@ -27,6 +27,12 @@ import { startMessagingCrons } from "./messaging/cron.js";
 const app = express();
 
 app.use(pinoHttp({ logger }));
+// CSV import posts the whole file as a JSON string, and express.json defaults
+// to a 100 kb limit — about 1,500 customer rows. A café migrating from another
+// system can easily exceed that, and the failure is an opaque 413. Mounted
+// before the global parser; body-parser marks the request as parsed, so the
+// general one below skips it rather than parsing twice.
+app.use("/v1/customers/import", express.json({ limit: "5mb" }));
 app.use(express.json());
 
 app.get("/health", (_req: Request, res: Response<HealthResponse>) => {
