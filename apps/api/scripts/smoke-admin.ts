@@ -725,6 +725,244 @@ async function main(): Promise<void> {
       "adjusting an unknown card should 404"
     );
 
+    // ---------- merchant controls ----------
+
+    console.log("→ account changes apply, and record what actually changed");
+    const patched = await call<{
+      status: string;
+      isPremium: boolean;
+      cronsEnabled: boolean;
+      monthlyFeeCents: number | null;
+      businessName: string;
+      trial: { endsAt: string | null; expired: boolean };
+    }>(
+      "PATCH",
+      `/v1/admin/merchants/${signup.merchant.id}`,
+      {
+        status: "active",
+        isPremium: true,
+        cronsEnabled: false,
+        monthlyFeeCents: 2900,
+        reason: "smoke test: converted from trial",
+      },
+      adminJwt
+    );
+    assert(patched.status === "active", `status not applied: ${patched.status}`);
+    assert(patched.isPremium === true, "isPremium not applied");
+    assert(patched.cronsEnabled === false, "cronsEnabled not applied");
+    assert(patched.monthlyFeeCents === 2900, `fee not applied: ${patched.monthlyFeeCents}`);
+
+    const [patchAudit] = await db.query<
+      Array<{ action: string; reason: string; before_json: unknown; after_json: unknown }>
+    >(
+      `SELECT action, reason, before_json, after_json FROM admin_audit_log
+        WHERE merchant_id = ? AND action = 'merchant.update' ORDER BY id DESC LIMIT 1`,
+      [signup.merchant.id]
+    );
+    assert(patchAudit.length === 1, "no merchant.update audit row");
+    const pj = (v: unknown): Record<string, unknown> =>
+      typeof v === "string" ? JSON.parse(v) : (v as Record<string, unknown>);
+    // The snapshot is read back from the database after the write, not echoed
+    // from the request — so it records what was actually stored.
+    assert(pj(patchAudit[0].before_json).status === "trial", "audit before.status wrong");
+    assert(pj(patchAudit[0].after_json).status === "active", "audit after.status wrong");
+    assert(
+      pj(patchAudit[0].before_json).monthlyFeeCents === null,
+      "audit before.monthlyFeeCents should be null, not 0"
+    );
+    assert(pj(patchAudit[0].after_json).monthlyFeeCents === 2900, "audit after fee wrong");
+
+    console.log("→ MRR now counts this café, and stops counting it when suspended");
+    const withMrr = await call<{ revenue: { mrrCents: number; feeSet: number } }>(
+      "GET",
+      "/v1/admin/metrics",
+      undefined,
+      adminJwt
+    );
+    assert(withMrr.revenue.mrrCents === 2900, `MRR should be 2900, got ${withMrr.revenue.mrrCents}`);
+    assert(withMrr.revenue.feeSet === 1, "exactly one café should have a fee recorded");
+
+    await call(
+      "PATCH",
+      `/v1/admin/merchants/${signup.merchant.id}`,
+      { status: "suspended", reason: "smoke test: checking MRR excludes suspended" },
+      adminJwt
+    );
+    const suspendedMrr = await call<{ revenue: { mrrCents: number } }>(
+      "GET",
+      "/v1/admin/metrics",
+      undefined,
+      adminJwt
+    );
+    // Whatever a suspended café agreed to pay, they are not being served and
+    // must not be counted as revenue.
+    assert(
+      suspendedMrr.revenue.mrrCents === 0,
+      `a suspended café must not count toward MRR, got ${suspendedMrr.revenue.mrrCents}`
+    );
+    await call(
+      "PATCH",
+      `/v1/admin/merchants/${signup.merchant.id}`,
+      { status: "active", reason: "smoke test: restoring" },
+      adminJwt
+    );
+
+    console.log("→ clearing the fee means 'not recorded', not zero");
+    const cleared = await call<{ monthlyFeeCents: number | null }>(
+      "PATCH",
+      `/v1/admin/merchants/${signup.merchant.id}`,
+      { monthlyFeeCents: null, reason: "smoke test: fee not agreed yet" },
+      adminJwt
+    );
+    assert(
+      cleared.monthlyFeeCents === null,
+      `clearing the fee must give null, not 0 — got ${cleared.monthlyFeeCents}`
+    );
+
+    {
+      // Trial dates round-trip, and clearing takes the café off the clock.
+      console.log("→ the trial date can be set and cleared");
+      const extended = await call<{ trial: { endsAt: string | null; expired: boolean } }>(
+        "PATCH",
+        `/v1/admin/merchants/${signup.merchant.id}`,
+        { trialEndsAt: "2030-01-15T12:00:00.000Z", reason: "smoke test: extending" },
+        adminJwt
+      );
+      assert(
+        extended.trial.endsAt?.startsWith("2030-01-15") === true,
+        `trial date not applied: ${extended.trial.endsAt}`
+      );
+      assert(extended.trial.expired === false, "a 2030 trial is not expired");
+
+      const unclocked = await call<{ trial: { endsAt: string | null } }>(
+        "PATCH",
+        `/v1/admin/merchants/${signup.merchant.id}`,
+        { trialEndsAt: null, reason: "smoke test: unlimited account" },
+        adminJwt
+      );
+      assert(unclocked.trial.endsAt === null, "clearing the trial date should give null");
+    }
+
+    console.log("→ bad account changes are refused");
+    const patchRefused = async (label: string, body: unknown): Promise<void> => {
+      const status = await statusOf(
+        "PATCH",
+        `/v1/admin/merchants/${signup.merchant.id}`,
+        adminJwt,
+        body
+      );
+      assert(status === 400, `${label} should 400, got ${status === 0 ? "success" : status}`);
+    };
+    await patchRefused("no reason", { status: "active" });
+    await patchRefused("no fields", { reason: "nothing to change here" });
+    await patchRefused("an unknown status", { status: "deleted", reason: "not a real status" });
+    await patchRefused("a negative fee", { monthlyFeeCents: -100, reason: "negative" });
+    // merchants.trial_ends_at is a MySQL TIMESTAMP, so anything past 2038 is
+    // out of range. Bounded in the contract, because without it a mistyped
+    // year reaches the database and returns an opaque 500 instead of telling
+    // the operator which field is wrong.
+    await patchRefused("a date beyond the TIMESTAMP range", {
+      trialEndsAt: "2099-01-15T12:00:00.000Z",
+      reason: "mistyped the year",
+    });
+    assert(
+      (await statusOf(
+        "PATCH",
+        "/v1/admin/merchants/00000000-0000-0000-0000-000000000000",
+        adminJwt,
+        { status: "active", reason: "no such café" }
+      )) === 404,
+      "patching an unknown merchant should 404"
+    );
+
+    console.log("→ there is no delete path for a café");
+    // The cascade from `merchants` reaches customers, cards, events and points
+    // batches and is irreversible; `status = 'suspended'` covers every real
+    // need. If this ever stops 404/405-ing, someone added one.
+    const deleteStatus = await statusOf(
+      "DELETE",
+      `/v1/admin/merchants/${signup.merchant.id}`,
+      adminJwt
+    );
+    assert(
+      deleteStatus === 404 || deleteStatus === 405,
+      `DELETE /merchants/:id must not exist, got ${deleteStatus === 0 ? "success" : deleteStatus}`
+    );
+
+    console.log("→ a password reset issues a usable link to the owner's own address");
+    const reset = await call<{ sentTo: string; devResetLink?: string }>(
+      "POST",
+      `/v1/admin/merchants/${signup.merchant.id}/password-reset`,
+      { reason: "smoke test: owner locked out" },
+      adminJwt
+    );
+    assert(reset.sentTo === adminEmail, `reset went to the wrong address: ${reset.sentTo}`);
+    assert(
+      reset.devResetLink?.includes("/auth/reset-password") === true,
+      `the link should land on the reset page, got ${reset.devResetLink}`
+    );
+    // The same self-service flow, not a second way in. We never see or set the
+    // password; the owner chooses it from this link.
+    const resetToken = new URL(reset.devResetLink!).searchParams.get("token");
+    assert(resetToken?.length === 64, `reset token shape wrong: ${resetToken}`);
+    assert(
+      (await statusOf("POST", `/v1/admin/merchants/${signup.merchant.id}/password-reset`, adminJwt, {
+        reason: "no",
+      })) === 400,
+      "a reset with a two-character reason should 400"
+    );
+
+    // ---------- the audit trail ----------
+
+    console.log("→ the audit log reads back every write, newest first");
+    const auditLog = await call<{
+      entries: Array<{
+        action: string;
+        actorEmail: string;
+        merchantId: string | null;
+        merchantName: string | null;
+        reason: string;
+        before: unknown;
+        after: unknown;
+      }>;
+      truncated: boolean;
+    }>("GET", `/v1/admin/audit?merchantId=${signup.merchant.id}`, undefined, adminJwt);
+
+    const actions = new Set(auditLog.entries.map((e) => e.action));
+    assert(actions.has("card.adjust"), "balance adjustments missing from the audit log");
+    assert(actions.has("merchant.update"), "account changes missing from the audit log");
+    assert(
+      actions.has("merchant.password_reset"),
+      "password resets missing from the audit log"
+    );
+    assert(
+      auditLog.entries.every((e) => e.actorEmail === adminEmail),
+      "every entry in this run should be attributed to the admin who made it"
+    );
+    assert(
+      auditLog.entries.every((e) => e.reason.length >= 3),
+      "an audit entry without a stated reason should be impossible"
+    );
+    // Resolved by LEFT JOIN at read time, not stored — a null name means the
+    // café has since been deleted, which is the case most worth recording.
+    assert(
+      auditLog.entries.every((e) => e.merchantName !== null),
+      "the café still exists, so its name should resolve"
+    );
+
+    console.log("→ filtering the audit log by action narrows it");
+    const onlyResets = await call<{ entries: Array<{ action: string }> }>(
+      "GET",
+      "/v1/admin/audit?action=merchant.password_reset",
+      undefined,
+      adminJwt
+    );
+    assert(
+      onlyResets.entries.length > 0 &&
+        onlyResets.entries.every((e) => e.action === "merchant.password_reset"),
+      "the action filter did not narrow the log"
+    );
+
     // ⚠️ The property the entire design exists for. Platform admin is a
     // database row rather than a JWT role so that revocation is immediate;
     // if this assertion ever fails, the check has been moved into the token

@@ -1250,6 +1250,95 @@ export const AdminAdjustResult = z.object({
 });
 export type AdminAdjustResult = z.infer<typeof AdminAdjustResult>;
 
+// ---------- Admin: merchant controls and the audit trail ----------
+
+/**
+ * Body for PATCH /v1/admin/merchants/:id.
+ *
+ * Every field optional, at least one required, and `reason` always. Only the
+ * levers a support conversation actually needs — notably NOT the program
+ * rules or card design (that would change the deal for customers already
+ * holding a card), customer PII (GDPR-shaped, and a different workflow), or
+ * `ownerEmail` (globally unique across two tables — a small feature with a
+ * two-table invariant).
+ */
+export const AdminMerchantPatch = z
+  .object({
+    businessName: z.string().trim().min(1).max(200).optional(),
+    status: z.enum(["active", "suspended", "trial"]).optional(),
+    isPremium: z.boolean().optional(),
+    cronsEnabled: z.boolean().optional(),
+    /**
+     * ISO date, or null to take the merchant off the trial clock entirely.
+     *
+     * Bounded at 2038 because `merchants.trial_ends_at` is a MySQL TIMESTAMP,
+     * whose range ends on 2038-01-19. Without this bound a mistyped year
+     * reaches the database and comes back as an opaque 500 — the operator
+     * deserves to be told it is the date that is wrong. Irrelevant to real
+     * trials; entirely relevant to typos.
+     */
+    trialEndsAt: z
+      .string()
+      .datetime()
+      .refine(
+        (s) => new Date(s).getTime() < Date.UTC(2038, 0, 1),
+        "that date is too far in the future — use something before 2038"
+      )
+      .nullable()
+      .optional(),
+    /** Integer cents, or null for "not recorded" — never 0 to mean unknown. */
+    monthlyFeeCents: z.number().int().nonnegative().max(1_000_000).nullable().optional(),
+    reason: AdminReason,
+  })
+  .refine(
+    (v) =>
+      v.businessName !== undefined ||
+      v.status !== undefined ||
+      v.isPremium !== undefined ||
+      v.cronsEnabled !== undefined ||
+      v.trialEndsAt !== undefined ||
+      v.monthlyFeeCents !== undefined,
+    "nothing to change"
+  );
+export type AdminMerchantPatch = z.infer<typeof AdminMerchantPatch>;
+
+export const AdminPasswordResetInput = z.object({ reason: AdminReason });
+export type AdminPasswordResetInput = z.infer<typeof AdminPasswordResetInput>;
+
+export const AdminPasswordResetResult = z.object({
+  /** Who the link was sent to. */
+  sentTo: z.string().email(),
+  /**
+   * The link itself, returned in development only — the same affordance the
+   * ordinary forgot-password flow has, and for the same reason: Resend is
+   * still in test mode and only delivers to one address.
+   */
+  devResetLink: z.string().optional(),
+});
+export type AdminPasswordResetResult = z.infer<typeof AdminPasswordResetResult>;
+
+export const AdminAuditEntry = z.object({
+  id: z.number().int(),
+  actorEmail: z.string(),
+  action: z.string(),
+  merchantId: z.string().nullable(),
+  /** Resolved at read time; null when the café has since been deleted. */
+  merchantName: z.string().nullable(),
+  targetType: z.string().nullable(),
+  targetId: z.string().nullable(),
+  reason: z.string(),
+  before: z.unknown(),
+  after: z.unknown(),
+  createdAt: z.string(),
+});
+export type AdminAuditEntry = z.infer<typeof AdminAuditEntry>;
+
+export const AdminAuditLog = z.object({
+  entries: z.array(AdminAuditEntry),
+  truncated: z.boolean(),
+});
+export type AdminAuditLog = z.infer<typeof AdminAuditLog>;
+
 export const AdminPlatformMetrics = z.object({
   merchants: z.object({
     total: z.number().int().nonnegative(),

@@ -11,6 +11,7 @@ import { requireAdminSession } from "@/lib/admin-session";
 import { AdminShell } from "../../admin-shell";
 import { FLAG_COPY, HealthBadge } from "../../health-badge";
 import { EVENT_LABEL } from "../../event-label";
+import { MerchantControls } from "./controls";
 
 export const dynamic = "force-dynamic";
 
@@ -291,6 +292,19 @@ export default async function AdminMerchantDetailPage({
             ))}
           </ul>
         )}
+      </section>
+
+      <section className="rounded-xl bg-white border border-slate-200 p-5 mt-4">
+        <div className="flex flex-wrap items-baseline justify-between gap-2 mb-4">
+          <h2 className="text-sm font-medium text-slate-900">Account controls</h2>
+          <Link
+            href={`/admin/audit?merchantId=${m.id}`}
+            className="text-xs text-slate-600 underline"
+          >
+            What we&apos;ve changed here
+          </Link>
+        </div>
+        <MerchantControls merchant={m} />
       </section>
 
       <section className="rounded-xl bg-white border border-slate-200 p-5 mt-4">

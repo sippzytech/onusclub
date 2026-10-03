@@ -12,6 +12,7 @@
 import { Router, type Request, type Response } from "express";
 import type { AdminWhoami } from "@onusclub/shared";
 import { adminContext } from "../../admin/authorize.js";
+import { adminAuditRouter } from "./audit.js";
 import { adminCardsRouter } from "./cards.js";
 import { adminCustomersRouter } from "./customers.js";
 import { adminMerchantsRouter } from "./merchants.js";
@@ -40,3 +41,4 @@ adminRouter.use("/merchants", adminMerchantsRouter);
 adminRouter.use("/metrics", adminMetricsRouter);
 adminRouter.use("/customers", adminCustomersRouter);
 adminRouter.use("/cards", adminCardsRouter);
+adminRouter.use("/audit", adminAuditRouter);

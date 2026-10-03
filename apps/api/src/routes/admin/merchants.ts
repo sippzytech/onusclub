@@ -5,10 +5,13 @@
 // both are deliberate, and both are why the file is in this directory.
 
 import { Router, type Request, type Response } from "express";
-import type { RowDataPacket } from "mysql2";
+import type { ResultSetHeader, RowDataPacket } from "mysql2";
+import type { Pool, PoolConnection } from "mysql2/promise";
 import {
   ADMIN_HEALTH_SEVERITY,
   ADMIN_HEALTH_THRESHOLDS,
+  AdminMerchantPatch,
+  AdminPasswordResetInput,
   DEFAULT_RFM_THRESHOLDS,
   classifyRfm,
   primaryHealthFlag,
@@ -16,12 +19,20 @@ import {
   type AdminMerchantList,
   type AdminMerchantProgram,
   type AdminMerchantStaff,
+  type AdminMerchantSummary,
+  type AdminPasswordResetResult,
   type AdminHealthFlag,
   type RfmSegment,
   type RfmSegmentSummary,
 } from "@onusclub/shared";
 import { pool } from "../../db/pool.js";
 import { ApiError } from "../../errors.js";
+import { env } from "../../config.js";
+import { logger } from "../../logger.js";
+import { adminContext } from "../../admin/authorize.js";
+import { writeAuditLog, writeAuditLogPooled } from "../../admin/audit.js";
+import { issueMagicLink } from "../../auth/magic-link.js";
+import { sendEmail } from "../../email/client.js";
 import { loadMerchantSummaries, SUMMARY_THRESHOLDS } from "../../admin/overview.js";
 import { safeZone, localDayHour } from "../analytics.js";
 
@@ -103,6 +114,204 @@ adminMerchantsRouter.get("/", async (req: Request, res: Response<AdminMerchantLi
 
   return res.json({ thresholds: SUMMARY_THRESHOLDS, merchants });
 });
+
+// ---------------------------------------------------------------------------
+// Writes
+// ---------------------------------------------------------------------------
+
+interface MerchantStateRow extends RowDataPacket {
+  business_name: string;
+  owner_email: string;
+  status: string;
+  is_premium: number;
+  crons_enabled: number;
+  trial_ends_at: Date | null;
+  monthly_fee_cents: number | null;
+}
+
+async function loadMerchantState(
+  exec: Pool | PoolConnection,
+  merchantId: string
+): Promise<MerchantStateRow> {
+  const [rows] = await exec.execute<MerchantStateRow[]>(
+    `SELECT business_name, owner_email, status, is_premium, crons_enabled,
+            trial_ends_at, monthly_fee_cents
+       FROM merchants WHERE id = ? LIMIT 1`,
+    [merchantId]
+  );
+  if (rows.length === 0) throw ApiError.notFound("merchant not found");
+  return rows[0];
+}
+
+function snapshot(row: MerchantStateRow): Record<string, unknown> {
+  return {
+    businessName: row.business_name,
+    status: row.status,
+    isPremium: Boolean(row.is_premium),
+    cronsEnabled: Boolean(row.crons_enabled),
+    trialEndsAt: row.trial_ends_at ? row.trial_ends_at.toISOString() : null,
+    monthlyFeeCents: row.monthly_fee_cents,
+  };
+}
+
+/**
+ * PATCH /v1/admin/merchants/:id
+ *
+ * There is deliberately no DELETE. The cascade from `merchants` reaches
+ * customers, cards, events and points batches, and is irreversible — while
+ * `status = 'suspended'` covers every real need and can be undone.
+ *
+ * Runs in a transaction with the audit row, so the before/after snapshot
+ * cannot disagree with what was actually written, and a change that fails to
+ * audit cannot commit.
+ */
+adminMerchantsRouter.patch("/:id", async (req: Request, res: Response<AdminMerchantSummary>) => {
+  const actor = adminContext(req);
+  const input = AdminMerchantPatch.parse(req.body);
+  const merchantId = req.params.id;
+
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+
+    const before = await loadMerchantState(conn, merchantId);
+
+    const sets: string[] = [];
+    const params: (string | number | boolean | Date | null)[] = [];
+    if (input.businessName !== undefined) {
+      sets.push("business_name = ?");
+      params.push(input.businessName);
+    }
+    if (input.status !== undefined) {
+      sets.push("status = ?");
+      params.push(input.status);
+    }
+    if (input.isPremium !== undefined) {
+      sets.push("is_premium = ?");
+      params.push(input.isPremium);
+    }
+    if (input.cronsEnabled !== undefined) {
+      sets.push("crons_enabled = ?");
+      params.push(input.cronsEnabled);
+    }
+    if (input.trialEndsAt !== undefined) {
+      sets.push("trial_ends_at = ?");
+      // Explicit UTC string rather than a Date: mysql2's `timezone: 'Z'` is
+      // set on the pool, but serialising the string makes the intent local to
+      // this call rather than dependent on pool config.
+      params.push(
+        input.trialEndsAt === null
+          ? null
+          : new Date(input.trialEndsAt).toISOString().slice(0, 19).replace("T", " ")
+      );
+    }
+    if (input.monthlyFeeCents !== undefined) {
+      sets.push("monthly_fee_cents = ?");
+      params.push(input.monthlyFeeCents);
+    }
+
+    params.push(merchantId);
+    await conn.execute<ResultSetHeader>(
+      `UPDATE merchants SET ${sets.join(", ")} WHERE id = ?`,
+      params
+    );
+
+    const after = await loadMerchantState(conn, merchantId);
+
+    // Read back rather than echoing the input, so the audit records what the
+    // database actually holds — including any column that silently coerced.
+    await writeAuditLog(conn, {
+      actor,
+      action: "merchant.update",
+      merchantId,
+      targetType: "merchant",
+      targetId: merchantId,
+      reason: input.reason,
+      before: snapshot(before),
+      after: snapshot(after),
+    });
+
+    await conn.commit();
+  } catch (err) {
+    await conn.rollback();
+    throw err;
+  } finally {
+    conn.release();
+  }
+
+  const updated = (await loadMerchantSummaries()).find((m) => m.id === merchantId);
+  if (!updated) throw ApiError.notFound("merchant not found");
+  return res.json(updated);
+});
+
+/**
+ * POST /v1/admin/merchants/:id/password-reset
+ *
+ * Issues the ordinary reset link to the owner's own email address. Reuses
+ * `issueMagicLink` and the same `/auth/reset-password` landing page as the
+ * self-service flow — the point is to help an owner who is locked out, not to
+ * create a second way into their account. We never see or set the password.
+ */
+adminMerchantsRouter.post(
+  "/:id/password-reset",
+  async (req: Request, res: Response<AdminPasswordResetResult>) => {
+    const actor = adminContext(req);
+    const input = AdminPasswordResetInput.parse(req.body);
+    const merchantId = req.params.id;
+
+    const merchant = await loadMerchantState(pool, merchantId);
+
+    const [ownerRows] = await pool.execute<RowDataPacket[]>(
+      `SELECT id, email FROM staff_users
+        WHERE merchant_id = ? AND role = 'owner'
+        ORDER BY created_at ASC LIMIT 1`,
+      [merchantId]
+    );
+    if (ownerRows.length === 0) throw ApiError.notFound("this café has no owner account");
+    const ownerId = ownerRows[0].id as string;
+    const ownerEmail = ownerRows[0].email as string;
+
+    const { url } = await issueMagicLink(ownerId);
+    const resetUrl = url.replace("/auth/verify", "/auth/reset-password");
+
+    void sendEmail({
+      to: ownerEmail,
+      subject: "Reset your OnUsClub password",
+      text:
+        `We've been asked to help you back into your OnUsClub account.\n\n` +
+        `Click this link to choose a new password:\n${resetUrl}\n\n` +
+        `If you didn't expect this, ignore this email. The link expires in 1 hour.`,
+      html:
+        `<p>We&rsquo;ve been asked to help you back into your OnUsClub account.</p>` +
+        `<p><a href="${resetUrl}">Choose a new password</a></p>` +
+        `<p>If you didn&rsquo;t expect this, ignore this email. The link expires in 1 hour.</p>`,
+    }).catch((err: unknown) =>
+      logger.warn({ err, merchantId }, "admin-issued reset email failed")
+    );
+
+    // Not inside a transaction: issueMagicLink and sendEmail are not
+    // transactional either, and a reset that happened must be recorded even if
+    // the audit insert is the thing that fails. Logged rather than silently
+    // dropped if it does.
+    await writeAuditLogPooled({
+      actor,
+      action: "merchant.password_reset",
+      merchantId,
+      targetType: "staff_user",
+      targetId: ownerId,
+      reason: input.reason,
+      before: { ownerEmail: merchant.owner_email },
+      after: { sentTo: ownerEmail },
+    });
+
+    const result: AdminPasswordResetResult = { sentTo: ownerEmail };
+    // Dev only — Resend is still in test mode and delivers to one address, so
+    // without this the feature is untestable locally. Same affordance the
+    // self-service forgot-password route already has.
+    if (env.NODE_ENV !== "production") result.devResetLink = resetUrl;
+    return res.json(result);
+  }
+);
 
 interface ProgramRow extends RowDataPacket {
   id: string;

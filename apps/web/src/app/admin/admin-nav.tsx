@@ -16,6 +16,7 @@ const TABS: Tab[] = [
   { href: "/admin", label: "Overview" },
   { href: "/admin/merchants", label: "Cafés" },
   { href: "/admin/customers", label: "Find a customer" },
+  { href: "/admin/audit", label: "Audit log" },
 ];
 
 export function AdminNav(): JSX.Element {
