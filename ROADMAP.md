@@ -114,6 +114,22 @@ onboarded, not before.
 failed"` in the API log — no counter, no alert, nothing in the dashboard. Worth fixing
 before it matters.
 
+### Working order (set 2026-10-03)
+
+1. **Item 8** — merchant logo upload. One day, and the last visibly-missing piece of the
+   customer-facing product now that Google Wallet is live and every pass shows the OnUsClub
+   badge as the merchant's logo.
+2. **Tenant-scoping enforcement** — the prerequisite pulled out of item 19, because items
+   10-13 depend on it.
+3. **Items 10-13** — the master dashboard.
+4. **Item 18** weekly digest, **item 15** proximity notifications, then the small items
+   (21, 22, 23, email-failure visibility).
+5. **Item 16** template gallery, whenever the commissioned motifs land.
+6. **Items 20 and 19** — Playwright and the security review, last, as the pre-launch pass.
+
+Gated separately on the first real customer: **1** (EU hosting), **4** (Resend Pro),
+**9** (Stripe Billing).
+
 ### P1 — next builds
 
 **5. Google Wallet hero image** ✅ **DONE 2026-10-03.** Originally: The card design system feeds the customer
@@ -138,7 +154,10 @@ as the merchant's logo, and customers now see it. `logo_url`, `brand_color` and 
 columns exist with **no write path anywhere**. The `ensureLoyaltyClass()` PATCH fix shipped
 2026-09-27, so changes now actually propagate.
 
-**9. Payment gateway — recommend Stripe Billing.** For a Netherlands-first SMB product the
+**9. Payment gateway — Stripe Billing.** 🔶 **GATED 2026-10-03** — moved to the
+first-real-customer checklist alongside items 1 and 4. There is nobody to bill yet, and
+billing is what makes the trial gate real, so it lands with the first paying café.
+Originally: For a Netherlands-first SMB product the
 instinct is Mollie (NL-native, iDEAL at ~1.8% + €0.25 vs Stripe's higher rate). But the
 trial/tiering/proration logic in items 7 and 13 is exactly what Stripe Billing does and
 what Mollie's recurring API does not. Stripe supports iDEAL, so Dutch customers still pay
@@ -178,7 +197,17 @@ lat/long input on the location form.
 **16. Template gallery** — engine shipped Day 16; blocked on ~90 commissioned motifs.
 **17. CSV customer import/export** ✅ **DONE 2026-10-03.**
 **18. Weekly merchant digest email** — retention; gated on item 4.
-**19. Security review** — candidate areas: no rate limiting anywhere, no enforced
+**19. Security review** 🔶 **LAST before launch, by decision 2026-10-03** — it is the
+final pass, not an enabler.
+
+⚠️ **One piece cannot wait that long.** Enforced tenant scoping is a *prerequisite for the
+master dashboard* (items 10-13), not part of the review. Today isolation is a hand-written
+`WHERE merchant_id = ?` repeated across every query with no mechanism behind it, and a
+super-admin role is the first thing deliberately designed to bypass it. Build the
+enforcement before the role that needs bypassing, or the review at the end is auditing a
+design that was never safe.
+
+Remaining review areas: no rate limiting anywhere, no enforced
 request-scoped tenant context, `qr_token` as a bearer credential on public routes, CSRF
 posture on the Next API routes, and dependency scanning (Dependabot/CodeQL are not
 configured). Run `/security-review` per branch, and do a dedicated pass before the master
