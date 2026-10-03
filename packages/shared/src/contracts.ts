@@ -92,6 +92,21 @@ export const MerchantPreferences = z.object({
 });
 export type MerchantPreferences = z.infer<typeof MerchantPreferences>;
 
+// Trial state for the signed-in merchant, derived rather than stored: the
+// database holds only `trial_ends_at`, and everything below is computed from it
+// against now(). Keeping it derived means a trial cannot drift out of sync with
+// its own expiry date.
+export const TrialStatus = z.object({
+  // ISO timestamp, or null for an account with no trial clock at all —
+  // either pre-dating trials or deliberately taken off one.
+  endsAt: z.string().nullable(),
+  // Whole days remaining, floored, never negative. Null when there is no
+  // clock. 0 means the trial ends today, not that it has ended.
+  daysLeft: z.number().int().nonnegative().nullable(),
+  expired: z.boolean(),
+});
+export type TrialStatus = z.infer<typeof TrialStatus>;
+
 export const MerchantPreferencesInput = z.object({
   isPremium: z.boolean().optional(),
   cronsEnabled: z.boolean().optional(),

@@ -1586,6 +1586,28 @@ async function main(): Promise<void> {
   }
   assert(adetUnauth, "/v1/analytics/detail did not require auth");
 
+  // ---------- Day 19: trial period ----------
+
+  console.log("→ a new merchant starts on a trial clock");
+  const meTrial = await call<{ trial: { endsAt: string | null; daysLeft: number | null; expired: boolean } }>(
+    "GET",
+    "/v1/me",
+    undefined,
+    jwt
+  );
+  assert(meTrial.trial !== undefined, "/v1/me should expose trial state");
+  assert(meTrial.trial.endsAt !== null, "a new signup should have a trial end date");
+  assert(meTrial.trial.expired === false, "a brand-new trial should not be expired");
+  assert(
+    meTrial.trial.daysLeft !== null && meTrial.trial.daysLeft > 0,
+    `new trial should have days remaining, got ${meTrial.trial.daysLeft}`
+  );
+  // Derived from the stored date, so it can never disagree with endsAt.
+  assert(
+    new Date(meTrial.trial.endsAt!).getTime() > Date.now(),
+    "trial endsAt should be in the future for a new signup"
+  );
+
   // ---------- Day 19: Google Wallet hero image ----------
 
   console.log("→ hero.png renders at Google's 1032x336 for a stamp card");

@@ -37,7 +37,7 @@ export default async function AnalyticsPage({
 }: {
   searchParams: { range?: string };
 }): Promise<JSX.Element> {
-  const { jwt, user, merchant, preferences } = await requireSession();
+  const { jwt, user, merchant, preferences, trial } = await requireSession();
 
   // Unknown or absent values fall back to 30d rather than erroring — this is a
   // URL a human can type.
@@ -58,6 +58,7 @@ export default async function AnalyticsPage({
 
   return (
     <DashboardShell
+      trial={trial}
       user={user}
       merchant={merchant}
       isPremium={preferences.isPremium}

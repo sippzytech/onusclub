@@ -30,7 +30,7 @@ export default async function BroadcastDetailPage({
 }: {
   params: { id: string };
 }): Promise<JSX.Element> {
-  const { jwt, user, merchant, preferences } = await requireSession();
+  const { jwt, user, merchant, preferences, trial } = await requireSession();
 
   let data: { broadcast: Broadcast; deliveries: MessageDelivery[] };
   try {
@@ -43,6 +43,7 @@ export default async function BroadcastDetailPage({
 
   return (
     <DashboardShell
+      trial={trial}
       user={user}
       merchant={merchant}
       isPremium={preferences.isPremium}

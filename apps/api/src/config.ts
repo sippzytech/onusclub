@@ -15,6 +15,10 @@ const EnvSchema = z.object({
   // Empty string → degrade to console-only email (matches the wallet pattern).
   RESEND_API_KEY: z.string().optional().default(""),
   EMAIL_FROM: z.string().default("OnUsClub <onboarding@resend.dev>"),
+  // Trial length applied to new signups, in days. Per-merchant overrides live
+  // in merchants.trial_ends_at; this only decides what a fresh signup gets.
+  // 0 disables trials entirely — new merchants are created with no clock.
+  TRIAL_DAYS_DEFAULT: z.coerce.number().int().min(0).max(365).default(14),
   // Shared secret the marketing site presents on POST /v1/public/leads.
   //
   // Empty → the endpoint returns 503 and stores nothing. That is the safe

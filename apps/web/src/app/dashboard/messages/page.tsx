@@ -11,11 +11,12 @@ import { SweepTriggers } from "./sweep-triggers";
 export const dynamic = "force-dynamic";
 
 export default async function MessagesPage(): Promise<JSX.Element> {
-  const { jwt, user, merchant, preferences } = await requireSession();
+  const { jwt, user, merchant, preferences, trial } = await requireSession();
 
   if (!preferences.isPremium) {
     return (
       <DashboardShell
+      trial={trial}
         user={user}
         merchant={merchant}
         isPremium={preferences.isPremium}

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
-import type { Merchant, SessionUser } from "@onusclub/shared";
+import type { Merchant, SessionUser, TrialStatus } from "@onusclub/shared";
 import { DashboardNav } from "./dashboard-nav";
 import { LogoutButton } from "./logout-button";
 
@@ -13,7 +13,48 @@ interface Props {
   title?: string;
   // Plan tag in the sidebar card. Optional — defaults to free tier copy.
   isPremium?: boolean;
+  // Trial state. Optional so pages can adopt it independently; omitted means
+  // no banner rather than an assumed-expired account.
+  trial?: TrialStatus;
   children: ReactNode;
+}
+
+/**
+ * Trial banner.
+ *
+ * Deliberately informational, not a wall. There is no billing yet (ROADMAP
+ * item 9), so a merchant whose trial lapses has no way to pay even if they
+ * want to — blocking them would just lose the account with nothing to convert
+ * to. It also stays quiet for most of the trial: a countdown shown from day 14
+ * is noise by day 3, so it only appears in the last week.
+ */
+function TrialBanner({ trial }: { trial: TrialStatus }): JSX.Element | null {
+  if (trial.endsAt === null) return null;
+
+  if (trial.expired) {
+    return (
+      <div className="rounded-card border border-amber-300 bg-amber-50 px-5 py-3 mb-6 flex flex-wrap items-center gap-x-3 gap-y-1">
+        <span className="text-sm font-medium text-amber-900">Your trial has ended.</span>
+        <span className="text-sm text-amber-800">
+          Everything still works — get in touch to keep your account going.
+        </span>
+      </div>
+    );
+  }
+
+  const days = trial.daysLeft ?? 0;
+  if (days > 7) return null;
+
+  return (
+    <div className="rounded-card border border-brand-gold/40 bg-brand-gold/10 px-5 py-3 mb-6 flex flex-wrap items-center gap-x-3 gap-y-1">
+      <span className="text-sm font-medium text-brand-green">
+        {days === 0
+          ? "Your trial ends today."
+          : `${days} day${days === 1 ? "" : "s"} left in your trial.`}
+      </span>
+      <span className="text-sm text-brand-olive">Nothing stops working when it ends.</span>
+    </div>
+  );
 }
 
 export function DashboardShell({
@@ -22,6 +63,7 @@ export function DashboardShell({
   breadcrumb,
   title,
   isPremium = false,
+  trial,
   children,
 }: Props): JSX.Element {
   const initials = (merchant.businessName ?? "OC")
@@ -114,7 +156,10 @@ export function DashboardShell({
         </header>
 
         {/* Page content */}
-        <main className="flex-1 px-6 md:px-8 pb-10">{children}</main>
+        <main className="flex-1 px-6 md:px-8 pb-10">
+          {trial ? <TrialBanner trial={trial} /> : null}
+          {children}
+        </main>
       </div>
     </div>
   );

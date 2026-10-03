@@ -7,12 +7,13 @@ import { TeamList } from "./team-list";
 export const dynamic = "force-dynamic";
 
 export default async function TeamPage(): Promise<JSX.Element> {
-  const { jwt, user, merchant, preferences } = await requireSession();
+  const { jwt, user, merchant, preferences, trial } = await requireSession();
   const { staff } = await apiFetch<{ staff: StaffMember[] }>("/v1/staff", { jwt });
   const isOwner = user.role === "owner";
 
   return (
     <DashboardShell
+      trial={trial}
       user={user}
       merchant={merchant}
       isPremium={preferences.isPremium}

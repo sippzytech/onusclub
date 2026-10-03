@@ -5,9 +5,10 @@ import { ScanClient } from "./scan-client";
 export const dynamic = "force-dynamic";
 
 export default async function ScanPage(): Promise<JSX.Element> {
-  const { user, merchant, preferences } = await requireSession();
+  const { user, merchant, preferences, trial } = await requireSession();
   return (
     <DashboardShell
+      trial={trial}
       user={user}
       merchant={merchant}
       isPremium={preferences.isPremium}

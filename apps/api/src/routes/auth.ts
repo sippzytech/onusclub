@@ -103,10 +103,16 @@ authRouter.post(
       const passwordHash = await hashPassword(input.password);
       const publicSlug = await generateUniqueSlug(input.businessName);
 
+      // TRIAL_DAYS_DEFAULT of 0 means trials are switched off: create the
+      // merchant with no clock rather than one that expires immediately.
       await conn.execute<ResultSetHeader>(
         `INSERT INTO merchants
-           (id, business_name, owner_email, country, status, public_slug)
-         VALUES (?, ?, ?, 'NL', 'trial', ?)`,
+           (id, business_name, owner_email, country, status, public_slug, trial_ends_at)
+         VALUES (?, ?, ?, 'NL', 'trial', ?, ${
+           env.TRIAL_DAYS_DEFAULT > 0
+             ? `DATE_ADD(NOW(), INTERVAL ${env.TRIAL_DAYS_DEFAULT} DAY)`
+             : "NULL"
+         })`,
         [merchantId, input.businessName, input.ownerEmail, publicSlug]
       );
 

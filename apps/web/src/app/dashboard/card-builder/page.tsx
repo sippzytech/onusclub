@@ -15,11 +15,12 @@ function publicUrlFor(slug: string): string {
 }
 
 export default async function CardBuilderPage(): Promise<JSX.Element> {
-  const { jwt, user, merchant, publicSlug, preferences } = await requireSession();
+  const { jwt, user, merchant, publicSlug, preferences, trial } = await requireSession();
   const { programs } = await apiFetch<{ programs: Program[] }>("/v1/programs", { jwt });
 
   return (
     <DashboardShell
+      trial={trial}
       user={user}
       merchant={merchant}
       isPremium={preferences.isPremium}

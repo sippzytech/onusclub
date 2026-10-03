@@ -51,6 +51,7 @@ services:
       # Lead capture from the marketing site. This block lists every variable
       # explicitly — adding one to .env alone does nothing, and the symptom is
       # the endpoint answering 503 as though it were never configured.
+      TRIAL_DAYS_DEFAULT: ${TRIAL_DAYS_DEFAULT:-14}
       LEADS_INGEST_SECRET: ${LEADS_INGEST_SECRET:-}
       LEADS_NOTIFY_EMAIL: ${LEADS_NOTIFY_EMAIL:-onusclub.official@gmail.com}
       APPLE_TEAM_ID: ${APPLE_TEAM_ID:-}

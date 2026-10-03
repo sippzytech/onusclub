@@ -30,7 +30,7 @@ export default async function CardDetailPage({
 }: {
   params: { id: string };
 }): Promise<JSX.Element> {
-  const { jwt, user, merchant, preferences } = await requireSession();
+  const { jwt, user, merchant, preferences, trial } = await requireSession();
 
   let detail: CardDetail;
   try {
@@ -72,6 +72,7 @@ export default async function CardDetailPage({
 
   return (
     <DashboardShell
+      trial={trial}
       user={user}
       merchant={merchant}
       isPremium={preferences.isPremium}

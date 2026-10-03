@@ -8,6 +8,7 @@ import {
   type SessionUser,
 } from "@onusclub/shared";
 import { pool } from "../db/pool.js";
+import { env } from "../config.js";
 import { ApiError } from "../errors.js";
 
 export const merchantsRouter: Router = Router();
@@ -42,8 +43,12 @@ merchantsRouter.post("/", async (req: Request, res: Response<MerchantSignupResul
     const userId = randomUUID();
 
     await conn.execute<ResultSetHeader>(
-      `INSERT INTO merchants (id, business_name, owner_email, country, status)
-       VALUES (?, ?, ?, 'NL', 'trial')`,
+      `INSERT INTO merchants (id, business_name, owner_email, country, status, trial_ends_at)
+       VALUES (?, ?, ?, 'NL', 'trial', ${
+         env.TRIAL_DAYS_DEFAULT > 0
+           ? `DATE_ADD(NOW(), INTERVAL ${env.TRIAL_DAYS_DEFAULT} DAY)`
+           : "NULL"
+       })`,
       [merchantId, input.businessName, input.ownerEmail]
     );
 

@@ -8,11 +8,12 @@ import { CustomersList } from "./customers-list";
 export const dynamic = "force-dynamic";
 
 export default async function CustomersPage(): Promise<JSX.Element> {
-  const { jwt, user, merchant, preferences } = await requireSession();
+  const { jwt, user, merchant, preferences, trial } = await requireSession();
   const { customers } = await apiFetch<{ customers: Customer[] }>("/v1/customers", { jwt });
 
   return (
     <DashboardShell
+      trial={trial}
       user={user}
       merchant={merchant}
       isPremium={preferences.isPremium}

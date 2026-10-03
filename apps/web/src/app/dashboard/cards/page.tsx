@@ -9,7 +9,7 @@ import { EnrolCardForm } from "./enrol-card-form";
 export const dynamic = "force-dynamic";
 
 export default async function CardsPage(): Promise<JSX.Element> {
-  const { jwt, user, merchant, preferences } = await requireSession();
+  const { jwt, user, merchant, preferences, trial } = await requireSession();
   const [{ cards }, { customers }, { programs }] = await Promise.all([
     apiFetch<{ cards: Card[] }>("/v1/cards", { jwt }),
     apiFetch<{ customers: Customer[] }>("/v1/customers", { jwt }),
@@ -20,6 +20,7 @@ export default async function CardsPage(): Promise<JSX.Element> {
 
   return (
     <DashboardShell
+      trial={trial}
       user={user}
       merchant={merchant}
       isPremium={preferences.isPremium}

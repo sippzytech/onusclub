@@ -14,7 +14,7 @@ export default async function SweepDetailPage({
 }: {
   params: { id: string };
 }): Promise<JSX.Element> {
-  const { jwt, user, merchant, preferences } = await requireSession();
+  const { jwt, user, merchant, preferences, trial } = await requireSession();
 
   let data: { sweep: SweepRun; deliveries: MessageDelivery[] };
   try {
@@ -28,6 +28,7 @@ export default async function SweepDetailPage({
 
   return (
     <DashboardShell
+      trial={trial}
       user={user}
       merchant={merchant}
       isPremium={preferences.isPremium}

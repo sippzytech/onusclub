@@ -5,6 +5,7 @@ import {
   type Merchant,
   type MerchantPreferences,
   type SessionUser,
+  type TrialStatus,
 } from "@onusclub/shared";
 import { pool } from "../db/pool.js";
 import { authContext, requireAuth } from "../auth/middleware.js";
@@ -29,9 +30,29 @@ interface MerchantRow extends RowDataPacket {
   public_slug: string | null;
   is_premium: number;
   crons_enabled: number;
+  trial_ends_at: Date | null;
+}
+
+/**
+ * Derive trial state from the stored expiry. Nothing about "how long is left"
+ * is persisted, so it cannot drift out of step with the date it came from.
+ *
+ * daysLeft is ceil-based: with 18 hours remaining a merchant should read
+ * "1 day left", not "0". It reaches 0 only on the final day, and the account is
+ * expired once the timestamp is actually in the past.
+ */
+export function deriveTrial(endsAt: Date | null): TrialStatus {
+  if (!endsAt) return { endsAt: null, daysLeft: null, expired: false };
+  const ms = endsAt.getTime() - Date.now();
+  return {
+    endsAt: endsAt.toISOString(),
+    daysLeft: Math.max(0, Math.ceil(ms / 86_400_000)),
+    expired: ms <= 0,
+  };
 }
 
 export interface MeResponse {
+  trial: TrialStatus;
   user: SessionUser;
   merchant: Merchant;
   publicSlug: string;
@@ -50,7 +71,7 @@ meRouter.get("/", requireAuth, async (req: Request, res: Response<MeResponse>) =
 
   const [merchantRows] = await pool.execute<MerchantRow[]>(
     `SELECT id, business_name, owner_email, country, status, public_slug,
-            is_premium, crons_enabled
+            is_premium, crons_enabled, trial_ends_at
        FROM merchants WHERE id = ? LIMIT 1`,
     [ctx.merchantId]
   );
@@ -77,6 +98,7 @@ meRouter.get("/", requireAuth, async (req: Request, res: Response<MeResponse>) =
       isPremium: Boolean(m.is_premium),
       cronsEnabled: Boolean(m.crons_enabled),
     },
+    trial: deriveTrial(m.trial_ends_at),
   });
 });
 
