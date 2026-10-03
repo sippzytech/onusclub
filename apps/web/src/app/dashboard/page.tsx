@@ -63,7 +63,7 @@ function StatCard({ label, value, delta }: StatCardProps): JSX.Element {
 }
 
 export default async function DashboardPage(): Promise<JSX.Element> {
-  const { jwt, user, merchant, preferences, trial } = await requireSession();
+  const { jwt, user, merchant, preferences, trial, isPlatformAdmin } = await requireSession();
 
   // Pull the shapes we already have; aggregate to dashboard-shaped numbers
   // client-side so we don't have to add a new endpoint yet.
@@ -148,6 +148,7 @@ export default async function DashboardPage(): Promise<JSX.Element> {
       user={user}
       merchant={merchant}
       isPremium={preferences.isPremium}
+      isPlatformAdmin={isPlatformAdmin}
       breadcrumb={`${merchant.businessName} · Dashboard`}
       title="Overview"
     >

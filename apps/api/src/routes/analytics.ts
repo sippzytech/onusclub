@@ -195,8 +195,13 @@ function formatterFor(timeZone: string): Intl.DateTimeFormat {
   return fmt;
 }
 
-/** An unknown IANA zone makes Intl throw, so a bad DB value must not 500. */
-function safeZone(tz: string | null): string {
+/**
+ * An unknown IANA zone makes Intl throw, so a bad DB value must not 500.
+ *
+ * Exported for the admin surface, which buckets each merchant's activity in
+ * that merchant's own zone for the same reason this page does.
+ */
+export function safeZone(tz: string | null): string {
   if (!tz) return DEFAULT_TZ;
   try {
     new Intl.DateTimeFormat("en-GB", { timeZone: tz });
@@ -206,7 +211,7 @@ function safeZone(tz: string | null): string {
   }
 }
 
-function localDayHour(instant: Date, timeZone: string): { date: string; hour: number } {
+export function localDayHour(instant: Date, timeZone: string): { date: string; hour: number } {
   const parts = formatterFor(timeZone).formatToParts(instant);
   const get = (type: string): string =>
     parts.find((p) => p.type === type)?.value ?? "";

@@ -12,6 +12,8 @@
 import { Router, type Request, type Response } from "express";
 import type { AdminWhoami } from "@onusclub/shared";
 import { adminContext } from "../../admin/authorize.js";
+import { adminMerchantsRouter } from "./merchants.js";
+import { adminMetricsRouter } from "./metrics.js";
 
 export const adminRouter: Router = Router();
 
@@ -31,3 +33,6 @@ adminRouter.get("/whoami", (req: Request, res: Response<AdminWhoami>) => {
     merchantId: actor.merchantId,
   });
 });
+
+adminRouter.use("/merchants", adminMerchantsRouter);
+adminRouter.use("/metrics", adminMetricsRouter);

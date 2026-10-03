@@ -1760,6 +1760,13 @@ async function main(): Promise<void> {
   // somebody has to edit, rather than as silence.
   const ADMIN_PATHS: Array<[string, string]> = [
     ["GET", "/v1/admin/whoami"],
+    ["GET", "/v1/admin/metrics"],
+    ["GET", "/v1/admin/merchants"],
+    // The id is irrelevant — the gate fires before any handler runs, which is
+    // itself the thing being asserted. Uses the rival merchant's real id so a
+    // regression that let the handler run would leak something real and fail
+    // loudly rather than 404 for the wrong reason.
+    ["GET", `/v1/admin/merchants/${otherSignup.merchant.id}`],
     // As the admin surface grows, every new route gets a line here.
   ];
 

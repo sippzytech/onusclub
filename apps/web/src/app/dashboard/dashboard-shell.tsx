@@ -16,6 +16,15 @@ interface Props {
   // Trial state. Optional so pages can adopt it independently; omitted means
   // no banner rather than an assumed-expired account.
   trial?: TrialStatus;
+  // Renders a link through to the platform-admin surface. Advisory UI only:
+  // /admin and /v1/admin both re-check the grant against the database, so a
+  // forced `true` here buys nothing but a link that 404s.
+  //
+  // Passed from the Overview page only, rather than threaded through all
+  // thirteen pages that render this shell. One entry point on the page every
+  // owner lands on is enough for a link; /admin is reachable directly once
+  // bookmarked, and the twelve extra prop drills would be noise.
+  isPlatformAdmin?: boolean;
   children: ReactNode;
 }
 
@@ -64,6 +73,7 @@ export function DashboardShell({
   title,
   isPremium = false,
   trial,
+  isPlatformAdmin = false,
   children,
 }: Props): JSX.Element {
   const initials = (merchant.businessName ?? "OC")
@@ -108,6 +118,15 @@ export function DashboardShell({
             {isPremium ? "Manage plan" : "Upgrade"}
           </Link>
         </div>
+
+        {isPlatformAdmin ? (
+          <Link
+            href="/admin"
+            className="mx-3 mb-3 block text-center rounded-lg border border-amber-400/40 py-2 text-xs text-amber-300 hover:bg-white/5 transition-colors"
+          >
+            Platform admin
+          </Link>
+        ) : null}
       </aside>
 
       {/* Main column */}

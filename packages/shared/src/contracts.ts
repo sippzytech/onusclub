@@ -896,3 +896,269 @@ export type AdminWhoami = z.infer<typeof AdminWhoami>;
  * to tell a café owner why their customer's stamps moved is us.
  */
 export const AdminReason = z.string().trim().min(3).max(500);
+
+// ---------- Merchant health ----------
+//
+// There is deliberately no "profit" figure anywhere in the admin surface, and
+// that is a decision rather than an omission. `card_events.amount_cents` is
+// the café's own self-reported sale amount, it is sparse (NULL means staff
+// skipped the prompt, which is not a €0 sale), and the system holds no
+// cost-of-goods data at all. A number labelled "profit" built on that would
+// be trusted.
+//
+// The questions behind "is this café doing well" are all answerable without
+// inventing one:
+//
+//   "nobody is coming"            → days since the last event
+//   "they signed up and stopped"  → cards enrolled that never transacted
+//   "wallets aren't being used"   → share of cards with an actual pass saved
+//   "are their numbers real"      → share of scans carrying a sale amount
+//   "is the free coffee worth it" → captured sales per reward given
+//
+// So: flags, each with a stated threshold, rather than a score. A flag is a
+// prompt to go look, not a verdict.
+
+export const AdminHealthFlag = z.enum([
+  // Too new to judge. Not a problem — suppresses every other flag so a café
+  // that signed up yesterday doesn't show up as failing.
+  "onboarding",
+  // Never transacted at all. They have an account and possibly customers, but
+  // nothing has ever been scanned. The most urgent thing on the list.
+  "never_used",
+  // Transacted once, then went quiet. Usually staff stopping rather than
+  // customers stopping, which is a conversation we can have.
+  "dormant",
+  // People get signed up and never come back — or, more often, staff enrol at
+  // the counter and then stop scanning.
+  "dead_enrolments",
+  // Cards exist but barely any are in a real wallet, so none of the
+  // notifications or lock-screen presence we sell is actually reaching anyone.
+  "low_wallet_adoption",
+  // Scans rarely carry a sale amount, so this café's revenue and AOV figures —
+  // on their dashboard and ours — mean very little.
+  "low_capture",
+  // None of the above.
+  "healthy",
+]);
+export type AdminHealthFlag = z.infer<typeof AdminHealthFlag>;
+
+/**
+ * The thresholds behind each flag.
+ *
+ * Tuned for a café, which is a high-frequency business: three weeks of zero
+ * scans in a coffee shop is a real signal, where in a hair salon it would be
+ * routine. Exposed to the UI so the admin page can state the rule instead of
+ * presenting the flags as self-evident — the same reason RFM thresholds are a
+ * parameter rather than constants buried in a query.
+ *
+ * The minimum-card counts matter as much as the percentages: "1 of 2 cards has
+ * a wallet pass" is not a 50% adoption problem, it is two customers.
+ */
+export const ADMIN_HEALTH_THRESHOLDS = {
+  /** Younger than this, with little activity, is `onboarding` rather than broken. */
+  onboardingDays: 14,
+  /** Events below which a young account still counts as onboarding. */
+  onboardingEvents: 5,
+  /** Days of silence after which an account that once worked is `dormant`. */
+  dormantDays: 21,
+  /** A card must be at least this old before never-transacting counts against the café. */
+  cardMaturityDays: 14,
+  /** Mature cards needed before the dead-enrolment share is meaningful. */
+  deadEnrolmentsMinCards: 10,
+  /** Share of mature cards that never transacted, above which we flag. */
+  deadEnrolmentsPct: 0.6,
+  /** Cards needed before wallet adoption is meaningful. */
+  walletMinCards: 10,
+  /** Share of cards with a Google or Apple pass, below which we flag. */
+  walletAdoptionPct: 0.4,
+  /** Amount-eligible scans in the window needed before capture rate means anything. */
+  captureMinEvents: 20,
+  /** Share of those scans carrying a sale amount, below which we flag. */
+  capturePct: 0.25,
+  /** Window for activity, capture and revenue figures. */
+  windowDays: 30,
+} as const;
+
+/**
+ * Severity order, worst first. The list view sorts and badges by this, so a
+ * café that is both dormant and badly configured surfaces as dormant — the
+ * thing to act on.
+ */
+export const ADMIN_HEALTH_SEVERITY: readonly AdminHealthFlag[] = [
+  "never_used",
+  "dormant",
+  "dead_enrolments",
+  "low_wallet_adoption",
+  "low_capture",
+  "onboarding",
+  "healthy",
+] as const;
+
+/** The one flag to show when there is room for one. Pure, so list and detail agree. */
+export function primaryHealthFlag(flags: readonly AdminHealthFlag[]): AdminHealthFlag {
+  for (const flag of ADMIN_HEALTH_SEVERITY) {
+    if (flags.includes(flag)) return flag;
+  }
+  return "healthy";
+}
+
+export const AdminMerchantSummary = z.object({
+  id: z.string(),
+  businessName: z.string(),
+  ownerEmail: z.string().email(),
+  country: z.string(),
+  currencyCode: z.string().length(3),
+  status: z.enum(["active", "suspended", "trial"]),
+  publicSlug: z.string().nullable(),
+  createdAt: z.string(),
+  trial: TrialStatus,
+  isPremium: z.boolean(),
+  cronsEnabled: z.boolean(),
+  /** What this café agreed to pay per month. Null = not recorded; renders "—", never €0. */
+  monthlyFeeCents: z.number().int().nonnegative().nullable(),
+
+  programs: z.number().int().nonnegative(),
+  staff: z.number().int().nonnegative(),
+  customers: z.number().int().nonnegative(),
+  cards: z.number().int().nonnegative(),
+
+  /** Cards with a Google pass or an Apple registration. */
+  walletCards: z.number().int().nonnegative(),
+  googlePasses: z.number().int().nonnegative(),
+  applePasses: z.number().int().nonnegative(),
+
+  /** Cards older than cardMaturityDays that have never transacted. */
+  deadEnrolments: z.number().int().nonnegative(),
+  /** The denominator for that share — not every card, only the mature ones. */
+  matureCards: z.number().int().nonnegative(),
+
+  eventsTotal: z.number().int().nonnegative(),
+  eventsWindow: z.number().int().nonnegative(),
+  /** Scans in the window that could carry a sale amount (stamp / redeem / points_add). */
+  capturableWindow: z.number().int().nonnegative(),
+  /** How many of those actually did. */
+  capturedWindow: z.number().int().nonnegative(),
+  revenueCentsWindow: z.number().int().nonnegative(),
+  revenueCentsTotal: z.number().int().nonnegative(),
+
+  redemptionsWindow: z.number().int().nonnegative(),
+  redemptionsTotal: z.number().int().nonnegative(),
+
+  /**
+   * Lifetime captured sales divided by rewards given away. The honest answer to
+   * "is the free coffee paying for itself" — it says what arrived at the till
+   * per reward handed over, and leaves the cost of the reward to the person
+   * reading, who knows it and we don't.
+   *
+   * Null when nothing has been redeemed yet: there is no ratio, and 0 would
+   * read as a terrible one.
+   */
+  salesPerRewardCents: z.number().int().nonnegative().nullable(),
+
+  lastEventAt: z.string().nullable(),
+  daysSinceLastEvent: z.number().int().nonnegative().nullable(),
+
+  /** Every applicable flag. `primaryHealthFlag` picks the one to badge. */
+  flags: z.array(AdminHealthFlag),
+});
+export type AdminMerchantSummary = z.infer<typeof AdminMerchantSummary>;
+
+export const AdminMerchantList = z.object({
+  thresholds: z.object({
+    dormantDays: z.number().int(),
+    windowDays: z.number().int(),
+    cardMaturityDays: z.number().int(),
+  }),
+  merchants: z.array(AdminMerchantSummary),
+});
+export type AdminMerchantList = z.infer<typeof AdminMerchantList>;
+
+export const AdminMerchantProgram = z.object({
+  id: z.string(),
+  name: z.string(),
+  programType: z.string(),
+  rewardText: z.string(),
+  active: z.boolean(),
+  cards: z.number().int().nonnegative(),
+  createdAt: z.string(),
+});
+export type AdminMerchantProgram = z.infer<typeof AdminMerchantProgram>;
+
+export const AdminMerchantStaff = z.object({
+  id: z.string(),
+  email: z.string(),
+  name: z.string().nullable(),
+  role: z.string(),
+  createdAt: z.string(),
+});
+export type AdminMerchantStaff = z.infer<typeof AdminMerchantStaff>;
+
+export const AdminMerchantDetail = z.object({
+  merchant: AdminMerchantSummary,
+  thresholds: z.object({
+    dormantDays: z.number().int(),
+    windowDays: z.number().int(),
+    cardMaturityDays: z.number().int(),
+  }),
+  programs: z.array(AdminMerchantProgram),
+  staff: z.array(AdminMerchantStaff),
+  /** Customer mix, reusing the same classifier the café sees on its own analytics page. */
+  segments: z.array(RfmSegmentSummary),
+  /** Scans per day over the window, gap-filled, so a stall is visible as a flat line. */
+  daily: z.array(z.object({ date: z.string(), events: z.number().int().nonnegative() })),
+  recentEvents: z.array(
+    z.object({
+      id: z.number().int(),
+      cardId: z.string(),
+      customerName: z.string().nullable(),
+      programName: z.string(),
+      eventType: z.string(),
+      amountCents: z.number().int().nullable(),
+      createdAt: z.string(),
+      /** Set on manual_adjust rows: who on our side did it. */
+      note: z.string().nullable(),
+    })
+  ),
+});
+export type AdminMerchantDetail = z.infer<typeof AdminMerchantDetail>;
+
+export const AdminPlatformMetrics = z.object({
+  merchants: z.object({
+    total: z.number().int().nonnegative(),
+    active: z.number().int().nonnegative(),
+    trial: z.number().int().nonnegative(),
+    suspended: z.number().int().nonnegative(),
+    /** Trials expiring within 7 days — the only time-sensitive number here. */
+    trialsEndingSoon: z.number().int().nonnegative(),
+  }),
+  /**
+   * Summed `monthly_fee_cents` across merchants that are not suspended.
+   *
+   * `feeUnset` is reported alongside on purpose: with no billing integration
+   * (Stripe is deferred) this total is only as complete as what has been typed
+   * in, and a bare number would read as the whole picture.
+   */
+  revenue: z.object({
+    mrrCents: z.number().int().nonnegative(),
+    feeSet: z.number().int().nonnegative(),
+    feeUnset: z.number().int().nonnegative(),
+  }),
+  usage: z.object({
+    customers: z.number().int().nonnegative(),
+    cards: z.number().int().nonnegative(),
+    walletCards: z.number().int().nonnegative(),
+    googlePasses: z.number().int().nonnegative(),
+    applePasses: z.number().int().nonnegative(),
+    eventsWindow: z.number().int().nonnegative(),
+    eventsTotal: z.number().int().nonnegative(),
+    /** Customer-attributed sales across the platform, for scale — not our revenue. */
+    merchantRevenueCentsWindow: z.number().int().nonnegative(),
+  }),
+  /** How many cafés sit under each flag. The "who needs attention" count. */
+  health: z.array(z.object({ flag: AdminHealthFlag, merchants: z.number().int().nonnegative() })),
+  /** Merchant signups per ISO week, oldest first. */
+  signupsByWeek: z.array(
+    z.object({ weekStart: z.string(), merchants: z.number().int().nonnegative() })
+  ),
+});
+export type AdminPlatformMetrics = z.infer<typeof AdminPlatformMetrics>;
