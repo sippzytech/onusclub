@@ -136,8 +136,10 @@ before it matters.
 3. ~~**Items 10-13** — the master dashboard.~~ ✅ **DONE 2026-10-04.** See P2 below for the
    three decisions that overruled the obvious design, and docs/admin/README.md for how to
    grant yourself access.
-4. **Item 18** weekly digest, **item 15** proximity notifications, then the small items
-   (21, 22, 23, email-failure visibility).
+4. ~~**Item 15** proximity notifications~~ ✅ **DONE 2026-10-04.** **Item 18** weekly
+   digest next — note its "gated on item 4" label was wrong and has been removed: the
+   digest goes to merchants, a handful of emails a week, nowhere near Resend's cap. Then
+   the small items (21, 22, 23, email-failure visibility).
 5. **Item 16** template gallery, whenever the commissioned motifs land.
 6. **Items 20 and 19** — Playwright and the security review, last, as the pre-launch pass.
 
@@ -241,14 +243,51 @@ member at Café B" hint). Reasons for each are in docs/admin/README.md.
 classifier now also powers the customer-mix panel on each café's admin detail page, so our
 view of "at risk" and theirs cannot drift. A settings page for editing the thresholds is
 still unbuilt — `DEFAULT_RFM_THRESHOLDS` in `packages/shared` is the single source.
-**15. Geo / proximity notifications** — `locations.latitude` / `longitude` have existed
-since Day 1 (migration 001) and **nothing reads or writes them**. The cheap version is not
-custom geofencing: both Apple (`locations[]` on the pass) and Google support OS-level
-location triggers, so the phone shows the pass near the shop with no backend work. Needs a
-lat/long input on the location form.
+**15. Geo / proximity notifications** ✅ **DONE 2026-10-04.** The pass surfaces on the
+lock screen near the shop, with no app and nothing running on our side — both OSes handle
+the trigger. Managed on `/dashboard/settings`; up to 10 shops per café, which is where
+Apple and Google both cap out.
+
+⚠️ **Two findings worth keeping, because each is silent in production:**
+
+- **Google's `LoyaltyClass.locations` is deprecated and does nothing.** Its own reference
+  says: *"This item is deprecated! Note: This field is currently not supported to trigger
+  geo notifications."* The working field is **`merchantLocations`** (`{latitude, longitude}`
+  only — no name, no address, Google picks the radius). Sending the old one is accepted,
+  stored, and never fires. Do not "simplify" it back.
+- **`classBrandingDiffers` must learn about every new class field.** `ensureLoyaltyClass`
+  PATCHes only when a field that comparator explicitly checks differs, so anything added to
+  `buildLoyaltyClass` alone reaches *new* classes only — every existing café keeps a class
+  without it, forever, with nothing in the logs. Exactly the logo bug that function was
+  written to fix. The location comparison rounds to 6 decimals and sorts, because Google
+  echoes floats back and the round-trip is not bit-exact; comparing raw values would PATCH
+  on every stamp.
+
+`scripts/check-wallet-payload.ts` (in CI) guards both. Google Wallet cannot be exercised
+outside production — it is disabled in local dev on purpose and the API has no delete — but
+`buildLoyaltyClass` and `classBrandingDiffers` are pure, so the payload check is exact.
+Both traps were verified to actually fail it.
+
+Coordinate entry is a paste box, not a geocoder: a Maps link or a raw pair, parsed by
+`parseCoordinates` in `shared`. Geocoding would have meant an API key, billing and a new
+failure mode to replace parsing a string. Note **Google Maps' Share button returns a
+`maps.app.goo.gl` link with no coordinates in it** — the API follows the redirect, and if
+there are still none it says "copy from your address bar". That resolution is gated on the
+parsed hostname being one of the two short-link domains, since it is our server fetching a
+URL a caller supplied.
+
+**Still unverified on hardware**: nobody has walked near a shop and watched the pass
+appear. No test in this repo can prove that.
+
+**Not included**: writing `card_events.location_id`, which is still never populated — so
+"which branch was this stamped at" remains unanswerable. It needs a location picker on the
+scanner and a story for existing NULL rows; separate feature.
 **16. Template gallery** — engine shipped Day 16; blocked on ~90 commissioned motifs.
 **17. CSV customer import/export** ✅ **DONE 2026-10-03.**
-**18. Weekly merchant digest email** — retention; gated on item 4.
+**18. Weekly merchant digest email** — retention. **Not gated on item 4**, despite the
+label this carried until 2026-10-04: the digest goes to *merchants* — four of them, one
+email a week — against a 100/day cap. That gate was inherited from the same mistake that
+had broadcasts sending email (see item 4). Buildable now.
 **19. Security review** 🔶 **LAST before launch, by decision 2026-10-03** — it is the
 final pass, not an enabler.
 

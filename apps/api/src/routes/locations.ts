@@ -65,8 +65,14 @@ function requireOwner(req: Request): void {
  * since `https://evil.example/?x=maps.app.goo.gl` matches it. So the decision
  * to make the request is gated on the parsed hostname being exactly one of
  * these, over https.
+ *
+ * Only the two short-link hosts. `www.google.com` was briefly in here and did
+ * nothing: a full Maps URL carries its coordinates inline and never reaches
+ * the resolver, and this list gates the *initial* host only — fetch follows
+ * the redirect chain to google.com by itself. Entries that buy nothing still
+ * widen the surface.
  */
-const SHORT_LINK_HOSTS = new Set(["maps.app.goo.gl", "goo.gl", "www.google.com", "maps.google.com"]);
+const SHORT_LINK_HOSTS = new Set(["maps.app.goo.gl", "goo.gl"]);
 
 /** 5s, so a hung redirect fails the request instead of holding a connection. */
 const RESOLVE_TIMEOUT_MS = 5_000;
@@ -92,6 +98,11 @@ async function resolveShortLink(input: string): Promise<string | null> {
   const timer = setTimeout(() => controller.abort(), RESOLVE_TIMEOUT_MS);
   try {
     const res = await fetch(url.toString(), { redirect: "follow", signal: controller.signal });
+    // A dead or mistyped short code 404s, and `res.url` is still a perfectly
+    // valid string — so without this the caller is told "that link opened but
+    // had no coordinates", which is not what happened and sends them looking
+    // in the wrong place.
+    if (!res.ok) return null;
     // `res.url` is the URL after redirects — the long /maps/place/… form, which
     // is where the coordinates live.
     return res.url || null;

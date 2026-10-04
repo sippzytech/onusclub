@@ -157,9 +157,10 @@ What works end-to-end:
 - ✅ Per-card delivery audit (broadcasts + sweeps) with manual retry
 - ✅ Premium feature gate (fake unlock for now) + crons-enabled kill-switch
 - ✅ Staff/team accounts (`/dashboard/team`, owner-only CRUD)
-- ✅ Smoke suite gated in CI on every PR, in two parts: `pnpm smoke` (black-box, includes
-  the cross-tenant isolation section) and `pnpm smoke:admin` (needs `DATABASE_URL`, because
-  granting platform admin is SQL-only)
+- ✅ Smoke suite gated in CI on every PR, in three parts: `pnpm smoke` (black-box, includes
+  the cross-tenant isolation section), `pnpm smoke:admin` (needs `DATABASE_URL`, because
+  granting platform admin is SQL-only), and `pnpm check:wallet` (pure assertions on the
+  Google Wallet class payload — the integration cannot be exercised outside production)
 - ✅ **Card design system** (Day 16): shared SVG renderer, per-program design editor in
   `/dashboard/card-builder`, Apple Wallet `strip.png` artwork. See `docs/card-design/README.md`.
   Deployed and **verified on a physical iPhone 2026-09-18**.
@@ -177,6 +178,13 @@ What works end-to-end:
   BLOB in `merchant_assets` rather than on disk — it travels with `mysqldump` instead of
   becoming a second thing to migrate — and served from a public, content-hashed URL
   because Google fetches `programLogo` server-side and caches it by URI.
+- ✅ **Proximity notifications** (Day 24): shop locations on `/dashboard/settings`, up to
+  10 per café, feeding the OS-level geofence on both wallets — the pass surfaces on the
+  lock screen near the shop with nothing running on our side. Coordinates come from a
+  pasted Google Maps link or typed in; no geocoding API. ⚠️ Google's
+  `LoyaltyClass.locations` is **deprecated and silently never fires** — the working field
+  is `merchantLocations`, and anything added to `buildLoyaltyClass` must also be added to
+  `classBrandingDiffers` or it reaches new classes only. `pnpm check:wallet` guards both.
 - ✅ **Master admin dashboard** (Day 23): `/admin` — every café in one place with health
   flags, cross-merchant customer search and timelines, balance corrections, account
   controls and an append-only audit log. **[docs/admin/README.md](./docs/admin/README.md)**
