@@ -872,6 +872,48 @@ export const MerchantBranding = z.object({
 });
 export type MerchantBranding = z.infer<typeof MerchantBranding>;
 
+// ---------- Email delivery visibility (Day 25) ----------
+//
+// Until now a failed send was one `logger.error` line and nothing else. The
+// scenario that matters: a café's customer says "I never got my card", and
+// answering meant SSHing into the box to grep container logs.
+//
+// `status` has three values, not two. 'skipped' means no RESEND_API_KEY was
+// configured so nothing was attempted — normal in local dev, and counting it
+// as a failure would make every health figure meaningless.
+
+export const EmailDeliveryStatus = z.enum(["sent", "failed", "skipped"]);
+export type EmailDeliveryStatus = z.infer<typeof EmailDeliveryStatus>;
+
+export const EmailDelivery = z.object({
+  id: z.number().int(),
+  kind: z.string(),
+  toEmail: z.string(),
+  subject: z.string(),
+  status: EmailDeliveryStatus,
+  error: z.string().nullable(),
+  customerId: z.string().nullable(),
+  cardId: z.string().nullable(),
+  createdAt: z.string(),
+});
+export type EmailDelivery = z.infer<typeof EmailDelivery>;
+
+export const EmailHealth = z.object({
+  /** Window the counts cover. */
+  windowDays: z.number().int().positive(),
+  sent: z.number().int().nonnegative(),
+  failed: z.number().int().nonnegative(),
+  /**
+   * Attempts that were never made because no mail provider is configured.
+   * Reported separately so "nothing is sending" and "sending is broken" are
+   * never conflated — they need completely different responses.
+   */
+  skipped: z.number().int().nonnegative(),
+  /** Newest first, capped. Enough to see the pattern, not a log viewer. */
+  recentFailures: z.array(EmailDelivery),
+});
+export type EmailHealth = z.infer<typeof EmailHealth>;
+
 // ---------- Shop locations (Day 24) ----------
 //
 // Feeds the OS-level proximity trigger on both wallets: the pass surfaces on

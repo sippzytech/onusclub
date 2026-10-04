@@ -6,10 +6,12 @@ import {
   type Card,
   type Customer,
   type Program,
+  type EmailHealth,
 } from "@onusclub/shared";
 import { apiFetch } from "@/lib/api";
 import { requireSession } from "@/lib/session";
 import { DashboardShell } from "./dashboard-shell";
+import { EmailHealthBanner } from "./email-health-banner";
 
 export const dynamic = "force-dynamic";
 
@@ -91,6 +93,13 @@ export default async function DashboardPage(): Promise<JSX.Element> {
     jwt,
   }).catch(() => null);
 
+  // Same treatment, same reason: this one depends on migration 013, so a box
+  // that has pulled the code but not yet run migrations must still render a
+  // dashboard. The banner takes null and shows nothing.
+  const emailHealth = await apiFetch<EmailHealth>("/v1/me/email-health", {
+    jwt,
+  }).catch(() => null);
+
   const money = (cents: number): string =>
     centsToEuroString(cents, overview?.currencyCode ?? "EUR");
 
@@ -159,6 +168,8 @@ export default async function DashboardPage(): Promise<JSX.Element> {
       title="Overview"
     >
       <div className="space-y-6">
+        <EmailHealthBanner health={emailHealth} />
+
         {/* Money row. Everything here comes from sale amounts staff typed at
           * scan time — see the empty-state hint below when nothing has been
           * captured yet. Dashes when analytics is unavailable, so the rest of

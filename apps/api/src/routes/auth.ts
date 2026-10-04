@@ -149,6 +149,8 @@ authRouter.post(
 
       // Best-effort welcome email. Failure does not block signup.
       void sendEmail({
+        kind: "welcome",
+        merchantId,
         to: input.ownerEmail,
         subject: `Welcome to OnUsClub, ${input.businessName}`,
         text:
@@ -314,6 +316,9 @@ authRouter.post("/verify", async (req: Request, res: Response<AuthVerifyResult>)
 
 interface UserIdRow extends RowDataPacket {
   id: string;
+  // Carried so the recorded send is attributable to a café. Someone locked out
+  // of their account cannot look this up themselves — we have to.
+  merchant_id: string;
 }
 
 authRouter.post(
@@ -322,7 +327,7 @@ authRouter.post(
     const { email } = ForgotPasswordInput.parse(req.body);
 
     const [rows] = await pool.execute<UserIdRow[]>(
-      "SELECT id FROM staff_users WHERE email = ? LIMIT 1",
+      "SELECT id, merchant_id FROM staff_users WHERE email = ? LIMIT 1",
       [email]
     );
     // Respond OK either way so the endpoint can't be used to enumerate
@@ -336,6 +341,8 @@ authRouter.post(
 
     // Best-effort email — Resend test mode caveats still apply.
     void sendEmail({
+      kind: "password_reset",
+      merchantId: rows[0].merchant_id,
       to: email,
       subject: "Reset your OnUsClub password",
       text:

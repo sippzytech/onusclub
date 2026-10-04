@@ -13,9 +13,11 @@ import {
   primaryHealthFlag,
   type AdminHealthFlag,
   type AdminPlatformMetrics,
+  type EmailHealth,
 } from "@onusclub/shared";
 import { pool } from "../../db/pool.js";
 import { loadMerchantSummaries } from "../../admin/overview.js";
+import { loadEmailHealth } from "../../email/health.js";
 
 export const adminMetricsRouter: Router = Router();
 
@@ -26,6 +28,18 @@ interface WeekRow extends RowDataPacket {
 
 /** Weeks to show in the signup chart. */
 const WEEKS = 12;
+
+/**
+ * GET /v1/admin/metrics/email — platform-wide, including the lead
+ * notifications that belong to no tenant.
+ *
+ * Separate from /metrics rather than folded into it: this is the one figure we
+ * want to be able to look at on its own when something smells, and /metrics is
+ * already doing six cross-tenant aggregates.
+ */
+adminMetricsRouter.get("/email", async (_req: Request, res: Response<EmailHealth>) => {
+  return res.json(await loadEmailHealth(null));
+});
 
 adminMetricsRouter.get("/", async (_req: Request, res: Response<AdminPlatformMetrics>) => {
   const merchants = await loadMerchantSummaries();

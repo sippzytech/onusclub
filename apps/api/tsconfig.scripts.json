@@ -1,0 +1,27 @@
+// Typecheck config that covers `scripts/` as well as `src/`.
+//
+// WHY THIS IS SEPARATE
+//
+// tsconfig.json sets `rootDir: ./src` because `build` compiles into dist/ and
+// everything emitted has to live under that root. Adding scripts/ to its
+// include would break the build with "is not under rootDir".
+//
+// But that left the three test scripts — smoke.ts, smoke-admin.ts and
+// check-wallet-payload.ts, around 2,500 lines of assertions — completely
+// untypechecked. Found the hard way: a duplicate `const health` in smoke.ts
+// passed `pnpm typecheck` cleanly and surfaced only at runtime, as an esbuild
+// transform error with no file context beyond a line number.
+//
+// So: no emit, both directories, and `typecheck` points here. The build still
+// uses tsconfig.json, and CI runs both.
+
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "types": ["node"],
+    "noEmit": true
+  },
+  "include": ["src/**/*.ts", "scripts/**/*.ts"]
+}

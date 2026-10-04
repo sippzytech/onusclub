@@ -8,6 +8,7 @@ import {
   type SessionUser,
   type MerchantBranding as MerchantBrandingResponse,
   type TrialStatus,
+  type EmailHealth,
 } from "@onusclub/shared";
 import { pool } from "../db/pool.js";
 import { authContext, requireAuth } from "../auth/middleware.js";
@@ -15,6 +16,7 @@ import { ApiError } from "../errors.js";
 import { env } from "../config.js";
 import { inspectImage } from "../merchants/image.js";
 import { isPlatformAdmin } from "../admin/authorize.js";
+import { loadEmailHealth } from "../email/health.js";
 
 export const meRouter: Router = Router();
 
@@ -156,6 +158,18 @@ meRouter.patch(
     });
   }
 );
+
+/**
+ * GET /v1/me/email-health
+ *
+ * Whether this café's email is actually arriving. Until Day 25 a failed send
+ * existed only as a log line on the VPS, so a café asking "did my customer get
+ * their card?" had no answer short of us grepping containers.
+ */
+meRouter.get("/email-health", requireAuth, async (req: Request, res: Response<EmailHealth>) => {
+  const ctx = authContext(req);
+  return res.json(await loadEmailHealth(ctx.merchantId));
+});
 
 // ---------------------------------------------------------------------------
 // Merchant branding: logo + brand colour.

@@ -9,6 +9,7 @@ import {
   euroToCents,
   type Card,
   type CardDetail,
+  type EmailDelivery,
 } from "@onusclub/shared";
 import { pool } from "../db/pool.js";
 import { authContext, requireAuth } from "../auth/middleware.js";
@@ -26,6 +27,7 @@ import {
 import { buildSaveJwt, saveUrl } from "../wallet/loyalty.js";
 import { objectOnCurrentIssuer } from "../wallet/state.js";
 import { sendEmail } from "../email/client.js";
+import { loadCustomerEmails } from "../email/health.js";
 import { walletInviteEmail } from "../email/templates.js";
 
 export const cardsRouter: Router = Router();
@@ -64,6 +66,7 @@ interface InviteRow extends RowDataPacket {
   // Wallet link in enrolment emails shipped as ".../c/undefined/apple-pass"
   // from Day 11 until 2026-10-02.
   qr_token: string;
+  customer_id: string;
   google_wallet_object_id: string | null;
   business_name: string;
   customer_name: string | null;
@@ -139,7 +142,7 @@ async function sendWalletInviteEmail(
 ): Promise<boolean> {
   try {
     const [rows] = await pool.execute<InviteRow[]>(
-      `SELECT c.qr_token, c.google_wallet_object_id,
+      `SELECT c.qr_token, c.customer_id, c.google_wallet_object_id,
               m.business_name,
               cu.name AS customer_name, cu.email AS customer_email,
               p.reward_text, p.config_json AS program_config
@@ -194,6 +197,10 @@ async function sendWalletInviteEmail(
       subject,
       html,
       text,
+      kind: "card_invite",
+      merchantId,
+      customerId: row.customer_id,
+      cardId,
     });
     return result.ok;
   } catch (err) {
@@ -317,6 +324,34 @@ cardsRouter.get("/:id", requireAuth, async (req: Request, res: Response<CardDeta
   const ctx = authContext(req);
   return res.json(await getCardDetail(req.params.id, ctx.merchantId));
 });
+
+/**
+ * GET /v1/cards/:id/emails — what we tried to send this card's customer.
+ *
+ * Deliberately a separate endpoint rather than a field on CardDetail: that
+ * shape is also returned by stamp, redeem and adjust, where email history is
+ * irrelevant and would be a wasted query on the scan hot path.
+ *
+ * This is the answer to the only email question a café actually asks: "my
+ * customer says they never got their card."
+ */
+cardsRouter.get(
+  "/:id/emails",
+  requireAuth,
+  async (req: Request, res: Response<{ emails: EmailDelivery[] }>) => {
+    const ctx = authContext(req);
+    // Scoped read first: an id belonging to another merchant must 404 rather
+    // than return an empty list, which would read as "no emails sent".
+    const [rows] = await pool.execute<RowDataPacket[]>(
+      "SELECT customer_id FROM loyalty_cards WHERE id = ? AND merchant_id = ? LIMIT 1",
+      [req.params.id, ctx.merchantId]
+    );
+    if (rows.length === 0) throw ApiError.notFound("card not found");
+    return res.json({
+      emails: await loadCustomerEmails(rows[0].customer_id as string, ctx.merchantId),
+    });
+  }
+);
 
 // ---------- stamp ----------
 

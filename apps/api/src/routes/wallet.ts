@@ -19,8 +19,13 @@ interface CardRow extends RowDataPacket {
 }
 
 interface InviteRow extends RowDataPacket {
+  // Must stay in sync with the SELECT below. RowDataPacket carries an index
+  // signature, so a column used here but never selected reads as `any` and
+  // type-checks cleanly — the same trap that shipped ".../c/undefined/apple-pass"
+  // from the sibling invite path in routes/cards.ts.
   id: string;
   qr_token: string;
+  customer_id: string;
   google_wallet_object_id: string | null;
   business_name: string;
   customer_name: string | null;
@@ -78,7 +83,7 @@ walletRouter.post(
     const id = req.params.id;
 
     const [rows] = await pool.execute<InviteRow[]>(
-      `SELECT c.id, c.qr_token, c.google_wallet_object_id,
+      `SELECT c.id, c.qr_token, c.customer_id, c.google_wallet_object_id,
               m.business_name,
               cu.name AS customer_name, cu.email AS customer_email,
               p.reward_text, p.config_json AS program_config
@@ -127,6 +132,10 @@ walletRouter.post(
       subject,
       html,
       text,
+      kind: "card_invite",
+      merchantId: ctx.merchantId,
+      customerId: row.customer_id,
+      cardId: row.id,
     });
     if (!result.ok) {
       return res.status(502).json({ ok: false, reason: result.error ?? "email send failed" });

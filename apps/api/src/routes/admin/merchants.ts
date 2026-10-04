@@ -275,6 +275,8 @@ adminMerchantsRouter.post(
     const resetUrl = url.replace("/auth/verify", "/auth/reset-password");
 
     void sendEmail({
+      kind: "admin_password_reset",
+      merchantId,
       to: ownerEmail,
       subject: "Reset your OnUsClub password",
       text:

@@ -434,18 +434,25 @@ async function main(): Promise<void> {
   assert(start.broadcastId, "no broadcastId returned");
 
   console.log("→ poll broadcast until status=completed");
-  let final: {
+  // Named so the poll loop can type its own non-null local. `typeof final`
+  // would be circular: final is assigned from it.
+  interface BroadcastPoll {
     broadcast: { status: string; scanned: number; sent: number; failed: number };
     deliveries: Array<{ status: string }>;
-  } | null = null;
+  }
+  let final: BroadcastPoll | null = null;
   for (let attempt = 0; attempt < 30; attempt++) {
-    final = await call(
+    // Assigned via a non-null local: `final` is declared nullable for the
+    // post-loop assert, so dereferencing it inside the loop is what tripped
+    // the typecheck once scripts/ started being checked at all.
+    const latest = await call<BroadcastPoll>(
       "GET",
       `/v1/broadcasts/${start.broadcastId}`,
       undefined,
       jwt
     );
-    if (final.broadcast.status === "completed") break;
+    final = latest;
+    if (latest.broadcast.status === "completed") break;
     await new Promise((r) => setTimeout(r, 500));
   }
   assert(final, "broadcast never returned a row");
@@ -778,15 +785,19 @@ async function main(): Promise<void> {
     },
     pwLogin.jwt
   );
-  let filteredFinal: { broadcast: { scanned: number; status: string } } | null = null;
+  interface FilteredPoll {
+    broadcast: { scanned: number; status: string };
+  }
+  let filteredFinal: FilteredPoll | null = null;
   for (let i = 0; i < 30; i++) {
-    filteredFinal = await call(
+    const latest = await call<FilteredPoll>(
       "GET",
       `/v1/broadcasts/${filteredBroadcast.broadcastId}`,
       undefined,
       pwLogin.jwt
     );
-    if (filteredFinal.broadcast.status === "completed") break;
+    filteredFinal = latest;
+    if (latest.broadcast.status === "completed") break;
     await new Promise((r) => setTimeout(r, 500));
   }
   assert(
@@ -1586,6 +1597,101 @@ async function main(): Promise<void> {
   }
   assert(adetUnauth, "/v1/analytics/detail did not require auth");
 
+  // ---------- Day 25: email delivery visibility ----------
+  //
+  // Recording lives inside sendEmail, so these assertions also prove that no
+  // sender can forget to record — the signup above already went through it.
+
+  interface EmailHealthShape {
+    windowDays: number;
+    sent: number;
+    failed: number;
+    skipped: number;
+    recentFailures: Array<{ kind: string; status: string; error: string | null }>;
+  }
+
+  console.log("→ email: the signup email was recorded");
+  // Checked against the PASSWORD-signup merchant, not the first one.
+  //
+  // The first merchant in this suite is created through POST /v1/merchants and
+  // logs in by magic link, and `/v1/auth/request` deliberately sends no email
+  // (it returns the link inline — see "Owner magic-link email" in ROADMAP).
+  // So that merchant has no email records at all, and asserting against it
+  // tested nothing. /v1/auth/signup is the path that actually sends.
+  const emailHealth = await call<EmailHealthShape>(
+    "GET",
+    "/v1/me/email-health",
+    undefined,
+    pwLogin.jwt
+  );
+  assert(emailHealth.windowDays === 30, `window should be 30 days, got ${emailHealth.windowDays}`);
+  // *Something* must have been recorded, or sendEmail is not writing the row.
+  //
+  // Deliberately not asserting which bucket. The outcome depends entirely on
+  // the environment: CI has RESEND_API_KEY="" so every send is 'skipped', while
+  // a dev box with a real key gets a 422 back for @example.com addresses and
+  // records 'failed'. An earlier version asserted `failed === 0` and was wrong
+  // for exactly that reason — the same mistake as the MRR assertion in
+  // smoke-admin, which claimed a property the test does not control.
+  assert(
+    emailHealth.sent + emailHealth.failed + emailHealth.skipped >= 1,
+    `the welcome email should have been recorded somewhere: ${JSON.stringify(emailHealth)}`
+  );
+
+  console.log("→ email: 'skipped' is never reported as a failure");
+  // ⚠️ The distinction the three-state status exists for. 'skipped' means no
+  // mail provider is configured, which is normal in dev and CI. If those were
+  // counted as failures the health figure would be permanently alarming and
+  // nobody would look at it again.
+  assert(
+    emailHealth.recentFailures.length <= emailHealth.failed,
+    `recentFailures (${emailHealth.recentFailures.length}) cannot exceed failed (${emailHealth.failed})`
+  );
+  assert(
+    emailHealth.recentFailures.every((f) => f.status === "failed"),
+    `only failures belong in recentFailures: ${JSON.stringify(
+      emailHealth.recentFailures.map((f) => f.status)
+    )}`
+  );
+  assert(
+    emailHealth.recentFailures.every((f) => f.error !== null && f.error.length > 0),
+    "a recorded failure must say why — an empty reason is useless to whoever reads it"
+  );
+
+  console.log("→ email: records are scoped to the merchant");
+  // The magic-link merchant sends nothing, so its counts must be zero. If
+  // scoping were missing it would see the whole platform's.
+  const unscopedCheck = await call<EmailHealthShape>(
+    "GET",
+    "/v1/me/email-health",
+    undefined,
+    jwt
+  );
+  assert(
+    unscopedCheck.sent + unscopedCheck.failed + unscopedCheck.skipped === 0,
+    `a merchant that has sent no email must report zero — got ${JSON.stringify(unscopedCheck)}`
+  );
+
+  console.log("→ email: a card's email history is available and tenant-scoped");
+  const cardEmails = await call<{ emails: Array<{ kind: string; status: string }> }>(
+    "GET",
+    `/v1/cards/${card.id}/emails`,
+    undefined,
+    jwt
+  );
+  assert(Array.isArray(cardEmails.emails), "card emails should be an array");
+
+  console.log("→ email: health and card emails require auth");
+  for (const path of ["/v1/me/email-health", `/v1/cards/${card.id}/emails`]) {
+    let unauth = false;
+    try {
+      await call("GET", path);
+    } catch (err) {
+      unauth = String(err).includes("401");
+    }
+    assert(unauth, `${path} did not require auth`);
+  }
+
   // ---------- Day 24: shop locations (proximity notifications) ----------
   //
   // The coordinate parser is pure and lives in `shared`, but this repo has no
@@ -2215,10 +2321,19 @@ async function main(): Promise<void> {
     { header: "Segment test", body: "Ignore — automated.", audienceFilter: { rfmSegment: "lost" } },
     jwt
   );
-  let emptyFinal: { broadcast: { status: string; scanned: number } } | null = null;
+  interface EmptySegPoll {
+    broadcast: { status: string; scanned: number };
+  }
+  let emptyFinal: EmptySegPoll | null = null;
   for (let attempt = 0; attempt < 30; attempt += 1) {
-    emptyFinal = await call("GET", `/v1/broadcasts/${emptySeg.broadcastId}`, undefined, jwt);
-    if (emptyFinal.broadcast.status !== "running") break;
+    const latest = await call<EmptySegPoll>(
+      "GET",
+      `/v1/broadcasts/${emptySeg.broadcastId}`,
+      undefined,
+      jwt
+    );
+    emptyFinal = latest;
+    if (latest.broadcast.status !== "running") break;
     await new Promise((r) => setTimeout(r, 300));
   }
   // The failure this guards against is a filter that matches nobody being

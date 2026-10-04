@@ -11,6 +11,13 @@
 //   DATABASE_URL the same database that api is pointed at
 
 import mysql from "mysql2/promise";
+import type { RowDataPacket } from "mysql2";
+
+// mysql2's `query<T>` constrains T to QueryResult, which means row shapes have
+// to extend RowDataPacket. Intersecting here rather than declaring a named
+// interface per query keeps the assertions readable — these are one-shot
+// result shapes, not domain types.
+type Rows<T> = Array<RowDataPacket & T>;
 
 const BASE = process.env.SMOKE_BASE ?? "http://localhost:4000";
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -553,7 +560,7 @@ async function main(): Promise<void> {
 
     console.log("→ the audit row carries the actor, the reason and the before/after");
     const [auditRows] = await db.query<
-      Array<{
+      Rows<{
         actor_email: string;
         action: string;
         reason: string;
@@ -674,7 +681,7 @@ async function main(): Promise<void> {
       clawback.before === 95 && clawback.after === 55,
       `expected 95 → 55, got ${clawback.before} → ${clawback.after}`
     );
-    const [ledger] = await db.query<Array<{ bal: string | number }>>(
+    const [ledger] = await db.query<Rows<{ bal: string | number }>>(
       `SELECT COALESCE(SUM(points_remaining), 0) AS bal
          FROM points_batches
         WHERE card_id = ? AND points_remaining > 0
@@ -692,7 +699,7 @@ async function main(): Promise<void> {
       reason: "more than they have",
     });
     assert(tooMuch === 400, `over-deduction should 400, got ${tooMuch}`);
-    const [stillThere] = await db.query<Array<{ bal: string | number }>>(
+    const [stillThere] = await db.query<Rows<{ bal: string | number }>>(
       `SELECT COALESCE(SUM(points_remaining), 0) AS bal
          FROM points_batches
         WHERE card_id = ? AND points_remaining > 0
@@ -761,7 +768,7 @@ async function main(): Promise<void> {
     assert(patched.monthlyFeeCents === 2900, `fee not applied: ${patched.monthlyFeeCents}`);
 
     const [patchAudit] = await db.query<
-      Array<{ action: string; reason: string; before_json: unknown; after_json: unknown }>
+      Rows<{ action: string; reason: string; before_json: unknown; after_json: unknown }>
     >(
       `SELECT action, reason, before_json, after_json FROM admin_audit_log
         WHERE merchant_id = ? AND action = 'merchant.update' ORDER BY id DESC LIMIT 1`,

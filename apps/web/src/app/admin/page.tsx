@@ -4,6 +4,7 @@ import {
   primaryHealthFlag,
   type AdminMerchantList,
   type AdminPlatformMetrics,
+  type EmailHealth,
 } from "@onusclub/shared";
 import { apiFetch } from "@/lib/api";
 import { requireAdminSession } from "@/lib/admin-session";
@@ -37,6 +38,13 @@ export default async function AdminOverviewPage(): Promise<JSX.Element> {
     apiFetch<AdminPlatformMetrics>("/v1/admin/metrics", { jwt }),
     apiFetch<AdminMerchantList>("/v1/admin/merchants?sort=attention", { jwt }),
   ]);
+
+  // Allowed to fail: depends on migration 013. The admin dashboard must still
+  // open on a box that has the code but not the migration — same rule as the
+  // analytics fetch on the merchant Overview page.
+  const email = await apiFetch<EmailHealth>("/v1/admin/metrics/email", { jwt }).catch(
+    () => null
+  );
 
   const pct = (part: number, whole: number): string =>
     whole === 0 ? "—" : `${Math.round((part / whole) * 100)}%`;
@@ -137,6 +145,57 @@ export default async function AdminOverviewPage(): Promise<JSX.Element> {
           </ul>
         </section>
 
+        <section className="rounded-xl bg-white border border-slate-200 p-5">
+          <h2 className="text-sm font-medium text-slate-900">Email</h2>
+          {email === null ? (
+            <p className="text-sm text-slate-600 mt-2">
+              Delivery records unavailable — migration 013 may not be applied.
+            </p>
+          ) : (
+            <>
+              <p className="text-[11px] text-slate-500 mt-0.5">
+                Across every café, last {email.windowDays} days.
+              </p>
+              <dl className="mt-3 space-y-2 text-sm">
+                <div className="flex justify-between gap-2">
+                  <dt className="text-slate-600">Delivered</dt>
+                  <dd className="tabular-nums text-slate-900">{email.sent}</dd>
+                </div>
+                <div className="flex justify-between gap-2">
+                  <dt className={email.failed > 0 ? "text-amber-800" : "text-slate-600"}>
+                    Failed
+                  </dt>
+                  <dd
+                    className={`tabular-nums ${
+                      email.failed > 0 ? "text-amber-900 font-medium" : "text-slate-900"
+                    }`}
+                  >
+                    {email.failed}
+                  </dd>
+                </div>
+                <div className="flex justify-between gap-2">
+                  <dt className="text-slate-600">
+                    Not sent
+                    <span className="block text-[11px] text-slate-400">
+                      no mail provider configured
+                    </span>
+                  </dt>
+                  <dd className="tabular-nums text-slate-900">{email.skipped}</dd>
+                </div>
+              </dl>
+              {/* The reason this panel exists: a hit send limit used to be a
+                  log line and nothing else. 429 is the daily cap. */}
+              {email.recentFailures.length > 0 && (
+                <p className="text-[11px] text-amber-800 mt-3 border-t border-slate-100 pt-2">
+                  Most recent: {email.recentFailures[0].error}
+                </p>
+              )}
+            </>
+          )}
+        </section>
+      </div>
+
+      <div className="grid lg:grid-cols-3 gap-4 mt-4">
         <section className="rounded-xl bg-white border border-slate-200 p-5">
           <h2 className="text-sm font-medium text-slate-900">Signups</h2>
           <p className="text-[11px] text-slate-500 mt-0.5">New cafés per week, last 12 weeks.</p>

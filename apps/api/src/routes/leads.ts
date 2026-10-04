@@ -146,6 +146,8 @@ leadsRouter.post("/", async (req: Request, res: Response<LeadResult>) => {
       .replace(/"/g, "&quot;");
 
   void sendEmail({
+    // Goes to us, not a tenant — merchantId stays null.
+    kind: "lead_notification",
     to: env.LEADS_NOTIFY_EMAIL,
     subject:
       input.source === "demo"

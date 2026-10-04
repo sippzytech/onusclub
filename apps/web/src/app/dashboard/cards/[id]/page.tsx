@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import QRCode from "qrcode";
-import type { CardDetail, Customer, WalletLink } from "@onusclub/shared";
+import type { CardDetail, Customer, EmailDelivery, WalletLink } from "@onusclub/shared";
 import { ApiCallError, apiFetch } from "@/lib/api";
 import { requireSession } from "@/lib/session";
 import { DashboardShell } from "../../dashboard-shell";
@@ -53,6 +53,15 @@ export default async function CardDetailPage({
   // Look up the customer to know if we have an email on file (controls
   // whether the "Resend invite" button is offered).
   const { customers } = await apiFetch<{ customers: Customer[] }>("/v1/customers", { jwt });
+
+  // Allowed to fail: depends on migration 013, and a card page must still open
+  // on a box that has the code but not the migration.
+  const emails = await apiFetch<{ emails: EmailDelivery[] }>(
+    `/v1/cards/${params.id}/emails`,
+    { jwt }
+  )
+    .then((r) => r.emails)
+    .catch(() => null);
   const customer = customers.find((c) => c.id === detail.card.customerId) ?? null;
 
   // Type-branched view-model: same UI shell, different labels + numbers per
@@ -184,6 +193,49 @@ export default async function CardDetailPage({
             <EventTimeline events={detail.events} />
           </div>
         </section>
+
+        {/* The answer to "my customer says they never got their card". Shown
+            only once there is something to show — an empty box on every card
+            page is noise. */}
+        {emails && emails.length > 0 && (
+          <section className="rounded-card bg-white border border-brand-green/10 p-6">
+            <h3 className="font-serif text-2xl text-brand-green">Emails to this customer</h3>
+            <ul className="mt-4 space-y-2 text-sm">
+              {emails.map((e) => (
+                <li
+                  key={e.id}
+                  className="flex flex-wrap items-baseline gap-x-3 border-t border-brand-green/10 pt-2 first:border-0 first:pt-0"
+                >
+                  <span
+                    className={
+                      e.status === "failed"
+                        ? "text-amber-800 font-medium"
+                        : e.status === "skipped"
+                          ? "text-brand-olive"
+                          : "text-emerald-700"
+                    }
+                  >
+                    {e.status === "sent"
+                      ? "Sent"
+                      : e.status === "failed"
+                        ? "Failed"
+                        : "Not sent"}
+                  </span>
+                  <span className="text-brand-green">{e.subject}</span>
+                  {e.error && <span className="text-xs text-amber-800">{e.error}</span>}
+                  <span className="ml-auto text-xs text-brand-olive tabular-nums">
+                    {e.createdAt.slice(0, 16).replace("T", " ")}
+                  </span>
+                </li>
+              ))}
+            </ul>
+            <p className="text-xs text-brand-olive mt-3">
+              {/* The useful next step, not just a diagnosis. */}
+              If an invite failed, the customer can still add their card — show them the QR
+              code above, or use Resend invite.
+            </p>
+          </section>
+        )}
       </div>
     </DashboardShell>
   );
