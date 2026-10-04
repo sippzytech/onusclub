@@ -378,11 +378,31 @@ the tests can address fields by label rather than by placeholder.
 
 ### Small / cosmetic
 
-- **`/contact` page** on onusclub.com — the Google-registered support URL points at the
-  homepage. The footer already advertises `support@onusclub.com`; confirm that mailbox
-  actually exists.
-- **MCC reads "Internet Cafes"** in the Google Business Profile — cosmetic, no effect on
-  Wallet.
+- **`/contact` page** on onusclub.com — 🔶 **WRITTEN, NOT DEPLOYABLE FROM HERE
+  (2026-10-05).** The page content, the footer link, the Google console click-path and the
+  reasoning are in **[docs/marketing-site/contact-page.md](./docs/marketing-site/contact-page.md)**.
+  `onusclub.com` is a separate Netlify site, so publishing is manual.
+
+  ⚠️ **Blocked on one human check**: nobody has verified `support@onusclub.com` receives
+  mail, and it appears 14 times across Privacy/Terms/GDPR as the data-subject contact. Send
+  it a test from an outside address first. A bounce there is a compliance problem, not an
+  inconvenience — do not publish the page until that address works.
+
+  Same file also flags that **the trial copy can be restored**: CTAs were softened to "Get
+  started free" because no trial existed, and trials have since shipped, so the site is now
+  under-promising a feature we have.
+- **MCC reads "Internet Cafes"** in the Google Business Profile — 🔶 **NOT A CODE CHANGE
+  (confirmed 2026-10-05).** Nothing in this repo sets it; it is a field on the payments
+  profile. Click-path: Google Pay & Wallet Console → **Business profile** → payments profile
+  `4896-3145-4976` → *Business category / Merchant category code* → change to **5814
+  (Fast Food Restaurants)** or **5812 (Eating Places and Restaurants)**, whichever the
+  dropdown offers; for a loyalty-card SaaS, **7372 (Computer Programming / Software)** is
+  the more accurate choice if it is available.
+
+  Genuinely cosmetic — MCC affects card-network categorisation, and we take no payments
+  through that profile. Worth correcting before the first real merchant mostly so the issuer
+  record is not visibly wrong if anyone at Google looks at it again. Only you can change it;
+  there is no API.
 - ~~**`sippzy.com` legacy Traefik routers**~~ ✅ **REMOVED 2026-10-05.** DNS had been gone
   since at least 2026-09-17, so a router whose `Host()` rule named them could never receive
   a request — inert config that only misled anyone reading the compose file. The reasoning,
