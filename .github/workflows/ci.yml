@@ -168,6 +168,19 @@ jobs:
           cat /tmp/api.log
           exit 1
 
+      # Google Wallet cannot be exercised anywhere but production — it is
+      # disabled in local dev on purpose, and the API has no way to delete a
+      # class once created. So the only check available is on the payload we
+      # would have sent. It guards two silent failures: sending the deprecated
+      # `locations` field (accepted, stored, never triggers a notification),
+      # and forgetting to teach classBrandingDiffers about a new field (which
+      # means existing classes never receive it).
+      #
+      # In this job rather than typecheck-and-build because config.ts validates
+      # env at import time and the class id embeds the issuer.
+      - name: Check Google Wallet class payload
+        run: pnpm --filter @onusclub/api run check:wallet
+
       - name: Run smoke
         env:
           SMOKE_BASE: http://localhost:4000

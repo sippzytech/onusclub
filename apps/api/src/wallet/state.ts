@@ -2,12 +2,19 @@ import type { CardDesign, PointsCardState, StampCardState } from "@onusclub/shar
 import { env } from "../config.js";
 import { buildHeroPng, heroVersion } from "../card-art/raster.js";
 import { WALLET_ISSUER_ID } from "./client.js";
+import type { GeoPoint } from "../merchants/locations.js";
 
 export interface MerchantBranding {
   id: string;
   businessName: string;
   brandColor: string | null;
   logoUrl: string | null;
+  /**
+   * Shops to geofence on, from `loadMerchantLocations`. Optional: omitted
+   * means "do not touch the class's locations", which is what the logo re-sync
+   * script wants, while an empty array means "this merchant has none".
+   */
+  locations?: GeoPoint[];
 }
 
 // Program-shape passed into wallet builders. Type-discriminated so the
@@ -135,6 +142,31 @@ export function buildLoyaltyClass(
         body: program.rewardText,
       },
     ],
+    // ⚠️ `merchantLocations`, NOT `locations`.
+    //
+    // `LoyaltyClass.locations` (an array of LatLongPoint) is the field you
+    // would reach for, and Google's own reference marks it: "This item is
+    // deprecated! Note: This field is currently not supported to trigger geo
+    // notifications." Sending it looks entirely correct — the API accepts it,
+    // the class stores it, nothing errors — and no notification ever fires.
+    // Do not "simplify" this back.
+    //
+    // Google takes coordinates only; there is no name or address field, and it
+    // chooses its own radius. Max 10 on the class, and anything beyond that is
+    // *rejected* rather than truncated — which would fail the whole PATCH,
+    // branding included — so `loadMerchantLocations` caps the list in SQL too.
+    //
+    // Omitted entirely when `locations` is undefined, so a caller that does not
+    // know about locations (the logo re-sync script) leaves them alone rather
+    // than clearing them.
+    ...(merchant.locations
+      ? {
+          merchantLocations: merchant.locations.map((l) => ({
+            latitude: l.latitude,
+            longitude: l.longitude,
+          })),
+        }
+      : {}),
   };
 }
 

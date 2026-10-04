@@ -30,7 +30,7 @@ import {
  * so comparing whole bodies would report a difference on every single call and
  * PATCH forever. Compare only the fields we control.
  */
-function classBrandingDiffers(
+export function classBrandingDiffers(
   remote: Record<string, unknown>,
   desired: Record<string, unknown>
 ): boolean {
@@ -42,12 +42,46 @@ function classBrandingDiffers(
       (m) => m.id === "reward"
     )?.body;
 
+  /**
+   * Geofence points, as a comparable string.
+   *
+   * Rounded to 6 decimals (~11cm) because Google echoes these back as floats
+   * and the round-trip is not bit-exact; comparing raw numbers would report a
+   * difference forever and PATCH on every single stamp. Sorted because the
+   * ordering Google returns is not guaranteed to match the order we sent, and
+   * a reordering is not a change.
+   */
+  const locationsOf = (c: Record<string, unknown>): string => {
+    const list = c.merchantLocations as
+      | Array<{ latitude?: number; longitude?: number }>
+      | undefined;
+    if (!list) return "";
+    return list
+      .map((l) => `${(l.latitude ?? 0).toFixed(6)},${(l.longitude ?? 0).toFixed(6)}`)
+      .sort()
+      .join("|");
+  };
+
   return (
     remote.issuerName !== desired.issuerName ||
     remote.programName !== desired.programName ||
     remote.hexBackgroundColor !== desired.hexBackgroundColor ||
     logoOf(remote) !== logoOf(desired) ||
-    rewardOf(remote) !== rewardOf(desired)
+    rewardOf(remote) !== rewardOf(desired) ||
+    // ⚠️ Without this line, locations reach only classes created AFTER the
+    // feature shipped. Every existing café would keep a class with no
+    // geofence, forever, with nothing in the logs to say so — because
+    // ensureLoyaltyClass only PATCHes when a field compared *here* differs.
+    //
+    // That is exactly the bug this function was written to fix for logos. The
+    // rule it encodes: anything added to buildLoyaltyClass must be added here
+    // in the same commit.
+    //
+    // Only compared when we actually have an opinion — `desired` omits
+    // merchantLocations when the caller did not supply any, and in that case
+    // the remote value is none of our business.
+    (desired.merchantLocations !== undefined &&
+      locationsOf(remote) !== locationsOf(desired))
   );
 }
 

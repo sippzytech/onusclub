@@ -28,6 +28,7 @@ import { objectOnCurrentIssuer } from "../wallet/state.js";
 import type { WalletEvent } from "../wallet/state.js";
 import { sendApnsPushBatch } from "../wallet-apple/apns.js";
 import { writeAuditLog } from "../admin/audit.js";
+import { loadMerchantLocations } from "../merchants/locations.js";
 import type { AdminActor } from "../admin/authorize.js";
 
 interface CardRow extends RowDataPacket {
@@ -256,6 +257,11 @@ export async function syncCardToWallet(
       businessName: row.business_name,
       brandColor: row.brand_color,
       logoUrl: row.logo_url,
+      // Geofence points for the LoyaltyClass. This runs on every stamp, which
+      // is also how a location added later reaches a café whose class already
+      // exists: ensureLoyaltyClass compares and PATCHes. One extra indexed
+      // read on a path that already does several, and a Google round-trip.
+      locations: await loadMerchantLocations(row.merchant_id),
     };
 
     // Branch by program type so we hand the wallet builders the discriminated
