@@ -293,7 +293,22 @@ appear. No test in this repo can prove that.
 **Not included**: writing `card_events.location_id`, which is still never populated — so
 "which branch was this stamped at" remains unanswerable. It needs a location picker on the
 scanner and a story for existing NULL rows; separate feature.
-**16. Template gallery** — engine shipped Day 16; blocked on ~90 commissioned motifs.
+**16. Template gallery** — 🔶 **PARTLY UNBLOCKED (re-assessed 2026-10-05).** The old note
+said "blocked on ~90 commissioned motifs", which conflated two separate things:
+
+- **The presets are not blocked.** A template is ~12 lines of JSON — name, industry,
+  colours, icon, labels — and `STAMP_ICON_IDS` already ships 10 tintable icons that 94
+  templates can share happily (Barber Shop and Haircut both want `scissors`). A working
+  gallery with real presets is buildable today, no art required.
+- **Only the tiled background motifs need an illustrator**, and they are a visual upgrade
+  to a working gallery rather than a prerequisite for one.
+
+Spec for the motifs, if commissioned: single-colour SVG tiles, `fill="currentColor"` only
+(we tint at render time so a café changing brand colour never clashes with its own card),
+square and seamlessly tiling, `viewBox="0 0 64 64"`, paths only — no `<image>`, no embedded
+rasters, no gradients — under ~4KB each since they rasterise into Apple's `@3x` strip. Start
+with the top 10 industries rather than all 94. **Original artwork**: mirroring the industry
+*names* is fine, tracing Perkstar's art is not.
 **17. CSV customer import/export** ✅ **DONE 2026-10-03.**
 **18. Weekly merchant digest email** ✅ **DONE 2026-10-05.** Mondays at 08:00
 Europe/Amsterdam — the one moment a "here is what happened" email has somewhere to go.
