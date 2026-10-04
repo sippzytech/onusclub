@@ -7,11 +7,13 @@ import {
   type Customer,
   type Program,
   type EmailHealth,
+  type MerchantBranding,
 } from "@onusclub/shared";
 import { apiFetch } from "@/lib/api";
 import { requireSession } from "@/lib/session";
 import { DashboardShell } from "./dashboard-shell";
 import { EmailHealthBanner } from "./email-health-banner";
+import { OnboardingChecklist } from "./onboarding-checklist";
 
 export const dynamic = "force-dynamic";
 
@@ -71,7 +73,8 @@ function StatCard({ label, value, delta }: StatCardProps): JSX.Element {
 }
 
 export default async function DashboardPage(): Promise<JSX.Element> {
-  const { jwt, user, merchant, preferences, trial, isPlatformAdmin } = await requireSession();
+  const { jwt, user, merchant, preferences, trial, isPlatformAdmin, publicSlug } =
+    await requireSession();
 
   // Pull the shapes we already have; aggregate to dashboard-shaped numbers
   // client-side so we don't have to add a new endpoint yet.
@@ -99,6 +102,13 @@ export default async function DashboardPage(): Promise<JSX.Element> {
   const emailHealth = await apiFetch<EmailHealth>("/v1/me/email-health", {
     jwt,
   }).catch(() => null);
+
+  // For the onboarding checklist's "add your logo" step. Allowed to fail for
+  // the same reason as everything else down here — a brand-new café seeing a
+  // 500 instead of a setup guide would be the worst possible first impression.
+  const branding = await apiFetch<MerchantBranding>("/v1/me/branding", { jwt }).catch(
+    () => null
+  );
 
   const money = (cents: number): string =>
     centsToEuroString(cents, overview?.currencyCode ?? "EUR");
@@ -169,6 +179,33 @@ export default async function DashboardPage(): Promise<JSX.Element> {
     >
       <div className="space-y-6">
         <EmailHealthBanner health={emailHealth} />
+
+        {/* First, above the numbers. A café with nothing set up was previously
+            shown four dashed stat cards and an empty feed before reaching the
+            one thing it needed to do. */}
+        <OnboardingChecklist
+          state={{
+            hasProgram: programs.length > 0,
+            // ⚠️ Logo ONLY, deliberately not brand colour.
+            //
+            // `merchants.brand_color` has a migration default of '#000000' (see
+            // the Day 21 note in CLAUDE.md), so it is never null and tells you
+            // nothing about whether anyone chose it. Counting it marked this
+            // step complete for every café from the second they signed up,
+            // which is worse than not having the step at all.
+            //
+            // The logo is the one with real consequences anyway: without it
+            // every wallet pass shows the OnUsClub badge as the café's mark.
+            hasBranding: Boolean(branding?.logoUrl),
+            hasCustomer: customers.length > 0,
+            // total_lifetime across every card: non-zero means something was
+            // actually scanned, for stamp and points programmes alike.
+            hasScan: totalStamps > 0,
+            publicSlug,
+            webBase:
+              process.env.NEXT_PUBLIC_WEB_BASE?.replace(/\/$/, "") ?? "http://localhost:3001",
+          }}
+        />
 
         {/* Money row. Everything here comes from sale amounts staff typed at
           * scan time — see the empty-state hint below when nothing has been
@@ -371,21 +408,10 @@ export default async function DashboardPage(): Promise<JSX.Element> {
           </div>
         </div>
 
-        {programs.length === 0 ? (
-          <div className="rounded-card bg-white border border-brand-green/10 p-8 text-center">
-            <p className="font-serif text-2xl text-brand-green">No programs yet</p>
-            <p className="text-sm text-brand-olive mt-2 max-w-md mx-auto">
-              Create your first loyalty program to start enrolling customers
-              and issuing digital cards.
-            </p>
-            <Link
-              href="/dashboard/card-builder"
-              className="mt-5 inline-block rounded-full bg-brand-green text-white text-sm font-medium px-5 py-2.5 hover:bg-brand-green-deep transition-colors"
-            >
-              Go to Card builder
-            </Link>
-          </div>
-        ) : null}
+        {/* The old "No programs yet" panel lived here, below the stat cards and
+            the activity feed. The checklist at the top of the page says the
+            same thing first, with the reason and the next three steps, so
+            keeping both would just be saying it twice. */}
       </div>
     </DashboardShell>
   );
