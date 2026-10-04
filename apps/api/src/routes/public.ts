@@ -30,6 +30,7 @@ import { syncCardToWallet } from "../cards/operations.js";
 import { buildSaveJwt, saveUrl } from "../wallet/loyalty.js";
 import { buildHeroPng } from "../card-art/raster.js";
 import { objectOnCurrentIssuer } from "../wallet/state.js";
+import { loadMerchantLocations } from "../merchants/locations.js";
 
 export const publicRouter: Router = Router();
 
@@ -545,6 +546,9 @@ publicRouter.get("/c/:qrToken/apple-pass", async (req: Request, res: Response) =
       id: row.merchant_id,
       businessName: row.business_name,
       brandColor: row.brand_color,
+      // Shared loader, not an inline query — the other buildPkPass call site
+      // in routes/apple-wallet.ts must assemble this identically.
+      locations: await loadMerchantLocations(row.merchant_id),
     },
     programForApple,
     cardForApple,

@@ -25,6 +25,7 @@ import {
 import { pool } from "../db/pool.js";
 import { env } from "../config.js";
 import { logger } from "../logger.js";
+import { loadMerchantLocations } from "../merchants/locations.js";
 import type {
   AppleCardForWallet,
   AppleProgramForWallet,
@@ -334,6 +335,9 @@ appleWalletRouter.get(
         id: card.merchant_id,
         businessName: card.business_name,
         brandColor: card.brand_color,
+        // Same loader as routes/public.ts. This is the refresh path, so a
+        // location added after the pass was saved reaches the phone here.
+        locations: await loadMerchantLocations(card.merchant_id),
       },
       programForApple,
       cardForApple,

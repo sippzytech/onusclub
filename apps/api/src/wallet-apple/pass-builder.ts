@@ -2,7 +2,11 @@ import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PKPass } from "passkit-generator";
-import { DEFAULT_CARD_DESIGN, type CardDesign } from "@onusclub/shared";
+import {
+  APPLE_MAX_DISTANCE_METRES,
+  DEFAULT_CARD_DESIGN,
+  type CardDesign,
+} from "@onusclub/shared";
 import { logger } from "../logger.js";
 import { buildStripSet } from "../card-art/raster.js";
 import { appleWalletCredentials } from "./client.js";
@@ -191,6 +195,13 @@ export async function buildPkPass(
         foregroundColor: hexToRgb(passFg),
         backgroundColor: hexToRgb(passBg),
         labelColor: hexToRgb(passLabel),
+        // Radius for the lock-screen trigger, in metres. Apple compares this
+        // against its own default and uses the SMALLER value, so it can only
+        // tighten the radius, never widen it. Omitted when there is nothing to
+        // geofence, rather than set to a number that means nothing.
+        ...(merchant.locations && merchant.locations.length > 0
+          ? { maxDistance: APPLE_MAX_DISTANCE_METRES }
+          : {}),
         ...(liveUpdate
           ? {
               webServiceURL: liveUpdate.webServiceURL,
@@ -263,6 +274,24 @@ export async function buildPkPass(
       messageEncoding: "iso-8859-1",
       altText: memberId(card.id),
     });
+
+    // Proximity: iOS surfaces the pass on the lock screen when the phone is
+    // near one of these. Entirely an OS behaviour — nothing runs on our side,
+    // and the device never tells us where it is.
+    //
+    // `relevantText` is the line shown on the lock screen, so it is
+    // customer-facing copy, not a label. Apple caps the list at 10; the loader
+    // already does too, and setLocations is skipped entirely when there are
+    // none so the pass does not carry an empty array.
+    if (merchant.locations && merchant.locations.length > 0) {
+      pass.setLocations(
+        ...merchant.locations.slice(0, 10).map((loc) => ({
+          latitude: loc.latitude,
+          longitude: loc.longitude,
+          relevantText: `${loc.name} is nearby`,
+        }))
+      );
+    }
 
     return pass.getAsBuffer();
   } catch (err) {
