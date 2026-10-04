@@ -342,10 +342,39 @@ request-scoped tenant context, `qr_token` as a bearer credential on public route
 posture on the Next API routes, and dependency scanning (Dependabot/CodeQL are not
 configured). Run `/security-review` per branch, and do a dedicated pass before the master
 dashboard lands.
-**20. Testing** — the 117-assertion smoke suite plus CI is the backbone and is healthy.
-The real gap is browser-level E2E; **Playwright** is the natural fit (free, headless in CI)
-and would cover the scan flow and wallet buttons that smoke can only hit at API level. No
-need for a paid tool like TestRigor at this size.
+**20. Testing** ✅ **DONE 2026-10-05.** Four layers now, each covering what the others
+cannot:
+
+| | Covers |
+|---|---|
+| `pnpm smoke` | the API black-box, ~200 assertions, incl. cross-tenant isolation |
+| `pnpm smoke:admin` | the platform-admin surface (needs `DATABASE_URL` — granting is SQL-only) |
+| `pnpm check:wallet` | the Google Wallet class payload, which cannot be exercised outside prod |
+| `pnpm e2e` | **Playwright**, in `e2e/` — browser flows |
+
+The browser suite deliberately does **not** re-test the API. It covers only what a browser
+is required for: the onboarding checklist (whose entire logic is "derive four booleans from
+several API calls and render" — there is no endpoint to test), `/admin` returning
+not-found rather than redirecting to `/login`, revocation killing a live browser session,
+and the two-step balance-adjustment confirm including the café seeing the result on their
+own card page.
+
+⚠️ **The QR scanner is NOT covered, and that is a decision.** `/dashboard/scan` is
+camera-only with no manual token-entry fallback, so testing it would mean feeding Chromium
+a fake video stream containing a generated QR and hoping `html5-qrcode` decodes it — a test
+of that library, not of us. The scan *operation* is already covered through the card detail
+page, which hits the same endpoints. Written down in `playwright.config.ts` so nobody
+assumes otherwise.
+
+Runs in the existing `smoke` CI job rather than its own: mysql and the api are already up
+there, and duplicating the service block to start them twice is the more fragile
+arrangement. Chromium only. Fixtures are built over HTTP, never through the UI — a card
+builder test should fail when the card builder breaks, not when signup does.
+
+**Found while writing it:** neither the login nor the signup form associated its `<label>`
+with its input (no `htmlFor`/`id`), so a screen reader announced five unlabelled boxes and
+clicking a label did nothing. Fixed on both, plus `autoComplete` hints — which is also why
+the tests can address fields by label rather than by placeholder.
 
 ### Small / cosmetic
 

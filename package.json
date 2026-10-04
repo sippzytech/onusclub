@@ -2,7 +2,7 @@
   "name": "onusclub",
   "version": "0.0.1",
   "private": true,
-  "description": "OnUsClub — multi-tenant SaaS for digital loyalty cards (Google/Apple Wallet).",
+  "description": "OnUsClub \u2014 multi-tenant SaaS for digital loyalty cards (Google/Apple Wallet).",
   "engines": {
     "node": ">=20",
     "pnpm": ">=8"
@@ -12,7 +12,8 @@
     "build": "pnpm -r run build",
     "typecheck": "pnpm -r run typecheck",
     "lint": "pnpm -r run lint",
-    "db:migrate": "pnpm --filter @onusclub/api run db:migrate"
+    "db:migrate": "pnpm --filter @onusclub/api run db:migrate",
+    "e2e": "pnpm --filter @onusclub/e2e run e2e"
   },
   "devDependencies": {
     "typescript": "^5.4.5"

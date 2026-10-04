@@ -201,9 +201,66 @@ jobs:
           SMOKE_BASE: http://localhost:4000
         run: pnpm --filter @onusclub/api run smoke:admin
 
-      - name: Show api logs on failure
+      # ---- Browser-level tests (backlog item 20) ----
+      #
+      # Bolted onto this job rather than given its own: mysql and the api are
+      # already up here, and duplicating the service block plus a dozen env
+      # vars to start them again would be the more fragile arrangement.
+      #
+      # Only Chromium is installed. These are flow tests — the dashboard has no
+      # browser-specific code, and the two surfaces that do (Google and Apple
+      # Wallet) are native apps no engine can stand in for.
+      - name: Build and start web
+        run: |
+          pnpm --filter @onusclub/web run build
+          pnpm --filter @onusclub/web run start > /tmp/web.log 2>&1 &
+          echo $! > /tmp/web.pid
+        env:
+          NEXT_PUBLIC_API_BASE: http://localhost:4000
+          NEXT_PUBLIC_WEB_BASE: http://localhost:3001
+          API_BASE_INTERNAL: http://localhost:4000
+          NEXTAUTH_SECRET: ci-placeholder-not-used
+          NEXTAUTH_URL: http://localhost:3001
+
+      - name: Wait for web
+        run: |
+          for i in {1..60}; do
+            if curl -sf http://localhost:3001/login > /dev/null; then
+              echo "web healthy after ${i}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "web never became ready. logs:"
+          cat /tmp/web.log
+          exit 1
+
+      - name: Install Chromium for Playwright
+        run: pnpm --filter @onusclub/e2e exec playwright install --with-deps chromium
+
+      - name: Run browser tests
+        env:
+          E2E_WEB_BASE: http://localhost:3001
+          E2E_API_BASE: http://localhost:4000
+        run: pnpm e2e
+
+      - name: Upload Playwright report on failure
         if: failure()
-        run: cat /tmp/api.log || true
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: e2e/playwright-report/
+          retention-days: 7
+
+      - name: Show logs on failure
+        if: failure()
+        run: |
+          echo "--- api ---"; cat /tmp/api.log || true
+          echo "--- web ---"; cat /tmp/web.log || true
+
+      - name: Stop web
+        if: always()
+        run: kill $(cat /tmp/web.pid) 2>/dev/null || true
 
       - name: Stop api
         if: always()

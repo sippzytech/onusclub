@@ -170,10 +170,13 @@ What works end-to-end:
 - ✅ Per-card delivery audit (broadcasts + sweeps) with manual retry
 - ✅ Premium feature gate (fake unlock for now) + crons-enabled kill-switch
 - ✅ Staff/team accounts (`/dashboard/team`, owner-only CRUD)
-- ✅ Smoke suite gated in CI on every PR, in three parts: `pnpm smoke` (black-box, includes
+- ✅ Four test layers, all gated in CI on every PR: `pnpm smoke` (API black-box, includes
   the cross-tenant isolation section), `pnpm smoke:admin` (needs `DATABASE_URL`, because
-  granting platform admin is SQL-only), and `pnpm check:wallet` (pure assertions on the
-  Google Wallet class payload — the integration cannot be exercised outside production)
+  granting platform admin is SQL-only), `pnpm check:wallet` (pure assertions on the Google
+  Wallet class payload — that integration cannot be exercised outside production), and
+  `pnpm e2e` (Playwright, in `e2e/`, browser flows only — it deliberately does not re-test
+  the API). ⚠️ The QR scanner is **not** covered: it is camera-only with no manual-entry
+  fallback, so a test would really be testing `html5-qrcode`. See `playwright.config.ts`.
 - ✅ **Card design system** (Day 16): shared SVG renderer, per-program design editor in
   `/dashboard/card-builder`, Apple Wallet `strip.png` artwork. See `docs/card-design/README.md`.
   Deployed and **verified on a physical iPhone 2026-09-18**.

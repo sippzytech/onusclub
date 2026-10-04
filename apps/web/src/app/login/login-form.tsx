@@ -32,9 +32,17 @@ export function LoginForm(): JSX.Element {
 
   return (
     <form onSubmit={onSubmit} className="space-y-4">
+      {/* htmlFor/id on both: without the association a screen reader reads an
+          unlabelled text box, and the visible "Email" above it is decoration.
+          It also means clicking the label focuses the field. */}
       <div>
-        <label className={labelClass}>Email</label>
+        <label htmlFor="login-email" className={labelClass}>
+          Email
+        </label>
         <input
+          id="login-email"
+          name="email"
+          autoComplete="email"
           required
           type="email"
           value={email}
@@ -44,8 +52,13 @@ export function LoginForm(): JSX.Element {
         />
       </div>
       <div>
-        <label className={labelClass}>Password</label>
+        <label htmlFor="login-password" className={labelClass}>
+          Password
+        </label>
         <input
+          id="login-password"
+          name="password"
+          autoComplete="current-password"
           required
           type="password"
           value={password}

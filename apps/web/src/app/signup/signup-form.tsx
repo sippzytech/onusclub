@@ -48,11 +48,17 @@ export function SignupForm(): JSX.Element {
     window.location.href = "/dashboard";
   }
 
+  // htmlFor/id on every field: without the association a screen reader reads
+  // five unlabelled boxes, and clicking a label does not focus its input.
   return (
     <form onSubmit={onSubmit} className="space-y-4">
       <div>
-        <label className="block text-sm font-medium text-brand-green">Business name</label>
+        <label htmlFor="signup-business" className="block text-sm font-medium text-brand-green">
+          Business name
+        </label>
         <input
+          id="signup-business"
+          autoComplete="organization"
           required
           value={businessName}
           onChange={(e) => setBusinessName(e.target.value)}
@@ -61,8 +67,12 @@ export function SignupForm(): JSX.Element {
         />
       </div>
       <div>
-        <label className="block text-sm font-medium text-brand-green">Your email</label>
+        <label htmlFor="signup-email" className="block text-sm font-medium text-brand-green">
+          Your email
+        </label>
         <input
+          id="signup-email"
+          autoComplete="email"
           required
           type="email"
           value={ownerEmail}
@@ -72,8 +82,12 @@ export function SignupForm(): JSX.Element {
         />
       </div>
       <div>
-        <label className="block text-sm font-medium text-brand-green">Your name (optional)</label>
+        <label htmlFor="signup-name" className="block text-sm font-medium text-brand-green">
+          Your name (optional)
+        </label>
         <input
+          id="signup-name"
+          autoComplete="name"
           value={ownerName}
           onChange={(e) => setOwnerName(e.target.value)}
           className="mt-1 block w-full rounded-lg border border-brand-green/15 bg-brand-cream/30 px-3 py-2.5 text-sm text-brand-green placeholder:text-brand-olive/70 focus:outline-none focus:border-brand-green/40"
@@ -81,8 +95,12 @@ export function SignupForm(): JSX.Element {
         />
       </div>
       <div>
-        <label className="block text-sm font-medium text-brand-green">Password</label>
+        <label htmlFor="signup-password" className="block text-sm font-medium text-brand-green">
+          Password
+        </label>
         <input
+          id="signup-password"
+          autoComplete="new-password"
           required
           type="password"
           minLength={8}
@@ -93,8 +111,12 @@ export function SignupForm(): JSX.Element {
         />
       </div>
       <div>
-        <label className="block text-sm font-medium text-brand-green">Confirm password</label>
+        <label htmlFor="signup-confirm" className="block text-sm font-medium text-brand-green">
+          Confirm password
+        </label>
         <input
+          id="signup-confirm"
+          autoComplete="new-password"
           required
           type="password"
           minLength={8}

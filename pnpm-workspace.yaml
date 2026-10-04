@@ -1,3 +1,7 @@
 packages:
   - "apps/*"
   - "packages/*"
+  # Browser-level tests. Its own workspace rather than living inside apps/web
+  # because the flows it drives span web AND api, and it must not become a
+  # dependency of the thing it tests.
+  - "e2e"
