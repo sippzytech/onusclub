@@ -872,6 +872,76 @@ export const MerchantBranding = z.object({
 });
 export type MerchantBranding = z.infer<typeof MerchantBranding>;
 
+// ---------- Shop locations (Day 24) ----------
+//
+// Feeds the OS-level proximity trigger on both wallets: the pass surfaces on
+// the lock screen near the shop, with no app and nothing running on our side.
+//
+// The `locations` table has existed since migration 001 and had no read or
+// write path at all until now, which is why this needs no migration.
+
+export const LocationInput = z
+  .object({
+    /** Shown on the lock screen via Apple's `relevantText`, so it is customer-facing. */
+    name: z.string().trim().min(1).max(200),
+    /** Display-only, for the merchant's own benefit. Neither wallet accepts an address. */
+    address: z.string().trim().max(500).nullable().optional(),
+
+    /**
+     * A Google Maps link, or a raw "52.3676, 4.9041" pair. Parsed server-side
+     * by `parseCoordinates`, which also resolves shortened Share links.
+     *
+     * Either supply this, or supply latitude + longitude directly. The
+     * dashboard offers both: a paste box, and the two numbers it fills in,
+     * which stay editable.
+     */
+    mapsUrl: z.string().trim().min(1).max(2000).optional(),
+    latitude: z.number().optional(),
+    longitude: z.number().optional(),
+  })
+  .refine(
+    (v) =>
+      v.mapsUrl !== undefined ||
+      (v.latitude !== undefined && v.longitude !== undefined),
+    "give either a Maps link or both coordinates"
+  );
+export type LocationInput = z.infer<typeof LocationInput>;
+
+/** PATCH takes the same fields, all optional — coordinates still arrive as a pair. */
+export const LocationPatch = z
+  .object({
+    name: z.string().trim().min(1).max(200).optional(),
+    address: z.string().trim().max(500).nullable().optional(),
+    mapsUrl: z.string().trim().min(1).max(2000).optional(),
+    latitude: z.number().optional(),
+    longitude: z.number().optional(),
+  })
+  .refine(
+    (v) =>
+      v.name !== undefined ||
+      v.address !== undefined ||
+      v.mapsUrl !== undefined ||
+      (v.latitude !== undefined && v.longitude !== undefined),
+    "nothing to change"
+  )
+  .refine(
+    (v) =>
+      v.mapsUrl !== undefined ||
+      (v.latitude === undefined) === (v.longitude === undefined),
+    "latitude and longitude must be changed together"
+  );
+export type LocationPatch = z.infer<typeof LocationPatch>;
+
+export const ShopLocation = z.object({
+  id: z.string(),
+  name: z.string(),
+  address: z.string().nullable(),
+  latitude: z.number(),
+  longitude: z.number(),
+  createdAt: z.string(),
+});
+export type ShopLocation = z.infer<typeof ShopLocation>;
+
 // ---------- Platform admin (Day 23) ----------
 //
 // The one surface that deliberately reads across tenants. Everything here is

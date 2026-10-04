@@ -1586,6 +1586,192 @@ async function main(): Promise<void> {
   }
   assert(adetUnauth, "/v1/analytics/detail did not require auth");
 
+  // ---------- Day 24: shop locations (proximity notifications) ----------
+  //
+  // The coordinate parser is pure and lives in `shared`, but this repo has no
+  // unit-test harness — smoke is the harness. So it is exercised through the
+  // endpoint that uses it, which is also the path a merchant actually takes.
+
+  interface ShopLocationShape {
+    id: string;
+    name: string;
+    address: string | null;
+    latitude: number;
+    longitude: number;
+    createdAt: string;
+  }
+
+  console.log("→ locations: a new merchant has none");
+  const locs0 = await call<{ locations: ShopLocationShape[]; maxLocations: number }>(
+    "GET",
+    "/v1/locations",
+    undefined,
+    jwt
+  );
+  assert(locs0.locations.length === 0, "a new merchant should have no locations");
+  assert(locs0.maxLocations === 10, `maxLocations should be 10, got ${locs0.maxLocations}`);
+
+  console.log("→ locations: a Google Maps place link yields the pin, not the viewport");
+  // The URL carries BOTH forms: @52.4,4.8 is wherever the map was scrolled to,
+  // !3d52.3676!4d4.9041 is the place itself. The place must win, or every
+  // geofence lands slightly off the shop.
+  const placeUrl =
+    "https://www.google.com/maps/place/Cafe/@52.4000000,4.8000000,17z/data=!3m1!4b1!4m6!3m5!1s0x47c6d!8m2!3d52.3676000!4d4.9041000";
+  const loc1 = await call<ShopLocationShape>(
+    "POST",
+    "/v1/locations",
+    { name: "Smoke Shop — centre", address: "Kleine Berg 42", mapsUrl: placeUrl },
+    jwt
+  );
+  assert(
+    loc1.latitude === 52.3676 && loc1.longitude === 4.9041,
+    `expected the place pin 52.3676,4.9041 — got ${loc1.latitude},${loc1.longitude}`
+  );
+  assert(loc1.address === "Kleine Berg 42", "address should round-trip");
+  // Typed as numbers in the contract; mysql2 hands DECIMAL back as a string, so
+  // this catches a missing Number() on the way out.
+  assert(
+    typeof loc1.latitude === "number" && typeof loc1.longitude === "number",
+    "coordinates must serialise as numbers, not strings"
+  );
+
+  console.log("→ locations: a raw coordinate pair works too");
+  const loc2 = await call<ShopLocationShape>(
+    "POST",
+    "/v1/locations",
+    { name: "Smoke Shop — second", mapsUrl: "51.9244, 4.4777" },
+    jwt
+  );
+  assert(
+    loc2.latitude === 51.9244 && loc2.longitude === 4.4777,
+    `raw pair wrong: ${loc2.latitude},${loc2.longitude}`
+  );
+
+  console.log("→ locations: explicit numbers beat a stale link in the same request");
+  const loc3 = await call<ShopLocationShape>(
+    "POST",
+    "/v1/locations",
+    { name: "Smoke Shop — explicit", mapsUrl: placeUrl, latitude: 53.2194, longitude: 6.5665 },
+    jwt
+  );
+  assert(
+    loc3.latitude === 53.2194 && loc3.longitude === 6.5665,
+    `explicit coordinates should win over mapsUrl, got ${loc3.latitude},${loc3.longitude}`
+  );
+
+  console.log("→ locations: bad coordinates are refused");
+  const locRefused = async (label: string, body: unknown): Promise<void> => {
+    let blocked = false;
+    let detail = "";
+    try {
+      await call("POST", "/v1/locations", body, jwt);
+    } catch (err) {
+      detail = String(err);
+      blocked = detail.includes("400");
+    }
+    assert(blocked, `${label} should 400 (${detail || "it succeeded"})`);
+  };
+  // 0,0 is the Gulf of Guinea, and is exactly what a failed parse produces.
+  await locRefused("Null Island", { name: "X", latitude: 0, longitude: 0 });
+  await locRefused("latitude out of range", { name: "X", latitude: 95, longitude: 4 });
+  await locRefused("longitude out of range", { name: "X", latitude: 52, longitude: 200 });
+  await locRefused("a link with no coordinates", {
+    name: "X",
+    mapsUrl: "https://www.google.com/maps/place/Cafe",
+  });
+  await locRefused("junk", { name: "X", mapsUrl: "on the corner by the church" });
+  await locRefused("no coordinates at all", { name: "X" });
+  await locRefused("an empty name", { name: "", latitude: 52, longitude: 4 });
+  await locRefused("only a latitude", { name: "X", latitude: 52 });
+
+  console.log("→ locations: editing moves the pin and keeps the name");
+  const loc2Moved = await call<ShopLocationShape>(
+    "PATCH",
+    `/v1/locations/${loc2.id}`,
+    { latitude: 51.5, longitude: 4.5 },
+    jwt
+  );
+  assert(
+    loc2Moved.latitude === 51.5 && loc2Moved.longitude === 4.5,
+    "patch should move the coordinates"
+  );
+  assert(loc2Moved.name === "Smoke Shop — second", "patching coordinates must not clear the name");
+  const loc2Renamed = await call<ShopLocationShape>(
+    "PATCH",
+    `/v1/locations/${loc2.id}`,
+    { name: "Smoke Shop — renamed" },
+    jwt
+  );
+  assert(loc2Renamed.name === "Smoke Shop — renamed", "patch should rename");
+  assert(loc2Renamed.latitude === 51.5, "renaming must not move the pin");
+
+  console.log("→ locations: the 11th is refused, naming Apple and Google's limit");
+  // Three exist; add seven more to reach the cap.
+  for (let i = 0; i < 7; i += 1) {
+    await call(
+      "POST",
+      "/v1/locations",
+      { name: `Filler ${i}`, latitude: 52 + i / 100, longitude: 5 + i / 100 },
+      jwt
+    );
+  }
+  const atCap = await call<{ locations: ShopLocationShape[] }>(
+    "GET",
+    "/v1/locations",
+    undefined,
+    jwt
+  );
+  assert(atCap.locations.length === 10, `expected 10 locations, got ${atCap.locations.length}`);
+  let capHit = "";
+  try {
+    await call("POST", "/v1/locations", { name: "One too many", latitude: 52, longitude: 5 }, jwt);
+  } catch (err) {
+    capHit = String(err);
+  }
+  assert(capHit.includes("400"), "the 11th location should be refused");
+  assert(
+    capHit.includes("Apple") && capHit.includes("Google"),
+    `the refusal should say whose limit it is: ${capHit}`
+  );
+
+  console.log("→ locations: deleting frees a slot");
+  const delRes = await fetch(`${BASE}/v1/locations/${loc3.id}`, {
+    method: "DELETE",
+    headers: { authorization: `Bearer ${jwt}` },
+  });
+  assert(delRes.status === 204, `delete should 204, got ${delRes.status}`);
+  const afterDelete = await call<{ locations: ShopLocationShape[] }>(
+    "GET",
+    "/v1/locations",
+    undefined,
+    jwt
+  );
+  assert(afterDelete.locations.length === 9, "delete should leave 9");
+  assert(
+    !afterDelete.locations.some((l) => l.id === loc3.id),
+    "the deleted location should be gone"
+  );
+  let deleteAgain = false;
+  try {
+    const again = await fetch(`${BASE}/v1/locations/${loc3.id}`, {
+      method: "DELETE",
+      headers: { authorization: `Bearer ${jwt}` },
+    });
+    deleteAgain = again.status === 404;
+  } catch {
+    deleteAgain = false;
+  }
+  assert(deleteAgain, "deleting an already-deleted location should 404");
+
+  console.log("→ locations require auth");
+  let locsUnauth = false;
+  try {
+    await call("GET", "/v1/locations");
+  } catch (err) {
+    locsUnauth = String(err).includes("401");
+  }
+  assert(locsUnauth, "/v1/locations did not require auth");
+
   // ---------- Day 22: cross-tenant isolation ----------
   //
   // Isolation in this codebase is a hand-written `WHERE merchant_id = ?`
@@ -1683,6 +1869,44 @@ async function main(): Promise<void> {
     programId: otherProgram.id,
     dryRun: true,
   });
+
+  console.log("→ isolation: another merchant's location is unreachable");
+  const otherLocation = await call<{ id: string }>(
+    "POST",
+    "/v1/locations",
+    { name: "Rival shop", latitude: 50.8503, longitude: 4.3517 },
+    otherJwt
+  );
+  await denied("move their location", "PATCH", `/v1/locations/${otherLocation.id}`, {
+    latitude: 1,
+    longitude: 1,
+  });
+  await denied("rename their location", "PATCH", `/v1/locations/${otherLocation.id}`, {
+    name: "Mine now",
+  });
+  await denied("delete their location", "DELETE", `/v1/locations/${otherLocation.id}`);
+  const ourLocations = await call<{ locations: Array<{ id: string; name: string }> }>(
+    "GET",
+    "/v1/locations",
+    undefined,
+    jwt
+  );
+  assert(
+    !ourLocations.locations.some((l) => l.id === otherLocation.id),
+    "CROSS-TENANT LEAK — another merchant's location appeared in our list"
+  );
+  assert(
+    !ourLocations.locations.some((l) => l.name === "Rival shop"),
+    "CROSS-TENANT LEAK — another merchant's shop name appeared in our list"
+  );
+
+  console.log("→ isolation: their location did not count against our limit");
+  // The 10-cap is per merchant. If it were global, the rival's shop would have
+  // pushed us over and this would fail.
+  assert(
+    ourLocations.locations.length === 9,
+    `our location count should be unaffected by theirs, got ${ourLocations.locations.length}`
+  );
 
   console.log("→ isolation: their records never appear in our lists");
   const ourCards = await call<{ cards: Array<{ id: string }> }>(

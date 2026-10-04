@@ -16,6 +16,7 @@ import { meRouter } from "./routes/me.js";
 import { messagesRouter } from "./routes/messages.js";
 import { programsRouter } from "./routes/programs.js";
 import { leadsRouter } from "./routes/leads.js";
+import { locationsRouter } from "./routes/locations.js";
 import { publicRouter } from "./routes/public.js";
 import { scanRouter } from "./routes/scan.js";
 import { staffRouter } from "./routes/staff.js";
@@ -58,6 +59,7 @@ app.use("/v1/messages", messagesRouter);
 app.use("/v1/public/leads", leadsRouter);
 app.use("/v1/public", publicRouter);
 app.use("/v1/staff", staffRouter);
+app.use("/v1/locations", locationsRouter);
 app.use("/v1", walletRouter);
 app.use("/v1/apple-wallet", appleWalletRouter);
 
