@@ -16,6 +16,7 @@ import {
   runInactivitySweep,
   runPointsExpirySweep,
 } from "../messaging/operations.js";
+import { runWeeklyDigest } from "../messaging/digest.js";
 
 export const sweepsRouter: Router = Router();
 
@@ -192,6 +193,7 @@ sweepsRouter.post(
     res: Response<
       | { id: string; scanned: number; sent: number; failed: number }
       | { scanned: number; expired: number }
+      | { scanned: number; sent: number; skipped: number; failed: number }
     >
   ) => {
     if (env.NODE_ENV === "production") {
@@ -202,6 +204,9 @@ sweepsRouter.post(
     if (type === "inactivity") return res.json(await runInactivitySweep());
     if (type === "expiry") return res.json(await runExpirySweep());
     if (type === "points-expiry") return res.json(await runPointsExpirySweep());
+    // force: the digest refuses to send twice in six days, which is right for
+    // the cron and useless for testing it.
+    if (type === "digest") return res.json(await runWeeklyDigest({ force: true }));
     throw ApiError.badRequest("unknown sweep type");
   }
 );

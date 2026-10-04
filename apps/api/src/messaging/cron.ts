@@ -6,6 +6,7 @@ import {
   runInactivitySweep,
   runPointsExpirySweep,
 } from "./operations.js";
+import { runWeeklyDigest } from "./digest.js";
 
 const TZ = "Europe/Amsterdam";
 
@@ -67,8 +68,28 @@ export function startMessagingCrons(): void {
     { timezone: TZ }
   );
 
+  // Weekly merchant digest, Mondays at 08:00 Europe/Amsterdam.
+  //
+  // Monday morning is when an owner plans the week, and it is the one moment a
+  // "here is what happened" email has somewhere to go. Friday would land in a
+  // service rush; Sunday would be ignored.
+  //
+  // runWeeklyDigest is itself idempotent — it asks email_deliveries whether a
+  // merchant already got one in the last 6 days — so a container restart or a
+  // double fire cannot send two.
+  cron.schedule(
+    "0 8 * * 1",
+    () => {
+      runWeeklyDigest().catch((err: unknown) => {
+        logger.error({ err }, "scheduled weekly digest crashed");
+      });
+    },
+    { timezone: TZ }
+  );
+
   logger.info(
     { tz: TZ },
-    "messaging crons registered (03:00 expiry, 04:00 points-expiry, 08:00 birthday, 10:00 inactivity)"
+    "messaging crons registered (03:00 expiry, 04:00 points-expiry, 08:00 birthday, " +
+      "10:00 inactivity, Mon 08:00 weekly digest)"
   );
 }

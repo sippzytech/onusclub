@@ -110,9 +110,19 @@ wallet.
 Pro is $20/mo for 50,000 and needs **no code change**. Buy it when the first real café is
 onboarded, not before.
 
-**The real gap is visibility, not the cap.** A hit limit shows up only as `"email send
-failed"` in the API log — no counter, no alert, nothing in the dashboard. Worth fixing
-before it matters.
+~~**The real gap is visibility, not the cap.**~~ ✅ **FIXED 2026-10-05.** Migration 013
+adds `email_deliveries`, written from inside `sendEmail` so no sender can forget. Three
+states, not two: `skipped` means no provider is configured, and counting those as failures
+would make the figure permanently alarming and therefore ignored.
+
+Surfaced where each audience needs it — a banner on the merchant Overview that appears
+only when something failed, the detail on Settings, the per-customer history on the card
+page (the actual support question: *"my customer says they never got their card"*), and
+platform-wide on `/admin`. "Delivered" is labelled as *our provider accepted it*, not
+inbox delivery, since we do not consume Resend's webhooks.
+
+Buying Pro is still the fix for the cap itself — but a hit limit is now a number on a
+screen rather than a log line nobody reads.
 
 ### Working order (set 2026-10-03)
 
@@ -136,10 +146,11 @@ before it matters.
 3. ~~**Items 10-13** — the master dashboard.~~ ✅ **DONE 2026-10-04.** See P2 below for the
    three decisions that overruled the obvious design, and docs/admin/README.md for how to
    grant yourself access.
-4. ~~**Item 15** proximity notifications~~ ✅ **DONE 2026-10-04.** **Item 18** weekly
-   digest next — note its "gated on item 4" label was wrong and has been removed: the
-   digest goes to merchants, a handful of emails a week, nowhere near Resend's cap. Then
-   the small items (21, 22, 23, email-failure visibility).
+4. ~~**Item 15** proximity notifications~~ ✅ **DONE 2026-10-04.**
+   ~~**Item 18** weekly digest~~ and ~~email-failure visibility~~ ✅ **DONE 2026-10-05.**
+   Remaining small items: 21 (`/contact`, separate Netlify repo), 22 (MCC label, Google
+   console), 23 (dead `sippzy.com` routers), the expiry input on the program form, and
+   audience-filter display on broadcast detail.
 5. **Item 16** template gallery, whenever the commissioned motifs land.
 6. **Items 20 and 19** — Playwright and the security review, last, as the pre-launch pass.
 
@@ -284,10 +295,38 @@ appear. No test in this repo can prove that.
 scanner and a story for existing NULL rows; separate feature.
 **16. Template gallery** — engine shipped Day 16; blocked on ~90 commissioned motifs.
 **17. CSV customer import/export** ✅ **DONE 2026-10-03.**
-**18. Weekly merchant digest email** — retention. **Not gated on item 4**, despite the
-label this carried until 2026-10-04: the digest goes to *merchants* — four of them, one
-email a week — against a 100/day cap. That gate was inherited from the same mistake that
-had broadcasts sending email (see item 4). Buildable now.
+**18. Weekly merchant digest email** ✅ **DONE 2026-10-05.** Mondays at 08:00
+Europe/Amsterdam — the one moment a "here is what happened" email has somewhere to go.
+Four numbers, one interpretation line, one link.
+
+The interpretation line is the feature. "47 stamps" means nothing alone; "up 52% on last
+week's 31" is a reason to keep going, and *"Nothing was scanned this week — if your staff
+have stopped using the scanner, a quick reminder is usually all it takes"* is the single
+most useful thing we can send a café that is drifting away. Percentages are suppressed
+below a base of five, where they are noise.
+
+Not premium-gated, matching the recorded decision that analytics stays free: withholding
+it from the cafés most at risk of churning works against us. It *is* gated on
+`crons_enabled`, the existing kill switch every sweep respects. Cafés with **zero cards**
+are skipped — a digest reading "0 scans" to someone who has not started is noise — but
+zero-*activity* weeks are not, because that is the case worth sending.
+
+Idempotent without a new table: it asks `email_deliveries` whether the merchant already
+got one in the last 6 days, so a container restart or a double cron fire cannot send
+twice. Verified — 74 cafés on the first run, all 74 skipped on the second. `POST
+/v1/sweeps/run/digest` forces a run in dev.
+
+⚠️ **This is the only sender that scales with merchant count rather than signups, and it
+fires all at once.** At four cafés it is four emails; past roughly 90 it would eat a whole
+day of Resend's free quota in one Monday burst and starve the card invites. Pro (item 4)
+lands long before that, but if merchant count ever nears it without Pro, batch this across
+the day first.
+
+**Follow-up, deliberately not built:** there is no dedicated opt-out. The email points at
+the `crons_enabled` toggle under **Campaigns**, and says plainly that switching it off also
+pauses birthday and win-back messages to customers — because it does. A digest-only
+preference needs a column and a toggle; promising a control that does something broader
+would have been the small lie that costs trust.
 **19. Security review** 🔶 **LAST before launch, by decision 2026-10-03** — it is the
 final pass, not an enabler.
 

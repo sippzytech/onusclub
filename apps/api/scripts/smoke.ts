@@ -1681,6 +1681,49 @@ async function main(): Promise<void> {
   );
   assert(Array.isArray(cardEmails.emails), "card emails should be an array");
 
+  console.log("→ digest: a weekly summary is generated and attributed");
+  const digest = await call<{
+    scanned: number;
+    sent: number;
+    skipped: number;
+    failed: number;
+  }>("POST", "/v1/sweeps/run/digest", {}, pwLogin.jwt);
+  // Every merchant with at least one card gets one, and this suite has created
+  // several, so a zero here means the eligibility query is broken.
+  assert(digest.sent >= 1, `the digest should reach at least one café: ${JSON.stringify(digest)}`);
+  assert(
+    digest.scanned >= digest.sent,
+    "sent cannot exceed the number of cafés considered"
+  );
+
+  const afterDigest = await call<EmailHealthShape>(
+    "GET",
+    "/v1/me/email-health",
+    undefined,
+    pwLogin.jwt
+  );
+  assert(
+    afterDigest.sent + afterDigest.failed + afterDigest.skipped >
+      emailHealth.sent + emailHealth.failed + emailHealth.skipped,
+    "the digest should have been recorded against this merchant"
+  );
+
+  console.log("→ digest: it covers every café, not just the one that triggered it");
+  // The digest is a platform-wide cron, so the magic-link merchant — which has
+  // a card but had sent no email at all before this point — must now have
+  // exactly one record, and it must be the digest. That pins down both that the
+  // run is unscoped and that nothing else slipped in.
+  const otherMerchantMail = await call<EmailHealthShape>(
+    "GET",
+    "/v1/me/email-health",
+    undefined,
+    jwt
+  );
+  assert(
+    otherMerchantMail.sent + otherMerchantMail.failed + otherMerchantMail.skipped === 1,
+    `expected exactly one digest for the second café, got ${JSON.stringify(otherMerchantMail)}`
+  );
+
   console.log("→ email: health and card emails require auth");
   for (const path of ["/v1/me/email-health", `/v1/cards/${card.id}/emails`]) {
     let unauth = false;

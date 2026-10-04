@@ -95,7 +95,8 @@ Switching issuers is an env-var change, never a code change — `GOOGLE_WALLET_I
 
 ## Schema
 
-See `apps/api/src/db/migrations/` — the numbered SQL files are the single source of truth, `001_initial.sql` through `012_platform_admin.sql`. Core tables: `merchants`, `locations`, `loyalty_programs`, `customers`, `loyalty_cards`, `card_events`, `staff_users`, `auth_tokens`; later migrations add `broadcasts`, `sweep_runs`, `message_deliveries`, `apple_pass_registrations`, `points_batches`, `leads`, `merchant_assets`, `platform_admins`, `admin_audit_log`.
+See `apps/api/src/db/migrations/` — the numbered SQL files are the single source of truth, `001_initial.sql` through `013_email_deliveries.sql`. Core tables: `merchants`, `locations`, `loyalty_programs`, `customers`, `loyalty_cards`, `card_events`, `staff_users`, `auth_tokens`; later migrations add `broadcasts`, `sweep_runs`, `message_deliveries`, `apple_pass_registrations`, `points_batches`, `leads`, `merchant_assets`, `platform_admins`, `admin_audit_log`,
+`email_deliveries`.
 
 ⚠️ **`loyalty_cards.card_state.points_current` is a CACHE, not the ledger.** The
 authoritative points balance is `SUM(points_batches.points_remaining)` over non-expired
@@ -114,6 +115,10 @@ When adding a new `program_type`, define its config + state shapes in `packages/
 ## Conventions
 
 - Strict TypeScript everywhere. No `any` in checked-in code.
+- `pnpm --filter @onusclub/api run typecheck` uses **`tsconfig.scripts.json`**, which covers
+  `scripts/` as well as `src/`. The build still uses `tsconfig.json` (it needs
+  `rootDir: src`). Before 2026-10-05 the smoke scripts were not typechecked at all, and six
+  real errors had accumulated in them.
 - API uses **ESM** (`"type": "module"`); imports use `.js` extensions in compiled output.
 - Env validated with zod at startup; the api fails fast if required vars are missing.
 - Secrets only via env vars or mounted files — never committed.
@@ -132,8 +137,8 @@ When adding a new `program_type`, define its config + state shapes in `packages/
 **Deployed live at `api.onusclub.com` + `app.onusclub.com`**, from branch **`main`**.
 
 ⚠️ **Production is behind `main` on migrations.** As of 2026-10-04 the box had `001`–`009`
-applied; `010_trial_period`, `011_merchant_assets` and `012_platform_admin` are on `main`
-but not confirmed applied there. Check with
+applied; `010_trial_period`, `011_merchant_assets`, `012_platform_admin` and
+`013_email_deliveries` are on `main` but not confirmed applied there. Check with
 `docker compose -f docker-compose.prod.yml exec api node dist/db/migrate.js` — it is
 idempotent and skips what is already in `_migrations`. Note that is the **compiled** runner;
 `pnpm db:migrate` is dev-image only and will fail in prod.
@@ -153,7 +158,8 @@ What works end-to-end:
 - ✅ QR scanner UI (`html5-qrcode`) with state-machine feedback, incl. the points `needs_amount` step
 - ✅ **Revenue capture** (Day 15): optional sale amount at scan / on manual buttons → `card_events.amount_cents` → revenue, AOV, and a real activity feed on the Overview page
 - ✅ Async broadcasts with audience filters + live progress polling
-- ✅ Daily cron sweeps: expiry 03:00, points-expiry 04:00, birthday 08:00, inactivity 10:00 (Europe/Amsterdam)
+- ✅ Cron sweeps: expiry 03:00, points-expiry 04:00, birthday 08:00, inactivity 10:00 daily,
+  plus the merchant digest Mondays 08:00 (all Europe/Amsterdam)
 - ✅ Per-card delivery audit (broadcasts + sweeps) with manual retry
 - ✅ Premium feature gate (fake unlock for now) + crons-enabled kill-switch
 - ✅ Staff/team accounts (`/dashboard/team`, owner-only CRUD)
@@ -178,6 +184,12 @@ What works end-to-end:
   BLOB in `merchant_assets` rather than on disk — it travels with `mysqldump` instead of
   becoming a second thing to migrate — and served from a public, content-hashed URL
   because Google fetches `programLogo` server-side and caches it by URI.
+- ✅ **Email delivery visibility + weekly digest** (Day 25): `email_deliveries` records
+  every send, written from inside `sendEmail` so no caller can forget. Three states —
+  `skipped` means no provider configured and must never be counted as a failure. Surfaced
+  on the merchant Overview (only when something failed), Settings, the card page, and
+  `/admin`. Plus a Monday-morning digest to each café, idempotent via `email_deliveries`
+  rather than a new table.
 - ✅ **Proximity notifications** (Day 24): shop locations on `/dashboard/settings`, up to
   10 per café, feeding the OS-level geofence on both wallets — the pass surfaces on the
   lock screen near the shop with nothing running on our side. Coordinates come from a
