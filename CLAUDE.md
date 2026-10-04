@@ -47,12 +47,13 @@ Subdomains pointed at the VPS:
 
 - `api.onusclub.com` → Node API (primary)
 - `app.onusclub.com` → Next.js dashboard + customer landing pages (primary)
-- `api.sippzy.com` / `app.sippzy.com` → same containers, legacy routers. Keep until old saved wallet passes have aged out; `DOMAIN_API_LEGACY` / `DOMAIN_WEB_LEGACY` in `docker-compose.prod.yml` control them.
+- ~~`api.sippzy.com` / `app.sippzy.com`~~ — legacy routers **removed 2026-10-05**; the DNS was already gone. See the status section below.
 - `onusclub.com` + `www` → Netlify marketing site (separate repo, not in this monorepo)
 
 In `docker-compose.prod.yml`:
 
 - All OnUsClub services join the external `n8n_default` network so Traefik can reach them.
+- One router per service, on `DOMAIN_API` / `DOMAIN_WEB`. The `DOMAIN_*_LEGACY` pair is gone.
 - We do **not** publish api/web ports to the host (Traefik handles ingress).
 - MySQL has no published port and is reachable only on the project-internal Docker network.
 - Traefik labels use `certresolver=mytlschallenge`.
@@ -145,7 +146,13 @@ idempotent and skips what is already in `_migrations`. Note that is the **compil
 
 **Branching**: `main` is the trunk — branch from it, merge back into it, deploy it. It was created on 2026-09-25; before that the repo had no trunk, just 16 unmerged `day-*` branches with `origin/HEAD` pointing at `day-1-skeleton` (which predates auth). Every legacy branch was verified to be an ancestor of `main` before the cut, so they hold nothing unique.
 
-⚠️ **The legacy `sippzy.com` routes are dead.** `api.sippzy.com` and `app.sippzy.com` no longer resolve in DNS (checked against the system resolver, `1.1.1.1` and `8.8.8.8` on 2026-09-17 — all three return nothing). `docker-compose.prod.yml` still carries the `DOMAIN_API_LEGACY` / `DOMAIN_WEB_LEGACY` Traefik routers, but with no DNS in front of them they are unreachable. Any Apple pass saved before the Day 13 cutover has `webServiceURL` baked in pointing at `api.sippzy.com`, so **those passes have already stopped updating** — they still display, just frozen. Either restore the DNS records or drop the legacy routers; keeping them as-is is the one option that helps nobody.
+The legacy `sippzy.com` Traefik routers were **removed on 2026-10-05**. `api.sippzy.com`
+and `app.sippzy.com` had stopped resolving in DNS (verified against the system resolver,
+`1.1.1.1` and `8.8.8.8` on 2026-09-17), so a router naming them could never receive a
+request. Any Apple pass saved before the Day 13 cutover has `webServiceURL` baked in
+pointing at `api.sippzy.com` and had already frozen when the DNS went — restoring the
+records would have revived those passes, but every merchant in production is test data, so
+there was none worth saving. Reasoning is recorded at the top of `docker-compose.prod.yml`.
 
 What works end-to-end:
 
@@ -184,6 +191,9 @@ What works end-to-end:
   BLOB in `merchant_assets` rather than on disk — it travels with `mysqldump` instead of
   becoming a second thing to migrate — and served from a public, content-hashed URL
   because Google fetches `programLogo` server-side and caches it by URI.
+- ✅ **Onboarding checklist** (Day 25): four derived steps at the top of Overview, replacing
+  a "No programs yet" panel that sat below the stat cards. Steps come from real state, never
+  a stored flag — see `onboarding-checklist.tsx` for why that matters.
 - ✅ **Email delivery visibility + weekly digest** (Day 25): `email_deliveries` records
   every send, written from inside `sendEmail` so no caller can forget. Three states —
   `skipped` means no provider configured and must never be counted as a failure. Surfaced

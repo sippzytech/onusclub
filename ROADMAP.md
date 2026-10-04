@@ -354,7 +354,18 @@ need for a paid tool like TestRigor at this size.
   actually exists.
 - **MCC reads "Internet Cafes"** in the Google Business Profile — cosmetic, no effect on
   Wallet.
-- **`sippzy.com` legacy Traefik routers** — DNS is gone; config still references them.
+- ~~**`sippzy.com` legacy Traefik routers**~~ ✅ **REMOVED 2026-10-05.** DNS had been gone
+  since at least 2026-09-17, so a router whose `Host()` rule named them could never receive
+  a request — inert config that only misled anyone reading the compose file. The reasoning,
+  including why restoring DNS was the alternative and why it was not chosen (every pass
+  predating the cutover belongs to test data), is recorded at the top of
+  `docker-compose.prod.yml`. **Requires a `docker compose up -d` to take effect.**
+- ~~**Bump GitHub Actions**~~ ✅ **DONE 2026-10-05.** `actions/checkout` and
+  `actions/setup-node` to v5, clearing the Node 20 runtime deprecation warnings.
+  `pnpm/action-setup` deliberately left on v4: with no `packageManager` field in
+  package.json the `version:` input is the only thing selecting pnpm, and that input is
+  exactly what changes across its majors. Only CI can verify an Actions bump — if the next
+  run fails on install, the revert is one line.
 - ~~**Local dev DB** — accumulated smoke merchants break `pnpm smoke` locally.~~
   ✅ Done 2026-10-03: 53 historical test merchants had `crons_enabled` set false, which
   stops the inactivity sweep finding them without deleting anything.
@@ -832,11 +843,20 @@ approved, and nothing in the console said so. Details below.
 - The magic-link API endpoints (`/v1/auth/request`, `/v1/auth/verify`) still exist in the codebase but aren't wired to email delivery.
 - If/when we want passwordless owner login again, just wire `issueMagicLink()` to `sendEmail()`.
 
-### Expiry input on Program create form *(2-minute follow-up)*
+### ~~Expiry input on Program create form~~ ✅ ALREADY DONE *(confirmed 2026-10-05)*
+
+This was listed as outstanding but `create-program-form.tsx` has carried the `expiryDays`
+input since Day 9. Nothing to do — the entry was stale.
+
+### Superseded: Expiry input on Program create form *(original note)*
 - The API accepts `expiryDays` (Day 9) but the dashboard's Create Program form doesn't surface a UI for it yet.
 - One number input + a small "leave blank for no expiry" hint.
 
-### Audience filter display on broadcast detail page *(small polish)*
+### ~~Audience filter display on broadcast detail page~~ ✅ ALREADY DONE *(confirmed 2026-10-05)*
+
+Also stale — the broadcast detail page renders `describeAudience(broadcast.audienceFilter)`.
+
+### Superseded: Audience filter display *(original note)*
 - The filter is stored and surfaced in `/v1/broadcasts/:id`, but the detail page doesn't render it.
 - Just add a small summary line: "Sent to: customers with ≥5 stamps".
 
@@ -847,7 +867,7 @@ approved, and nothing in the console said so. Details below.
 User has explicitly asked these be saved for later — not picking any of them now but they're real options to come back to.
 
 - **Owner magic-link email re-wire** (1-2 h) — `issueMagicLink` exists from Day 2; just needs to wire to `sendEmail` so owners can passwordless-login if they prefer.
-- **Bump GitHub Actions to v5** (15 min) — kills the Node 20 deprecation warning, pure housekeeping.
+- ~~**Bump GitHub Actions to v5**~~ ✅ **DONE 2026-10-05** — see the Small/cosmetic list.
 - **First-merchant demo seed script** (1-2 h) — `pnpm seed:demo` drops a realistic "Café De Klep" merchant with stamp + points programs into the DB for showing the dashboard to prospects without manual setup each time.
 - **Customer card archive view** (2-3 h) — `/dashboard/cards` only shows active cards; no way to see expired/blocked. Small product gap.
 - **Daily/weekly merchant digest email** (2-3 h) — cron emails each merchant a summary ("This week: 12 new cards, 47 stamps, 3 redeems"). Stickiness feature.

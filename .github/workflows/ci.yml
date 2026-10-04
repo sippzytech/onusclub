@@ -9,13 +9,19 @@ jobs:
   typecheck-and-build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      # checkout/setup-node on v5 to clear the Node 20 runtime deprecation
+      # warnings. pnpm/action-setup deliberately left on v4: this repo has no
+      # `packageManager` field in package.json, so the `version:` input below
+      # is the only thing selecting a pnpm version, and that input's semantics
+      # are exactly what changes across that action's majors. It works; moving
+      # it buys nothing and can only break the install step.
+      - uses: actions/checkout@v5
 
       - uses: pnpm/action-setup@v4
         with:
           version: 9.1.0
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 20
           cache: pnpm
@@ -117,13 +123,13 @@ jobs:
           --health-timeout=5s
           --health-retries=20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: pnpm/action-setup@v4
         with:
           version: 9.1.0
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 20
           cache: pnpm

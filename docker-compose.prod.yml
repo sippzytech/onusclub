@@ -1,3 +1,25 @@
+# The `sippzy.com` legacy Traefik routers were removed on 2026-10-05.
+#
+# They existed for a no-downtime window during the Day 13 domain migration:
+# the primary router served onusclub.com while a second one kept api.sippzy.com
+# and app.sippzy.com pointing at the same containers.
+#
+# `api.sippzy.com` and `app.sippzy.com` stopped resolving in DNS — verified
+# against the system resolver, 1.1.1.1 and 8.8.8.8 on 2026-09-17, all three
+# returning nothing. A Traefik router whose Host() rule names a hostname with
+# no DNS cannot receive a request, so these had been inert config for weeks.
+#
+# What removing them does NOT change: any Apple pass saved before the Day 13
+# cutover has `webServiceURL` baked in pointing at api.sippzy.com, so those
+# passes already stopped updating when the DNS went. They still display, just
+# frozen. Restoring the DNS records would have revived them — which is why
+# this was a decision rather than tidying — but every merchant and customer in
+# production today is test data, so there is no real pre-cutover pass to save.
+#
+# If a legacy domain is ever needed again: add the router AND point DOMAIN_* at
+# the NEW domain first. Pointing both routers at the old host hides the new one
+# entirely, which is how the Day 13 window nearly went wrong.
+
 services:
   mysql:
     image: mysql:8.0
@@ -87,15 +109,6 @@ services:
       - "traefik.http.routers.onusclub-api.tls=true"
       - "traefik.http.routers.onusclub-api.tls.certresolver=mytlschallenge"
       - "traefik.http.services.onusclub-api.loadbalancer.server.port=4000"
-      # Legacy router — set DOMAIN_API_LEGACY in .env (e.g. api.sippzy.com)
-      # during the migration window so the old domain still routes here.
-      # When left unset the rule becomes Host(`_disabled_`) which never
-      # matches a real request, so this router is effectively a no-op.
-      - "traefik.http.routers.onusclub-api-legacy.rule=Host(`${DOMAIN_API_LEGACY:-_disabled_}`)"
-      - "traefik.http.routers.onusclub-api-legacy.entrypoints=websecure"
-      - "traefik.http.routers.onusclub-api-legacy.tls=true"
-      - "traefik.http.routers.onusclub-api-legacy.tls.certresolver=mytlschallenge"
-      - "traefik.http.routers.onusclub-api-legacy.service=onusclub-api"
 
   web:
     build:
@@ -124,12 +137,6 @@ services:
       - "traefik.http.routers.onusclub-web.tls=true"
       - "traefik.http.routers.onusclub-web.tls.certresolver=mytlschallenge"
       - "traefik.http.services.onusclub-web.loadbalancer.server.port=3001"
-      # Legacy router — same pattern as api above.
-      - "traefik.http.routers.onusclub-web-legacy.rule=Host(`${DOMAIN_WEB_LEGACY:-_disabled_}`)"
-      - "traefik.http.routers.onusclub-web-legacy.entrypoints=websecure"
-      - "traefik.http.routers.onusclub-web-legacy.tls=true"
-      - "traefik.http.routers.onusclub-web-legacy.tls.certresolver=mytlschallenge"
-      - "traefik.http.routers.onusclub-web-legacy.service=onusclub-web"
 
 networks:
   internal:
