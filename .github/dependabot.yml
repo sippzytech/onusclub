@@ -1,0 +1,53 @@
+# Dependency updates.
+#
+# Added in the Day 26 security review, which found no scanning configured at
+# all: nothing would have told us about a published CVE in express, mysql2,
+# jsonwebtoken or passkit-generator.
+#
+# Weekly, not daily. A daily cadence on a project this size produces more pull
+# requests than anyone reads, and an ignored Dependabot is worse than none —
+# it turns a signal into noise and trains you to close the alerts.
+#
+# Grouped by ecosystem so a routine week is one PR to review rather than
+# fifteen. Security updates are NOT grouped: those want to be visible on their
+# own and merged quickly.
+
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/Amsterdam
+    open-pull-requests-limit: 5
+    groups:
+      # Patch and minor bumps are almost always safe and almost never
+      # individually interesting. One PR, CI decides.
+      routine:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+    ignore:
+      # Majors are a deliberate decision, not a notification. The two that
+      # would hurt most to take blindly:
+      #  - passkit-generator: its v3 API is what pass-builder.ts is written
+      #    against, and a bad pass is invisible until someone's iPhone refuses
+      #    to open it.
+      #  - mysql2: the RowDataPacket typing is load-bearing across every query
+      #    in the api.
+      - dependency-name: "passkit-generator"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "mysql2"
+        update-types: ["version-update:semver-major"]
+    commit-message:
+      prefix: "deps"
+
+  # The workflow files themselves. The Day 26 pass found checkout and
+  # setup-node two majors behind, which is exactly what this prevents.
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: "ci"

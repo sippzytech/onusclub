@@ -20,6 +20,13 @@ import { ApiError } from "../errors.js";
 import { env } from "../config.js";
 import { issueMagicLink } from "../auth/magic-link.js";
 import { signJwt } from "../auth/jwt.js";
+// Rate limits on the endpoints where the absence actually mattered: unlimited
+// password guesses, and unlimited outbound email on a shared quota.
+import {
+  loginLimiter,
+  passwordResetLimiter,
+  signupLimiter,
+} from "../http/rate-limit.js";
 import { hashPassword, verifyPassword } from "../auth/password.js";
 import { generateUniqueSlug } from "../auth/slug.js";
 import { logger } from "../logger.js";
@@ -76,6 +83,7 @@ interface CountRow extends RowDataPacket {
 
 authRouter.post(
   "/signup",
+  signupLimiter,
   async (req: Request, res: Response<PasswordAuthResult>) => {
     const input = PasswordSignupInput.parse(req.body);
 
@@ -185,6 +193,7 @@ authRouter.post(
 
 authRouter.post(
   "/login",
+  loginLimiter,
   async (req: Request, res: Response<PasswordAuthResult>) => {
     const input = PasswordLoginInput.parse(req.body);
 
@@ -232,7 +241,7 @@ authRouter.post(
   }
 );
 
-authRouter.post("/request", async (req: Request, res: Response<AuthRequestResult>) => {
+authRouter.post("/request", passwordResetLimiter, async (req: Request, res: Response<AuthRequestResult>) => {
   const { email } = AuthRequestInput.parse(req.body);
 
   const [rows] = await pool.execute<StaffUserRow[]>(
@@ -323,6 +332,7 @@ interface UserIdRow extends RowDataPacket {
 
 authRouter.post(
   "/forgot-password",
+  passwordResetLimiter,
   async (req: Request, res: Response<ForgotPasswordResult>) => {
     const { email } = ForgotPasswordInput.parse(req.body);
 

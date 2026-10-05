@@ -194,6 +194,12 @@ What works end-to-end:
   BLOB in `merchant_assets` rather than on disk — it travels with `mysqldump` instead of
   becoming a second thing to migrate — and served from a public, content-hashed URL
   because Google fetches `programLogo` server-side and caches it by URI.
+- ✅ **Security review** (Day 26): rate limiting, security headers, `JWT_SECRET` minimum
+  raised 8 → 32, Dependabot. Full write-up incl. what was checked and found clean in
+  **[docs/security-review.md](./docs/security-review.md)**. ⚠️ Two things to know: the api
+  must see the **real** client address, so any Next route handler acting for a browser has
+  to pass `clientIp: forwardedFor(req)` to `apiFetch` — without it the whole platform
+  shares one rate-limit bucket; and `JWT_SECRET` under 32 chars now refuses to boot.
 - ✅ **Onboarding checklist** (Day 25): four derived steps at the top of Overview, replacing
   a "No programs yet" panel that sat below the stat cards. Steps come from real state, never
   a stored flag — see `onboarding-checklist.tsx` for why that matters.

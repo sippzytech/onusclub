@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import type { PasswordAuthResult, PasswordLoginInput } from "@onusclub/shared";
-import { ApiCallError, apiFetch, SESSION_COOKIE } from "@/lib/api";
+import { ApiCallError, apiFetch, forwardedFor, SESSION_COOKIE } from "@/lib/api";
 
 const SEVEN_DAYS = 60 * 60 * 24 * 7;
 
@@ -16,6 +16,9 @@ export async function POST(req: Request): Promise<NextResponse> {
     const result = await apiFetch<PasswordAuthResult>("/v1/auth/login", {
       method: "POST",
       body,
+      // Real browser address, so the api rate-limits per user rather
+      // than per web container.
+      clientIp: forwardedFor(req),
     });
     const res = NextResponse.json({ ok: true });
     res.cookies.set(SESSION_COOKIE, result.jwt, {

@@ -30,6 +30,38 @@ import { startMessagingCrons } from "./messaging/cron.js";
 
 const app = express();
 
+/**
+ * Response headers, hand-rolled rather than via helmet.
+ *
+ * This API serves JSON and two binary endpoints (a .pkpass and a logo); it
+ * renders no HTML, so most of helmet's defaults are inert here and a
+ * dependency to carry them is not worth it. These four are the ones that do
+ * something:
+ *
+ *  - nosniff stops a browser treating a JSON error body as HTML/script, which
+ *    is the one XSS-adjacent risk a JSON API has.
+ *  - DENY framing: nothing here is meant to be embedded, and the customer card
+ *    page lives on the web origin, not this one.
+ *  - no-referrer: the customer card URL carries `qr_token` as a bearer
+ *    credential in the path, so the Referer header must never carry it to a
+ *    third party. Modern browsers default to strict-origin-when-cross-origin,
+ *    which would already strip the path — this makes it explicit rather than
+ *    dependent on a default.
+ *  - HSTS in production only. Setting it in dev would pin localhost to HTTPS
+ *    in the developer's browser, which is a genuinely annoying thing to undo.
+ *    Traefik terminates TLS, so this is the only place it can be set.
+ */
+app.disable("x-powered-by");
+app.use((_req, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "DENY");
+  res.setHeader("Referrer-Policy", "no-referrer");
+  if (env.NODE_ENV === "production") {
+    res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+  }
+  next();
+});
+
 app.use(pinoHttp({ logger }));
 // CSV import posts the whole file as a JSON string, and express.json defaults
 // to a 100 kb limit — about 1,500 customer rows. A café migrating from another

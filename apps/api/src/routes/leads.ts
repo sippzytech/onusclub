@@ -20,6 +20,9 @@ import { pool } from "../db/pool.js";
 import { env } from "../config.js";
 import { logger } from "../logger.js";
 import { sendEmail } from "../email/client.js";
+// Hoisted to src/http/ during the Day 26 review: a second copy in the admin
+// tripwire had drifted to plain `req.ip` and was logging the proxy.
+import { clientIp, hashIp } from "../http/client-ip.js";
 
 export const leadsRouter: Router = Router();
 
@@ -28,22 +31,6 @@ const DEDUPE_HOURS = 24;
 
 interface ExistingLeadRow extends RowDataPacket {
   id: string;
-}
-
-function hashIp(ip: string | undefined): string | null {
-  if (!ip) return null;
-  return createHash("sha256").update(ip).digest("hex");
-}
-
-/**
- * Behind Traefik, req.ip is the proxy. The real client is the first entry of
- * X-Forwarded-For. Only ever hashed, never stored or logged raw.
- */
-function clientIp(req: Request): string | undefined {
-  const fwd = req.headers["x-forwarded-for"];
-  const raw = Array.isArray(fwd) ? fwd[0] : fwd;
-  const first = raw?.split(",")[0]?.trim();
-  return first || req.ip;
 }
 
 leadsRouter.post("/", async (req: Request, res: Response<LeadResult>) => {

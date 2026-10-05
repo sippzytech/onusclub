@@ -48,7 +48,9 @@ services:
       # the wallet worth testing locally anyway.
       GOOGLE_WALLET_ISSUER_ID: "${GOOGLE_WALLET_ISSUER_ID:-0}"
       GOOGLE_WALLET_SA_KEY_PATH: "${GOOGLE_WALLET_SA_KEY_PATH:-/tmp/nonexistent.json}"
-      JWT_SECRET: dev_jwt_secret_change_me
+      # 32-char minimum enforced in config.ts. Local-only value; prod reads
+      # its own from .env and must be a real random secret.
+      JWT_SECRET: dev_jwt_secret_change_me_not_for_production_use
       BASE_URL_WEB: http://localhost:3001
       # BASE_URL_API intentionally not set here so apps/api/.env wins. Set it
       # there to an ngrok HTTPS URL when testing Apple Wallet live updates

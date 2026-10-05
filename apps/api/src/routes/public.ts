@@ -31,6 +31,7 @@ import { buildSaveJwt, saveUrl } from "../wallet/loyalty.js";
 import { buildHeroPng } from "../card-art/raster.js";
 import { objectOnCurrentIssuer } from "../wallet/state.js";
 import { loadMerchantLocations } from "../merchants/locations.js";
+import { publicEnrolLimiter } from "../http/rate-limit.js";
 
 export const publicRouter: Router = Router();
 
@@ -105,6 +106,9 @@ publicRouter.get(
 // POST /v1/public/m/:slug/enrol — customer-facing self-enrolment.
 publicRouter.post(
   "/m/:slug/enrol",
+  // The only unauthenticated write that creates rows — so the only one where
+  // abuse fills a café's customer list with junk.
+  publicEnrolLimiter,
   async (req: Request, res: Response<PublicEnrolResult>) => {
     const input = PublicEnrolInput.parse(req.body);
 

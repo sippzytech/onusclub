@@ -11,13 +11,15 @@ import { pool } from "../db/pool.js";
 import { env } from "../config.js";
 import { ApiError } from "../errors.js";
 
+import { signupLimiter } from "../http/rate-limit.js";
+
 export const merchantsRouter: Router = Router();
 
 interface CountRow extends RowDataPacket {
   c: number;
 }
 
-merchantsRouter.post("/", async (req: Request, res: Response<MerchantSignupResult>) => {
+merchantsRouter.post("/", signupLimiter, async (req: Request, res: Response<MerchantSignupResult>) => {
   const input = MerchantSignupInput.parse(req.body);
 
   const conn = await pool.getConnection();

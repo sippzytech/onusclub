@@ -342,21 +342,45 @@ the `crons_enabled` toggle under **Campaigns**, and says plainly that switching 
 pauses birthday and win-back messages to customers — because it does. A digest-only
 preference needs a column and a toggle; promising a control that does something broader
 would have been the small lie that costs trust.
-**19. Security review** 🔶 **LAST before launch, by decision 2026-10-03** — it is the
-final pass, not an enabler.
+**19. Security review** ✅ **DONE 2026-10-05.** Full write-up, including what was checked
+and found *clean*, in **[docs/security-review.md](./docs/security-review.md)**.
 
-⚠️ **One piece cannot wait that long.** Enforced tenant scoping is a *prerequisite for the
-master dashboard* (items 10-13), not part of the review. Today isolation is a hand-written
-`WHERE merchant_id = ?` repeated across every query with no mechanism behind it, and a
-super-admin role is the first thing deliberately designed to bypass it. Build the
-enforcement before the role that needs bypassing, or the review at the end is auditing a
-design that was never safe.
+Six fixes. The one that mattered most was not on the original list:
 
-Remaining review areas: no rate limiting anywhere, no enforced
-request-scoped tenant context, `qr_token` as a bearer credential on public routes, CSRF
-posture on the Next API routes, and dependency scanning (Dependabot/CodeQL are not
-configured). Run `/security-review` per branch, and do a dedicated pass before the master
-dashboard lands.
+⚠️ **Rate limiting was nearly worse than useless.** Login, signup and password reset all go
+browser → Next route handler → api, and the handler did not forward the caller's address —
+so the api saw the *web container* for every request on the platform. With IP-keyed limits
+that means one shared bucket: five signups an hour in total, and any single attacker able
+to lock out every user at once. Found while testing the limiter I had just added. `apiFetch`
+now forwards `forwardedFor(req)`; verified that two browsers at different addresses get
+separate buckets through the proxy.
+
+The rest: rate limiting itself (login keyed on address **and** email, so one person behind
+an office NAT cannot lock out colleagues); **`JWT_SECRET` minimum raised from 8 to 32** —
+eight characters is brute-forceable offline from one captured token, and whoever recovers
+it can mint a session for any user of any merchant; security headers on both apps, with
+`no-referrer` specifically on `/c/*` because `qr_token` sits in that URL; the admin tripwire
+was logging Traefik's address rather than the caller's, and now logs a hash of the real one;
+and Dependabot, which did not exist.
+
+🚨 **`JWT_SECRET` can stop production booting.** If the deployed value is under 32
+characters the container refuses to start. Check and rotate before deploying — rotation
+invalidates all sessions, currently four test accounts.
+
+Checked and clean, recorded so nobody re-reviews it blindly: SQL injection (everything
+parameterised; the template-literal SQL interpolates only constant fragments and generated
+placeholder lists), CSRF (`sameSite: "lax"` already blocks cross-site writes; the single
+state-changing GET is an unauthenticated public route with no ambient authority), CORS,
+tenant isolation, error leakage, committed secrets, and the one SSRF surface.
+
+Accepted with reasoning rather than fixed: `qr_token` as a bearer credential in a URL (the
+QR code *is* the credential — an account per customer is a worse product), no account
+lockout (lockout is itself a DoS lever), the 8-character password minimum, and in-memory
+rate limits (upgrade to Redis when api runs more than one container).
+
+Still open: **CodeQL** is not configured, and **nothing watches the logs** — rate-limit
+trips and admin denials now write `warn` lines that are worth seeing and that nobody sees.
+
 **20. Testing** ✅ **DONE 2026-10-05.** Four layers now, each covering what the others
 cannot:
 

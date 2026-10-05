@@ -23,6 +23,7 @@ import { pool } from "../db/pool.js";
 import { ApiError } from "../errors.js";
 import { logger } from "../logger.js";
 import { authContext } from "../auth/middleware.js";
+import { clientIp, hashIp } from "../http/client-ip.js";
 
 /** Who is making an admin request. Captured for the audit log. */
 export interface AdminActor {
@@ -104,7 +105,12 @@ export function requirePlatformAdmin(
             merchantId: ctx.merchantId,
             role: ctx.role,
             path: req.originalUrl,
-            ip: req.ip,
+            // Hashed, and resolved through X-Forwarded-For. This used to be
+            // `req.ip`, which behind Traefik is the proxy — so the tripwire
+            // recorded the same address for every denied request and could
+            // not distinguish a probe from our own UI. An IP is also personal
+            // data, so it is hashed rather than logged raw.
+            ipHash: hashIp(clientIp(req)),
           },
           "platform admin denied"
         );

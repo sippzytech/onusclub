@@ -6,7 +6,23 @@ const EnvSchema = z.object({
   DATABASE_URL: z.string().url(),
   GOOGLE_WALLET_ISSUER_ID: z.string().min(1),
   GOOGLE_WALLET_SA_KEY_PATH: z.string().min(1),
-  JWT_SECRET: z.string().min(8),
+  // ⚠️ Raised from min(8) during the Day 26 security review.
+  //
+  // This is the HS256 key for every session token. An 8-character secret is
+  // brute-forceable offline from a single captured JWT in minutes on a laptop
+  // — and whoever recovers it can mint a token for any user of any merchant,
+  // which is total account takeover across the platform. 32 bytes is the
+  // conventional floor for HMAC-SHA256.
+  //
+  // Raising this is deliberately a hard failure rather than a warning: a
+  // weak signing key is not a thing to boot with and fix later.
+  JWT_SECRET: z
+    .string()
+    .min(
+      32,
+      "JWT_SECRET must be at least 32 characters — this is the signing key for " +
+        "every session. Generate one with: openssl rand -base64 48"
+    ),
   BASE_URL_WEB: z.string().url(),
   // Public URL of this api (where iOS / customer browsers hit us directly,
   // e.g. for the Apple Wallet .pkpass download). Defaults to localhost:4000

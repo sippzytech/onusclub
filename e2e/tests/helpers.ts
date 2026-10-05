@@ -24,6 +24,19 @@ export interface Merchant {
 
 export const PASSWORD = "e2e-password-12345";
 
+/**
+ * A fresh RFC-5737 documentation address per request.
+ *
+ * Day 26 added IP-keyed rate limiting, and this suite immediately tripped the
+ * signup limiter: it creates a merchant per test, and the real limit is 5 per
+ * hour per address. Each test represents a different client, so presenting a
+ * different address is the accurate thing to do rather than a way around it.
+ */
+function syntheticIp(): string {
+  const n = (): number => Math.floor(Math.random() * 254) + 1;
+  return `203.0.113.${n()}`;
+}
+
 async function api<T>(
   method: string,
   path: string,
@@ -34,6 +47,7 @@ async function api<T>(
     method,
     headers: {
       "content-type": "application/json",
+      "x-forwarded-for": syntheticIp(),
       ...(jwt ? { authorization: `Bearer ${jwt}` } : {}),
     },
     body: body !== undefined ? JSON.stringify(body) : undefined,

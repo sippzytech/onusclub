@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import type { ForgotPasswordInput, ForgotPasswordResult } from "@onusclub/shared";
-import { ApiCallError, apiFetch } from "@/lib/api";
+import { ApiCallError, apiFetch, forwardedFor } from "@/lib/api";
 
 export async function POST(req: Request): Promise<NextResponse> {
   let body: ForgotPasswordInput;
@@ -13,6 +13,9 @@ export async function POST(req: Request): Promise<NextResponse> {
     const result = await apiFetch<ForgotPasswordResult>("/v1/auth/forgot-password", {
       method: "POST",
       body,
+      // Real browser address, so the api rate-limits per user rather
+      // than per web container.
+      clientIp: forwardedFor(req),
     });
     return NextResponse.json(result);
   } catch (err) {

@@ -24,12 +24,39 @@ export class ApiCallError extends Error {
   }
 }
 
+/**
+ * Forward the browser's address to the api.
+ *
+ * ⚠️ Without this, every request the api receives from a Next route handler
+ * appears to come from the WEB CONTAINER. That was harmless until Day 26 added
+ * IP-keyed rate limiting, at which point it became actively dangerous: login,
+ * signup and password reset all go browser → Next handler → api, so the whole
+ * platform would have shared one bucket. Five signups an hour for everybody,
+ * and one attacker able to lock out every user at once.
+ *
+ * Takes the incoming request's own X-Forwarded-For (set by Traefik) and passes
+ * it along, so the api's clientIp() resolves the real browser.
+ */
+export function forwardedFor(req: Request): string | undefined {
+  const xff = req.headers.get("x-forwarded-for");
+  if (xff) return xff;
+  const real = req.headers.get("x-real-ip");
+  return real ?? undefined;
+}
+
 export async function apiFetch<T>(
   path: string,
-  opts: { method?: string; body?: unknown; jwt?: string } = {}
+  opts: {
+    method?: string;
+    body?: unknown;
+    jwt?: string;
+    /** Pass `forwardedFor(req)` from any route handler acting for a browser. */
+    clientIp?: string;
+  } = {}
 ): Promise<T> {
   const headers: Record<string, string> = { "content-type": "application/json" };
   if (opts.jwt) headers["authorization"] = `Bearer ${opts.jwt}`;
+  if (opts.clientIp) headers["x-forwarded-for"] = opts.clientIp;
 
   const res = await fetch(`${API_BASE}${path}`, {
     method: opts.method ?? "GET",

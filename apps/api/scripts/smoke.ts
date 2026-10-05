@@ -6,13 +6,34 @@ interface ErrBody {
   error?: { code?: string; message?: string };
 }
 
+/**
+ * A fresh RFC-5737 documentation address per request.
+ *
+ * Day 26 added IP-keyed rate limiting, and this suite immediately tripped its
+ * own signup limiter: it stands up ~10 merchants, and the real limit is 5 per
+ * hour per address. Every request here represents a different simulated
+ * client, so presenting a different address for each is the accurate thing to
+ * do — not a way around the limiter.
+ *
+ * The rate-limit block below deliberately pins ONE address so it can prove the
+ * limiter still bites. Lead dedup keys on email, not address, so randomising
+ * here does not weaken that assertion either.
+ */
+function syntheticIp(): string {
+  const n = () => Math.floor(Math.random() * 254) + 1;
+  return `198.51.100.${n()}`.replace("100.", `${n() % 2 === 0 ? 100 : 2}.`);
+}
+
 async function call<T>(
   method: string,
   path: string,
   body?: unknown,
   jwt?: string
 ): Promise<T> {
-  const headers: Record<string, string> = { "content-type": "application/json" };
+  const headers: Record<string, string> = {
+    "content-type": "application/json",
+    "x-forwarded-for": syntheticIp(),
+  };
   if (jwt) headers["authorization"] = `Bearer ${jwt}`;
   const res = await fetch(`${BASE}${path}`, {
     method,
@@ -1596,6 +1617,83 @@ async function main(): Promise<void> {
     adetUnauth = String(err).includes("401");
   }
   assert(adetUnauth, "/v1/analytics/detail did not require auth");
+
+  // ---------- Day 26: rate limiting + security headers ----------
+
+  console.log("→ security headers are present on every response");
+  const headRes = await fetch(`${BASE}/health`);
+  assert(
+    headRes.headers.get("x-content-type-options") === "nosniff",
+    "missing X-Content-Type-Options"
+  );
+  assert(headRes.headers.get("x-frame-options") === "DENY", "missing X-Frame-Options");
+  // The customer card URL carries qr_token as a bearer credential in the path,
+  // and those pages link out to Google and Apple.
+  assert(
+    headRes.headers.get("referrer-policy") === "no-referrer",
+    "missing Referrer-Policy — qr_token could leak via Referer"
+  );
+  assert(
+    headRes.headers.get("x-powered-by") === null,
+    "X-Powered-By should be disabled"
+  );
+
+  console.log("→ login brute force is rate limited, per account not per IP");
+  // Keyed on address AND email on purpose: address alone would let one person
+  // behind an office NAT lock out their colleagues, and email alone would let
+  // anyone lock a known owner out of their own account from anywhere.
+  const rlEmail = `rl-${Date.now()}-${Math.random().toString(36).slice(2, 7)}@example.com`;
+  const rlIp = `203.0.113.${Math.floor(Math.random() * 200) + 1}`;
+  await call("POST", "/v1/auth/signup", {
+    businessName: `RL Café ${Date.now()}`,
+    ownerEmail: rlEmail,
+    ownerName: "RL",
+    password: "rl-password-12345",
+  });
+
+  const tryLogin = async (email: string): Promise<number> => {
+    const res = await fetch(`${BASE}/v1/auth/login`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-forwarded-for": rlIp },
+      body: JSON.stringify({ email, password: "definitely-wrong" }),
+    });
+    return res.status;
+  };
+
+  let sawLimit = false;
+  for (let i = 0; i < 14; i += 1) {
+    if ((await tryLogin(rlEmail)) === 429) {
+      sawLimit = true;
+      break;
+    }
+  }
+  assert(sawLimit, "login accepted 14 wrong passwords without rate limiting");
+
+  // ⚠️ The property that makes the per-account key worth the complexity: a
+  // second account from the SAME address must still be able to try.
+  const otherRlEmail = `rl2-${Date.now()}-${Math.random().toString(36).slice(2, 7)}@example.com`;
+  await call("POST", "/v1/auth/signup", {
+    businessName: `RL2 Café ${Date.now()}`,
+    ownerEmail: otherRlEmail,
+    ownerName: "RL2",
+    password: "rl-password-12345",
+  });
+  assert(
+    (await tryLogin(otherRlEmail)) === 401,
+    "a locked-out account took its neighbours down with it — the limiter is keyed on IP alone"
+  );
+
+  console.log("→ a rate-limited response says when to come back");
+  const limited = await fetch(`${BASE}/v1/auth/login`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-forwarded-for": rlIp },
+    body: JSON.stringify({ email: rlEmail, password: "definitely-wrong" }),
+  });
+  assert(limited.status === 429, "expected the original account to still be limited");
+  assert(
+    Number(limited.headers.get("retry-after")) > 0,
+    "a 429 must carry Retry-After, or a client can only guess"
+  );
 
   // ---------- Day 25: email delivery visibility ----------
   //
