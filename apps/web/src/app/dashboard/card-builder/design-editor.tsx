@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { TemplateGallery } from "./template-gallery";
 import {
   DEFAULT_CARD_DESIGN,
   STAMP_ICON_IDS,
@@ -80,6 +81,21 @@ export function DesignEditor({
   const isStamp = programType === "stamp";
 
   return (
+    <div className="space-y-5">
+      {/* Above the controls: choosing a starting point is the right first
+          question for someone who runs a barber shop, not "what hex value
+          should your foreground be". */}
+      <TemplateGallery
+        current={design}
+        businessName={businessName}
+        programType={programType}
+        target={target}
+        onApply={(next) => {
+          setDesign(next);
+          setSaved(false);
+        }}
+      />
+
     <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
       {/* Live preview */}
       <div className="lg:sticky lg:top-4">
@@ -256,6 +272,7 @@ export function DesignEditor({
           </div>
         ) : null}
       </div>
+    </div>
     </div>
   );
 }

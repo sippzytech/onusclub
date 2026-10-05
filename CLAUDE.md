@@ -194,6 +194,10 @@ What works end-to-end:
   BLOB in `merchant_assets` rather than on disk — it travels with `mysqldump` instead of
   becoming a second thing to migrate — and served from a public, content-hashed URL
   because Google fetches `programLogo` server-side and caches it by URI.
+- ✅ **Card template gallery** (Day 26): 24 presets in `packages/shared/src/card-templates.ts`,
+  browsable at the top of `/dashboard/card-builder`. No artwork needed — a preset is JSON
+  over the 10 existing tintable icons; only the tiled motifs would need an illustrator.
+  Applying one changes editor state only, and never overwrites custom labels.
 - ✅ **Security review** (Day 26): rate limiting, security headers, `JWT_SECRET` minimum
   raised 8 → 32, Dependabot. Full write-up incl. what was checked and found clean in
   **[docs/security-review.md](./docs/security-review.md)**. ⚠️ Two things to know: the api

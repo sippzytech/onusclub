@@ -293,22 +293,41 @@ appear. No test in this repo can prove that.
 **Not included**: writing `card_events.location_id`, which is still never populated — so
 "which branch was this stamped at" remains unanswerable. It needs a location picker on the
 scanner and a story for existing NULL rows; separate feature.
-**16. Template gallery** — 🔶 **PARTLY UNBLOCKED (re-assessed 2026-10-05).** The old note
-said "blocked on ~90 commissioned motifs", which conflated two separate things:
+**16. Template gallery** ✅ **DONE 2026-10-05** (presets) · 🔶 artwork still optional.
 
-- **The presets are not blocked.** A template is ~12 lines of JSON — name, industry,
-  colours, icon, labels — and `STAMP_ICON_IDS` already ships 10 tintable icons that 94
-  templates can share happily (Barber Shop and Haircut both want `scissors`). A working
-  gallery with real presets is buildable today, no art required.
-- **Only the tiled background motifs need an illustrator**, and they are a visual upgrade
-  to a working gallery rather than a prerequisite for one.
+24 named presets in `packages/shared/src/card-templates.ts`, grouped into five industries,
+with a browse-and-apply gallery at the top of `/dashboard/card-builder`.
 
-Spec for the motifs, if commissioned: single-colour SVG tiles, `fill="currentColor"` only
-(we tint at render time so a café changing brand colour never clashes with its own card),
-square and seamlessly tiling, `viewBox="0 0 64 64"`, paths only — no `<image>`, no embedded
-rasters, no gradients — under ~4KB each since they rasterise into Apple's `@3x` strip. Start
-with the top 10 industries rather than all 94. **Original artwork**: mirroring the industry
-*names* is fine, tracing Perkstar's art is not.
+Shipped **without any artwork**, because the old "blocked on ~90 commissioned motifs" note
+conflated two things: a preset is a dozen lines of JSON picking from the 10 tintable icons
+that have existed since Day 16, while only the tiled background *motifs* need an
+illustrator. `pattern: "icon-tile"` already holds that slot. The gallery works now and gets
+richer later with no change to the file's shape.
+
+24 rather than Perkstar's 94. Their list runs alphabetically from ATV rental to Shawarma
+and is mostly long tail — Billiard club, Climbing wall, Lift — which pads a gallery without
+helping anyone. These are the trades a Netherlands-first loyalty product actually meets, and
+adding one is a one-entry pull request whenever a real café asks.
+
+Two properties worth preserving:
+
+- **Applying a template changes local editor state only.** Nothing is written until Save,
+  exactly as if the controls had been moved by hand — otherwise browsing the options would
+  rewrite a live card several times. Asserted: the stored design is still empty after the
+  page renders.
+- **Labels are carried over, never reset.** A café that renamed "STAMPS UNTIL THE REWARD"
+  into Dutch must not lose that by trying a colour scheme. Restyling is not relabelling.
+
+Each tile renders through the real `CardPreview` component rather than a swatch, so a tile
+cannot promise something the pass will not show.
+
+**If you do commission motifs**: single-colour SVG tiles, `fill="currentColor"` only (we
+tint at render, so a café changing brand colour never clashes with its own card), square
+and seamlessly tiling, `viewBox="0 0 64 64"`, paths only — no `<image>`, no embedded
+rasters, no gradients — under ~4KB each, since they rasterise into Apple's `@3x` strip.
+Start with the top 10 industries. **Original artwork**: mirroring industry *names* is fine,
+tracing their art is not.
+
 **17. CSV customer import/export** ✅ **DONE 2026-10-03.**
 **18. Weekly merchant digest email** ✅ **DONE 2026-10-05.** Mondays at 08:00
 Europe/Amsterdam — the one moment a "here is what happened" email has somewhere to go.
