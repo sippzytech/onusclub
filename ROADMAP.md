@@ -110,6 +110,12 @@ wallet.
 Pro is $20/mo for 50,000 and needs **no code change**. Buy it when the first real café is
 onboarded, not before.
 
+✅ **Delivery itself confirmed 2026-10-08.** The weekly digest fired Mon 2026-10-05 at
+06:00 UTC — 08:00 Amsterdam, as scheduled — from `noreply@send.onusclub.com` and landed in
+a third-party Gmail inbox, correctly rendered and not in spam, recorded as `sent` in
+`email_deliveries`. That retires the long-standing "we think email works but nobody has
+watched one land" caveat. The cap is a separate question from whether delivery works.
+
 ~~**The real gap is visibility, not the cap.**~~ ✅ **FIXED 2026-10-05.** Migration 013
 adds `email_deliveries`, written from inside `sendEmail` so no sender can forget. Three
 states, not two: `skipped` means no provider is configured, and counting those as failures

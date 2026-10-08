@@ -180,11 +180,13 @@ What works end-to-end:
 - ✅ **Card design system** (Day 16): shared SVG renderer, per-program design editor in
   `/dashboard/card-builder`, Apple Wallet `strip.png` artwork. See `docs/card-design/README.md`.
   Deployed and **verified on a physical iPhone 2026-09-18**.
-- 🔶 Resend: the VPS `.env` sends from `noreply@send.onusclub.com`, a verified custom
-  domain — so the old "test mode, only delivers to sippzy.official@gmail.com" note no
-  longer holds. **Delivery to an arbitrary third-party address has not actually been
-  observed**, so treat "real customer email works" as likely-but-unconfirmed until
-  someone watches one land.
+- ✅ **Resend delivery CONFIRMED 2026-10-08.** This carried a "likely-but-unconfirmed"
+  caveat for weeks because nobody had watched a message actually land. One has: the weekly
+  digest fired on Mon 2026-10-05 at 06:00 UTC (08:00 Amsterdam, as scheduled) from
+  `noreply@send.onusclub.com` and arrived in a third-party Gmail inbox, rendered correctly
+  and not in spam. `email_deliveries` recorded it as `sent`. Real customer email works.
+  Resend Pro (ROADMAP item 4) is still the fix for the 100/day cap, which is a separate
+  question from whether delivery works at all.
 - ✅ **Analytics page** (Day 17): trends, busiest hours, new-vs-returning, top members.
   Charts are hand-rolled inline SVG so the page ships zero client JS. Day/hour bucketing
   is converted to the merchant's timezone **in Node via `Intl`**, not in SQL — see the
