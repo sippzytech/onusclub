@@ -37,6 +37,14 @@ request", not "bypassable". **Limits are in-memory**, so they reset on restart
 and would multiply per replica; swap to express-rate-limit + Redis when api
 scales past one container.
 
+> ✅ **Verified in production 2026-10-08.** Twelve login attempts against one account
+> from one address: the first four returned 401 and the fifth onwards returned 429 with a
+> `Retry-After`. Not a clean 1–10 because an earlier six-attempt probe from the same
+> address and email was still inside the 15-minute window — 6 + 4 = 10 allowed, the 11th
+> refused. The counter is accurate across separate runs, which is a better result than a
+> clean sequence would have been. Security headers confirmed present on both apps the same
+> day.
+
 ### 2. ⚠️ The rate limiter was nearly worse than useless — found while testing it
 
 Login, signup and password reset all go **browser → Next route handler → api**.
