@@ -113,6 +113,19 @@ const CARD_SELECT = `
  * points-side fields. Unsupported program types fall through to all zeros /
  * nulls so the API response shape is always stable.
  */
+/**
+ * The saved design from a program's config_json, or null.
+ *
+ * Deliberately not merged with DEFAULT_CARD_DESIGN here: the api returns what
+ * the merchant actually saved, and every renderer applies the same
+ * `defaults < merchant brand colour < saved design` precedence itself. Merging
+ * server-side would make "has this program been styled?" unanswerable.
+ */
+function programDesign(configJson: unknown): unknown {
+  const cfg = parseJson<{ design?: unknown }>(configJson);
+  return cfg?.design ?? null;
+}
+
 function programFields(
   programType: "stamp" | "points",
   configJson: unknown
@@ -144,6 +157,7 @@ function rowToCardDetail(row: CardRow, events: EventRow[]): CardDetail {
       programName: row.program_name,
       programType: row.program_type,
       ...programFields(row.program_type, row.program_config),
+      design: programDesign(row.program_config),
       cardState: parseJson(row.card_state),
       qrToken: row.qr_token,
       status: row.status,

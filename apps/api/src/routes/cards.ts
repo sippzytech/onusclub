@@ -109,6 +109,10 @@ function rowToCard(row: CardRow): Card {
     programName: row.program_name,
     programType: row.program_type,
     ...programFields(row.program_type, row.program_config),
+    // Same source as operations.ts's mapper. Two places build a Card; both
+    // have to carry the design or the dashboard preview silently falls back
+    // to defaults on whichever path a page happens to use.
+    design: parseJson<{ design?: unknown }>(row.program_config)?.design ?? null,
     cardState: parseJson(row.card_state),
     qrToken: row.qr_token,
     status: row.status,

@@ -264,6 +264,20 @@ export const Card = z.object({
   pointsForReward: z.number().int().positive().nullable(),
   pointsPerEuro: z.number().positive().nullable(),
   cardState: z.unknown(), // typed at usage site via the CardState union from index.ts
+  /**
+   * The program's saved card design, or null when it has never been styled.
+   *
+   * Carried on the card because the dashboard's "this is what your customer
+   * sees" preview had no way to reach it: it rendered DEFAULT_CARD_DESIGN for
+   * every card regardless of what the café had saved, so a merchant who
+   * restyled their card saw the old one there while the real customer page
+   * and the wallet pass both showed the new one. Reported from production
+   * 2026-10-08.
+   *
+   * `program_config` is already SELECTed by every query that builds a Card, so
+   * this costs nothing extra to populate.
+   */
+  design: z.unknown().nullable(),
   qrToken: z.string(),
   status: z.enum(["active", "blocked", "expired"]),
   rewardText: z.string(),

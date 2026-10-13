@@ -1,7 +1,14 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import QRCode from "qrcode";
-import type { CardDetail, Customer, EmailDelivery, WalletLink } from "@onusclub/shared";
+import type {
+  CardDesign,
+  CardDetail,
+  Customer,
+  EmailDelivery,
+  MerchantBranding,
+  WalletLink,
+} from "@onusclub/shared";
 import { ApiCallError, apiFetch } from "@/lib/api";
 import { requireSession } from "@/lib/session";
 import { DashboardShell } from "../../dashboard-shell";
@@ -53,6 +60,14 @@ export default async function CardDetailPage({
   // Look up the customer to know if we have an email on file (controls
   // whether the "Resend invite" button is offered).
   const { customers } = await apiFetch<{ customers: Customer[] }>("/v1/customers", { jwt });
+
+  // The merchant's brand colour, which sits between the defaults and any
+  // saved design in the preview's precedence chain. Without it an unstyled
+  // card renders OnUsClub green rather than the café's own colour — the same
+  // class of bug as the stale design, one layer down.
+  const branding = await apiFetch<MerchantBranding>("/v1/me/branding", { jwt }).catch(
+    () => null
+  );
 
   // Allowed to fail: depends on migration 013, and a card page must still open
   // on a box that has the code but not the migration.
@@ -151,6 +166,18 @@ export default async function CardDetailPage({
               target={required}
               programType={detail.card.programType}
               qrSvg={qrSvg}
+              // ⚠️ Both of these, or this preview lies.
+              //
+              // It is labelled as what the customer sees, so a café that
+              // restyled its card and saw the OLD one here would reasonably
+              // conclude the change had not reached anyone — while the real
+              // customer page and the wallet pass had both already updated.
+              // Reported from production 2026-10-08.
+              //
+              // CardPreview applies the same precedence as the pass builder
+              // and the customer page: defaults < brand colour < saved design.
+              brandColor={branding?.brandColor ?? null}
+              design={(detail.card.design ?? undefined) as Partial<CardDesign> | undefined}
             />
             <div className="min-w-0 flex-1 space-y-3">
               <a
