@@ -3,7 +3,10 @@
   "compilerOptions": {
     "rootDir": "./src",
     "outDir": "./dist",
-    "noEmit": true
+    "noEmit": true,
+    // Must match tsconfig.build.json, or `pnpm typecheck` and `pnpm build`
+    // disagree about whether `URL` exists. See the note in that file.
+    "lib": ["ES2022", "DOM"]
   },
   "include": ["src/**/*.ts"]
 }

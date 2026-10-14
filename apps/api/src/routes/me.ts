@@ -9,6 +9,10 @@ import {
   type MerchantBranding as MerchantBrandingResponse,
   type TrialStatus,
   type EmailHealth,
+  MerchantReviewInput,
+  parseReviewLink,
+  isPublishableReviewUrl,
+  type MerchantReviewSettings,
 } from "@onusclub/shared";
 import { pool } from "../db/pool.js";
 import { authContext, requireAuth } from "../auth/middleware.js";
@@ -35,6 +39,8 @@ interface MerchantRow extends RowDataPacket {
   country: string;
   status: "active" | "suspended" | "trial";
   public_slug: string | null;
+  google_place_id: string | null;
+  google_reviews_enabled: number;
   is_premium: number;
   crons_enabled: number;
   trial_ends_at: Date | null;
@@ -170,6 +176,100 @@ meRouter.get("/email-health", requireAuth, async (req: Request, res: Response<Em
   const ctx = authContext(req);
   return res.json(await loadEmailHealth(ctx.merchantId));
 });
+
+// ---------------------------------------------------------------------------
+// Google reviews — the ask, never a reward.
+//
+// `merchants.google_place_id` and `google_reviews_enabled` have been columns
+// since migration 001 with no read or write path anywhere, while CLAUDE.md
+// listed "Google reviews integration loop" as something we win on. This is
+// that path.
+//
+// ⚠️ Nothing here gives a customer anything for leaving a review, and nothing
+// may. Google's Fake Engagement policy prohibits incentivising reviews —
+// naming loyalty points — and the penalty lands on the café's own listing.
+// See packages/shared/src/reviews.ts.
+// ---------------------------------------------------------------------------
+
+interface ClickCountRow extends RowDataPacket {
+  n: number;
+}
+
+async function reviewSettingsFor(merchantId: string): Promise<MerchantReviewSettings> {
+  const [rows] = await pool.execute<MerchantRow[]>(
+    "SELECT google_place_id, google_reviews_enabled FROM merchants WHERE id = ? LIMIT 1",
+    [merchantId]
+  );
+  const stored = rows[0]?.google_place_id ?? null;
+
+  const [clicks] = await pool.execute<ClickCountRow[]>(
+    `SELECT COUNT(*) AS n FROM card_events
+      WHERE merchant_id = ? AND event_type = 'review_click'
+        AND created_at >= NOW() - INTERVAL 30 DAY`,
+    [merchantId]
+  );
+
+  return {
+    enabled: Boolean(rows[0]?.google_reviews_enabled),
+    // Re-checked rather than echoed: a row could predate a tightening of the
+    // host rules, and this value is rendered as a link to the café's own
+    // customers.
+    reviewUrl: isPublishableReviewUrl(stored) ? stored : null,
+    clicksLast30Days: Number(clicks[0]?.n ?? 0),
+  };
+}
+
+meRouter.get(
+  "/reviews",
+  requireAuth,
+  async (req: Request, res: Response<MerchantReviewSettings>) => {
+    const ctx = authContext(req);
+    return res.json(await reviewSettingsFor(ctx.merchantId));
+  }
+);
+
+meRouter.patch(
+  "/reviews",
+  requireAuth,
+  async (req: Request, res: Response<MerchantReviewSettings>) => {
+    const ctx = authContext(req);
+    const input = MerchantReviewInput.parse(req.body);
+
+    if (input.reviewLink !== undefined) {
+      if (input.reviewLink === null || input.reviewLink === "") {
+        // Clearing the link also switches the prompt off. Leaving it enabled
+        // with nothing to point at would render a dead prompt to customers.
+        await pool.execute(
+          "UPDATE merchants SET google_place_id = NULL, google_reviews_enabled = FALSE WHERE id = ?",
+          [ctx.merchantId]
+        );
+      } else {
+        const parsed = parseReviewLink(input.reviewLink);
+        if (!parsed.ok) throw ApiError.badRequest(parsed.reason);
+        await pool.execute("UPDATE merchants SET google_place_id = ? WHERE id = ?", [
+          parsed.url,
+          ctx.merchantId,
+        ]);
+      }
+    }
+
+    if (input.enabled !== undefined) {
+      if (input.enabled) {
+        // Cannot enable without somewhere to send people.
+        const current = await reviewSettingsFor(ctx.merchantId);
+        if (!current.reviewUrl) {
+          throw ApiError.badRequest("Add your Google review link before switching this on.");
+        }
+      }
+      await pool.execute("UPDATE merchants SET google_reviews_enabled = ? WHERE id = ?", [
+        input.enabled,
+        ctx.merchantId,
+      ]);
+    }
+
+    return res.json(await reviewSettingsFor(ctx.merchantId));
+  }
+);
 
 // ---------------------------------------------------------------------------
 // Merchant branding: logo + brand colour.

@@ -1618,6 +1618,182 @@ async function main(): Promise<void> {
   }
   assert(adetUnauth, "/v1/analytics/detail did not require auth");
 
+  // ---------- Day 27: Google reviews — the ask, never a reward ----------
+  //
+  // ⚠️ Google's Fake Engagement policy prohibits incentivising reviews (naming
+  // loyalty points) and bans "review gating". The penalty lands on the café's
+  // own listing. Nothing below gives a customer anything, and nothing filters
+  // by sentiment — if a future change adds either, it is not an extension of
+  // this feature, it is a defect.
+
+  interface ReviewSettings {
+    enabled: boolean;
+    reviewUrl: string | null;
+    clicksLast30Days: number;
+  }
+
+  console.log("→ reviews: off by default");
+  const rev0 = await call<ReviewSettings>("GET", "/v1/me/reviews", undefined, jwt);
+  assert(rev0.enabled === false, "reviews should be off for a new merchant");
+  assert(rev0.reviewUrl === null, "no link should be set for a new merchant");
+
+  console.log("→ reviews: only Google review links are accepted");
+  const linkRefused = async (label: string, link: string): Promise<void> => {
+    let blocked = false;
+    try {
+      await call("PATCH", "/v1/me/reviews", { reviewLink: link }, jwt);
+    } catch (err) {
+      blocked = String(err).includes("400");
+    }
+    assert(blocked, `${label} should be refused: ${link}`);
+  };
+  // ⚠️ The security case. The host is checked on a parsed URL.hostname; a
+  // substring test would accept this and publish an attacker's link to the
+  // café's own customers under the café's name.
+  await linkRefused("a non-Google host carrying 'g.page'", "https://evil.example/?x=g.page");
+  await linkRefused("a subdomain spoof", "https://g.page.evil.example/r/x/review");
+  await linkRefused("plain http", "http://g.page/r/abc/review");
+  await linkRefused("a Google link that is not a review form", "https://www.google.com/maps/place/Cafe");
+  await linkRefused("junk", "my google page");
+
+  console.log("→ reviews: cannot be switched on without somewhere to send people");
+  let enableBlocked = false;
+  try {
+    await call("PATCH", "/v1/me/reviews", { enabled: true }, jwt);
+  } catch (err) {
+    enableBlocked = String(err).includes("400");
+  }
+  assert(enableBlocked, "enabling with no link should 400 — it would render a dead prompt");
+
+  console.log("→ reviews: a real Business Profile link is accepted and normalised");
+  const revSet = await call<ReviewSettings>(
+    "PATCH",
+    "/v1/me/reviews",
+    // Tracking parameters are stripped — they are no use to anyone here.
+    { reviewLink: "https://g.page/r/CQsmoketest/review?utm_source=gbp", enabled: true },
+    jwt
+  );
+  assert(
+    revSet.reviewUrl === "https://g.page/r/CQsmoketest/review",
+    `link should normalise, got ${revSet.reviewUrl}`
+  );
+  assert(revSet.enabled === true, "reviews should now be on");
+
+  console.log("→ reviews: the prompt waits for a redemption");
+  // `card` has been stamped and redeemed much earlier in this suite, so it
+  // qualifies; a freshly-enrolled card must not.
+  const freshCustomer = await call<{ id: string }>(
+    "POST",
+    "/v1/customers",
+    { name: "Review Fresh", email: `revfresh-${Date.now()}@example.com` },
+    jwt
+  );
+  const freshCard = await call<{ id: string; qrToken: string }>(
+    "POST",
+    "/v1/cards",
+    { customerId: freshCustomer.id, programId: program.id },
+    jwt
+  );
+  const freshView = await call<{ reviewUrl: string | null; lastRedeemedAt: string | null }>(
+    "GET",
+    `/v1/public/c/${freshCard.qrToken}`
+  );
+  assert(
+    freshView.lastRedeemedAt === null && freshView.reviewUrl === null,
+    "a card with no redemption must not show the review prompt"
+  );
+
+  const redeemedView = await call<{ reviewUrl: string | null }>(
+    "GET",
+    `/v1/public/c/${card.qrToken}`
+  );
+  assert(
+    redeemedView.reviewUrl === "https://g.page/r/CQsmoketest/review",
+    `a recently-redeemed card should show the prompt, got ${redeemedView.reviewUrl}`
+  );
+
+  console.log("→ reviews: tapping through redirects and is counted");
+  // Captured BEFORE the tap so the next assertion can prove a tap moves the
+  // click counter and nothing else.
+  const visitsBeforeTap = (
+    await call<{ totalVisits: number }>("GET", "/v1/analytics/detail?range=30d", undefined, jwt)
+  ).totalVisits;
+
+  const tapRes = await fetch(`${BASE}/v1/public/c/${card.qrToken}/review`, {
+    redirect: "manual",
+  });
+  assert(tapRes.status === 302, `the review link should 302, got ${tapRes.status}`);
+  assert(
+    tapRes.headers.get("location") === "https://g.page/r/CQsmoketest/review",
+    "the redirect should go to the stored link"
+  );
+  const revAfterTap = await call<ReviewSettings>("GET", "/v1/me/reviews", undefined, jwt);
+  assert(revAfterTap.clicksLast30Days >= 1, "the tap should have been counted");
+
+  console.log("→ reviews: a tap is recorded, but is NOT a visit");
+  // ⚠️ The assertion that catches `review_click` leaking into TXN_TYPES.
+  //
+  // That constant defines what counts as the café *doing business*, and a
+  // review tap is not a visit — counting it would inflate health flags, the
+  // weekly digest and every "scans" figure, exactly as counting `signup` or
+  // `manual_adjust` would.
+  //
+  // So: the event must exist on the card, and the visit count must not have
+  // moved. Both halves matter — asserting only the first would pass even if
+  // the event were being counted everywhere.
+  const detailAfterTap = await call<{ events: Array<{ eventType: string }> }>(
+    "GET",
+    `/v1/cards/${card.id}`,
+    undefined,
+    jwt
+  );
+  assert(
+    detailAfterTap.events.some((e) => e.eventType === "review_click"),
+    "the review tap should be recorded on the card"
+  );
+  const visitsAfterTap = (
+    await call<{ totalVisits: number }>("GET", "/v1/analytics/detail?range=30d", undefined, jwt)
+  ).totalVisits;
+  assert(
+    visitsAfterTap === visitsBeforeTap,
+    `a review tap must not count as a visit — went ${visitsBeforeTap} → ${visitsAfterTap}`
+  );
+
+  console.log("→ reviews: switching off hides the prompt and closes the redirect");
+  await call("PATCH", "/v1/me/reviews", { enabled: false }, jwt);
+  const offView = await call<{ reviewUrl: string | null }>(
+    "GET",
+    `/v1/public/c/${card.qrToken}`
+  );
+  assert(offView.reviewUrl === null, "the prompt must disappear when switched off");
+  const offTap = await fetch(`${BASE}/v1/public/c/${card.qrToken}/review`, {
+    redirect: "manual",
+  });
+  assert(offTap.status === 404, `the redirect should 404 when off, got ${offTap.status}`);
+
+  console.log("→ reviews: clearing the link also switches it off");
+  await call("PATCH", "/v1/me/reviews", { reviewLink: "https://g.page/r/CQagain/review" }, jwt);
+  await call("PATCH", "/v1/me/reviews", { enabled: true }, jwt);
+  const cleared = await call<ReviewSettings>(
+    "PATCH",
+    "/v1/me/reviews",
+    { reviewLink: null },
+    jwt
+  );
+  assert(
+    cleared.reviewUrl === null && cleared.enabled === false,
+    "clearing the link must also disable — an enabled prompt with no target is dead"
+  );
+
+  console.log("→ reviews: settings require auth");
+  let revUnauth = false;
+  try {
+    await call("GET", "/v1/me/reviews");
+  } catch (err) {
+    revUnauth = String(err).includes("401");
+  }
+  assert(revUnauth, "/v1/me/reviews did not require auth");
+
   // ---------- Day 26: rate limiting + security headers ----------
 
   console.log("→ security headers are present on every response");

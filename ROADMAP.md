@@ -10,6 +10,56 @@ See also: [CLAUDE.md](./CLAUDE.md) for stack + conventions, [DEPLOY.md](./DEPLOY
 
 ---
 
+### Day 27 — Google reviews: the ask, not the reward
+
+`CLAUDE.md` claimed we win on a "Google reviews integration loop". It did not exist:
+`merchants.google_place_id` and `google_reviews_enabled` had been unread columns since
+migration 001, and `review_reward` appeared only inside event-type lists, written by
+nothing. Same shape as the `locations` table before Day 24.
+
+🚨 **The feature as named could not be built.** Google's Fake Engagement policy prohibits
+incentivising reviews and **names loyalty points explicitly**; "review gating" — asking
+only the customers who say they enjoyed it — is banned separately. Enforcement is active
+in 2026, and the penalties land on the **café's** listing: reviews removed, a warning
+badge, a block on new reviews. A `review_reward` feature would have been us damaging our
+own customer's asset.
+
+So what shipped is **the ask**: shown to every customer regardless of sentiment, with
+nothing offered in return. That is still most of the value — cafés rarely ask at all, and
+the moment just after someone receives something free is the highest-goodwill point in the
+relationship. We owned that moment and did nothing with it.
+
+- **Merchant pastes a link they already have.** Business Profile's "Ask for reviews"
+  button gives a permanent `https://g.page/r/…/review`. Also accepts the legacy
+  `writereview?placeid=` form and a bare Place ID — the same "take whatever they have"
+  reasoning as `parseCoordinates`, because asking an SMB owner for a Place ID is as
+  useless as asking for a latitude.
+- ⚠️ **Host allow-list on a parsed `URL.hostname`, never a substring.** This string is
+  rendered as a link to the café's own customers under the café's name; a substring test
+  would accept `https://evil.example/?x=g.page`. Re-validated at serve time too, since a
+  stored row could predate a tightening of the rules. Smoke asserts both spoof shapes.
+- **The prompt waits for a redemption** and expires 14 days later, so it follows each
+  reward instead of becoming permanent furniture. The api decides — `showReviewPrompt` in
+  `routes/public.ts` — and the page only renders what it is handed, so the rule cannot
+  drift between the two.
+- **Taps are counted** via `GET /v1/public/c/:qrToken/review`, which records and 302s.
+  Google never reports which reviews came from us, so this is the only signal that exists
+  — and the UI says "taps, not reviews" rather than dressing it up.
+- ⚠️ Migration `014` **appends** `review_click` to the ENUM (MySQL rebuilds the whole
+  table for a mid-list insert), and it is **deliberately absent from `TXN_TYPES`**. A
+  review tap is not a visit; counting it would inflate health flags, the digest and every
+  "scans" figure. Smoke captures `totalVisits` either side of a tap and asserts it does
+  not move.
+- No reward, no sentiment gating, no wallet push (a review request on a lock screen is
+  pushier than one inside a card they chose to open, and would spend a limited daily
+  message). A champions broadcast is the natural follow-up — RFM already names them as
+  the people to ask — but the card prompt should prove itself first.
+
+No migration was needed for the setting itself. Those two columns had been waiting since
+001.
+
+---
+
 ## ⏳ OPEN — the one thing waiting on a human
 
 🚨 **Proximity notifications are built but UNTESTED ON HARDWARE.** Owner's instruction

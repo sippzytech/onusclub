@@ -4,7 +4,16 @@
     "rootDir": "./src",
     "outDir": "./dist",
     "noEmit": false,
-    "declaration": true
+    "declaration": true,
+    // "DOM" is here ONLY for the WHATWG `URL` class, which reviews.ts uses to
+    // parse a hostname against an allow-list. URL is a real global in both
+    // Node 20 and the browser, but TypeScript ships its type in lib.dom and
+    // there is no narrower lib that carries it.
+    //
+    // ⚠️ It is NOT an invitation to use browser APIs here. This package is
+    // isomorphic: anything touching `document` or `window` would typecheck and
+    // then throw the moment the api imports it. Keep shared runtime-agnostic.
+    "lib": ["ES2022", "DOM"]
   },
   "include": ["src/**/*.ts"]
 }

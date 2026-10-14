@@ -18,12 +18,15 @@ import {
   type PublicEnrolResult,
   type PublicMerchant,
   type StampCardState,
+  isPublishableReviewUrl,
+  REVIEW_PROMPT_WINDOW_DAYS,
 } from "@onusclub/shared";
 import type {
   AppleCardForWallet,
   AppleProgramForWallet,
 } from "../wallet-apple/state.js";
 import { pool } from "../db/pool.js";
+import { logger } from "../logger.js";
 import { env } from "../config.js";
 import { ApiError } from "../errors.js";
 import { syncCardToWallet } from "../cards/operations.js";
@@ -258,6 +261,12 @@ interface CardViewRow extends RowDataPacket {
   program_type: "stamp" | "points";
   reward_text: string;
   program_config: unknown;
+  // Must stay in sync with the SELECT below — RowDataPacket's index signature
+  // means a column used here but never selected reads as `any` and
+  // type-checks cleanly. That is how ".../c/undefined/apple-pass" shipped.
+  google_place_id: string | null;
+  google_reviews_enabled: number;
+  last_redeemed_at: Date | null;
 }
 
 publicRouter.get(
@@ -271,9 +280,12 @@ publicRouter.get(
       `SELECT c.id AS card_id, c.qr_token, c.card_state,
               c.google_wallet_object_id, c.status,
               m.business_name, m.brand_color,
+              m.google_place_id, m.google_reviews_enabled,
               cu.name AS customer_name,
               p.name AS program_name, p.program_type,
-              p.reward_text, p.config_json AS program_config
+              p.reward_text, p.config_json AS program_config,
+              (SELECT MAX(e.created_at) FROM card_events e
+                WHERE e.card_id = c.id AND e.event_type = 'redeem') AS last_redeemed_at
          FROM loyalty_cards c
          JOIN merchants m ON m.id = c.merchant_id
          JOIN customers cu ON cu.id = c.customer_id
@@ -343,9 +355,86 @@ publicRouter.get(
       // a malformed design must not break a customer's card page, so an
       // invalid blob degrades to null and the renderer uses its defaults.
       design: CardDesignInput.safeParse(cfgRaw.design ?? {}).data ?? null,
+      // The api decides whether the review prompt shows, not the page. Three
+      // conditions, all required: the café switched it on, the stored link
+      // still passes the host allow-list, and this customer redeemed
+      // something recently. Re-deriving that rule in the UI would let the two
+      // drift and the prompt appear when it should not.
+      reviewUrl: showReviewPrompt(row) ? row.google_place_id : null,
+      lastRedeemedAt: row.last_redeemed_at
+        ? new Date(row.last_redeemed_at).toISOString()
+        : null,
     });
   }
 );
+
+/**
+ * GET /v1/public/c/:qrToken/review — record the tap, then send them to Google.
+ *
+ * ⚠️ Tapping earns the customer NOTHING, and must not. Google's Fake
+ * Engagement policy prohibits incentivising reviews, names loyalty points, and
+ * penalises the CAFÉ'S listing. The event exists only so the merchant can tell
+ * whether the prompt works at all — Google never reports which reviews came
+ * from us.
+ *
+ * Public and unauthenticated, like every other `/c/:qrToken` route: the token
+ * is the credential.
+ */
+publicRouter.get("/c/:qrToken/review", async (req: Request, res: Response) => {
+  const qrToken = req.params.qrToken;
+  if (!/^[0-9a-f]{64}$/i.test(qrToken)) throw ApiError.notFound("card not found");
+
+  const [rows] = await pool.execute<CardViewRow[]>(
+    `SELECT c.id AS card_id, c.merchant_id,
+            m.google_place_id, m.google_reviews_enabled
+       FROM loyalty_cards c
+       JOIN merchants m ON m.id = c.merchant_id
+      WHERE c.qr_token = ? LIMIT 1`,
+    [qrToken]
+  );
+  if (rows.length === 0) throw ApiError.notFound("card not found");
+  const row = rows[0];
+
+  // Validated again at serve time rather than trusted from the column: the row
+  // could predate a tightening of the allow-list, and the cost of being wrong
+  // is redirecting a café's own customer somewhere else under its name.
+  if (!row.google_reviews_enabled || !isPublishableReviewUrl(row.google_place_id)) {
+    throw ApiError.notFound("not available");
+  }
+
+  // Best-effort: a failed write must not cost the customer the redirect they
+  // asked for. `review_click` is deliberately absent from TXN_TYPES, so this
+  // never counts as café activity.
+  try {
+    await pool.execute(
+      `INSERT INTO card_events (merchant_id, card_id, event_type, delta_json, note)
+       VALUES (?, ?, 'review_click', NULL, 'Tapped through to leave a Google review')`,
+      [(row as unknown as { merchant_id: string }).merchant_id, row.card_id]
+    );
+  } catch (err) {
+    logger.warn({ err, cardId: row.card_id }, "could not record review click");
+  }
+
+  return res.redirect(302, row.google_place_id!);
+});
+
+/**
+ * Whether to show the review prompt on a customer's card.
+ *
+ * Pure and named so the rule lives in one place. The window means the ask
+ * follows each reward rather than becoming permanent furniture on the card.
+ *
+ * ⚠️ Note what is NOT a condition: how the customer feels about the café.
+ * Filtering by sentiment is "review gating" and is banned by Google
+ * separately from the incentive rule. Everyone who redeemed gets asked.
+ */
+function showReviewPrompt(row: CardViewRow): boolean {
+  if (!row.google_reviews_enabled) return false;
+  if (!isPublishableReviewUrl(row.google_place_id)) return false;
+  if (!row.last_redeemed_at) return false;
+  const days = (Date.now() - new Date(row.last_redeemed_at).getTime()) / 86_400_000;
+  return days <= REVIEW_PROMPT_WINDOW_DAYS;
+}
 
 // GET /v1/public/m/:merchantId/logo.png — the merchant's uploaded logo.
 //

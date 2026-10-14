@@ -1,10 +1,16 @@
-import type { EmailHealth, MerchantBranding, ShopLocation } from "@onusclub/shared";
+import type {
+  EmailHealth,
+  MerchantBranding,
+  MerchantReviewSettings,
+  ShopLocation,
+} from "@onusclub/shared";
 import { apiFetch } from "@/lib/api";
 import { requireSession } from "@/lib/session";
 import { DashboardShell } from "../dashboard-shell";
 import { BrandingForm } from "./branding-form";
 import { LocationsForm } from "./locations-form";
 import { EmailHealthPanel } from "./email-health";
+import { ReviewsForm } from "./reviews-form";
 
 export const dynamic = "force-dynamic";
 
@@ -19,6 +25,12 @@ export default async function SettingsPage(): Promise<JSX.Element> {
   // on a box that has the code but not the migration. Same rule as the
   // analytics fetch on the Overview page.
   const emailHealth = await apiFetch<EmailHealth>("/v1/me/email-health", { jwt }).catch(
+    () => null
+  );
+
+  // Same treatment: depends on migration 014, so a box with the code but not
+  // the migration must still render a settings page.
+  const reviews = await apiFetch<MerchantReviewSettings>("/v1/me/reviews", { jwt }).catch(
     () => null
   );
 
@@ -54,6 +66,19 @@ export default async function SettingsPage(): Promise<JSX.Element> {
             />
           </div>
         </section>
+
+        {reviews ? (
+          <section className="rounded-card bg-white border border-brand-green/10 p-6">
+            <h2 className="font-serif text-2xl text-brand-green">Google reviews</h2>
+            <p className="text-sm text-brand-olive mt-1">
+              Ask customers for a review just after they claim a reward — the moment they
+              are most pleased with you.
+            </p>
+            <div className="mt-5">
+              <ReviewsForm initial={reviews} />
+            </div>
+          </section>
+        ) : null}
 
         <section className="rounded-card bg-white border border-brand-green/10 p-6">
           <h2 className="font-serif text-2xl text-brand-green">Email</h2>

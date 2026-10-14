@@ -154,6 +154,40 @@ export default async function PublicCardPage({
           </div>
         )}
 
+        {/* The review ask.
+         *
+         * ⚠️ NOTHING IS OFFERED IN RETURN, AND NOTHING MAY BE. Google's Fake
+         * Engagement policy prohibits incentivising reviews — loyalty points
+         * by name — and the penalty lands on the café's own listing, not ours.
+         *
+         * There is also deliberately no "did you enjoy it?" step. Asking only
+         * the happy customers is "review gating" and is banned separately. Any
+         * future edit that adds a reward or a sentiment filter is not
+         * extending this feature, it is breaking it.
+         *
+         * Whether to show it is decided by the api — see showReviewPrompt in
+         * routes/public.ts. The page only renders what it is handed.
+         */}
+        {card.reviewUrl ? (
+          <a
+            href={`${apiBase()}/v1/public/c/${params.qrToken}/review`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="block rounded-card bg-white border border-brand-green/10 p-5 transition-colors hover:border-brand-green/30"
+          >
+            <p className="font-medium text-brand-green">
+              Enjoying {card.businessName}?
+            </p>
+            <p className="text-sm text-brand-olive mt-1">
+              A quick Google review helps other people find them. Takes about thirty
+              seconds.
+            </p>
+            <p className="text-sm font-medium text-brand-green mt-3">
+              Leave a review →
+            </p>
+          </a>
+        ) : null}
+
         {card.status === "active" ? (
           <div className="rounded-card bg-white border border-brand-green/10 p-5 space-y-3">
             <p className="font-medium text-brand-green">Save to your phone</p>

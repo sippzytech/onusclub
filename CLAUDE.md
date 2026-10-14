@@ -13,7 +13,14 @@ Multi-tenant SaaS for **digital loyalty cards** for cafés, salons, and similar 
 ## Positioning
 
 Competitors: **Perkstar** (UK) and **Tap2** (NL).
-We win on: **Netherlands-first**, SMB-friendly UX, transparent pricing, Google reviews integration loop.
+We win on: **Netherlands-first**, SMB-friendly UX, transparent pricing, and asking for
+Google reviews at the moment a reward is claimed.
+
+⚠️ That last one is **the ask, never a reward**. Google's Fake Engagement policy
+prohibits incentivising reviews — naming loyalty points — and bans "review gating"
+(asking only the customers who say they enjoyed it). Penalties land on the *café's*
+listing. Anyone adding a reward or a sentiment filter is breaking the feature, not
+extending it. See `packages/shared/src/reviews.ts`.
 
 ## Stack (decided — do not drift)
 
@@ -96,8 +103,12 @@ Switching issuers is an env-var change, never a code change — `GOOGLE_WALLET_I
 
 ## Schema
 
-See `apps/api/src/db/migrations/` — the numbered SQL files are the single source of truth, `001_initial.sql` through `013_email_deliveries.sql`. Core tables: `merchants`, `locations`, `loyalty_programs`, `customers`, `loyalty_cards`, `card_events`, `staff_users`, `auth_tokens`; later migrations add `broadcasts`, `sweep_runs`, `message_deliveries`, `apple_pass_registrations`, `points_batches`, `leads`, `merchant_assets`, `platform_admins`, `admin_audit_log`,
+See `apps/api/src/db/migrations/` — the numbered SQL files are the single source of truth, `001_initial.sql` through `014_review_click.sql`. Core tables: `merchants`, `locations`, `loyalty_programs`, `customers`, `loyalty_cards`, `card_events`, `staff_users`, `auth_tokens`; later migrations add `broadcasts`, `sweep_runs`, `message_deliveries`, `apple_pass_registrations`, `points_batches`, `leads`, `merchant_assets`, `platform_admins`, `admin_audit_log`,
 `email_deliveries`.
+
+⚠️ **Append new `card_events.event_type` values at the END of the ENUM.** MySQL 8 does an
+in-place ALTER for an appended value and a full table rebuild for one inserted mid-list —
+on the biggest table in the product, on the scan hot path.
 
 ⚠️ **`loyalty_cards.card_state.points_current` is a CACHE, not the ledger.** The
 authoritative points balance is `SUM(points_batches.points_remaining)` over non-expired
@@ -198,6 +209,14 @@ What works end-to-end:
   BLOB in `merchant_assets` rather than on disk — it travels with `mysqldump` instead of
   becoming a second thing to migrate — and served from a public, content-hashed URL
   because Google fetches `programLogo` server-side and caches it by URI.
+- ✅ **Google reviews** (Day 27): the café pastes its Business Profile review link on
+  `/dashboard/settings`; customers see a one-tap ask on their own card for 14 days after
+  each reward, and taps are counted so the merchant can tell it works — Google never
+  reports which reviews came from where. ⚠️ **No reward, no sentiment gating**, both
+  banned by Google with the penalty on the café's listing. `review_click` is deliberately
+  **absent from `TXN_TYPES`**: a tap is not a visit, and counting it would inflate health
+  flags and the weekly digest. Closes a positioning claim that had no product behind it —
+  `google_place_id` and `google_reviews_enabled` had been unread columns since 001.
 - ✅ **Card template gallery** (Day 26): 24 presets in `packages/shared/src/card-templates.ts`,
   browsable at the top of `/dashboard/card-builder`. No artwork needed — a preset is JSON
   over the 10 existing tintable icons; only the tiled motifs would need an illustrator.

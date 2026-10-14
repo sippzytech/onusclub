@@ -509,6 +509,20 @@ export const PublicCardView = z.object({
   // the merchant has not customised the card — the renderer falls back to
   // DEFAULT_CARD_DESIGN plus the merchant brand colour.
   design: CardDesignInput.nullable().optional(),
+  /**
+   * Where to send a customer who wants to leave a Google review, or null.
+   *
+   * ⚠️ Null unless the café enabled it AND set a valid link AND this customer
+   * redeemed something recently. The api decides — the page must not re-derive
+   * the rule, or the two drift and the prompt starts appearing when it should
+   * not.
+   *
+   * Nothing is offered in return for using it. See reviews.ts for why that is
+   * not a product choice.
+   */
+  reviewUrl: z.string().nullable().optional(),
+  /** Last `redeem` event, ISO. Drives the review prompt's window. */
+  lastRedeemedAt: z.string().nullable().optional(),
 });
 export type PublicCardView = z.infer<typeof PublicCardView>;
 
@@ -927,6 +941,39 @@ export const EmailHealth = z.object({
   recentFailures: z.array(EmailDelivery),
 });
 export type EmailHealth = z.infer<typeof EmailHealth>;
+
+// ---------- Google reviews (Day 27) ----------
+//
+// ⚠️ The ask, never a reward. Google's Fake Engagement policy prohibits
+// incentivising reviews — loyalty points by name — and bans "review gating",
+// i.e. asking only the customers who say they enjoyed it. Penalties land on
+// the café's own listing. See packages/shared/src/reviews.ts.
+
+export const MerchantReviewInput = z.object({
+  /**
+   * The link from "Ask for reviews" on the café's Google Business Profile, a
+   * legacy `writereview?placeid=` URL, or a bare Place ID. Parsed and
+   * host-checked server-side by `parseReviewLink`. Null clears it.
+   */
+  reviewLink: z.string().trim().max(500).nullable().optional(),
+  /** Off by default — `merchants.google_reviews_enabled` has defaulted FALSE since 001. */
+  enabled: z.boolean().optional(),
+});
+export type MerchantReviewInput = z.infer<typeof MerchantReviewInput>;
+
+export const MerchantReviewSettings = z.object({
+  enabled: z.boolean(),
+  /** The normalised URL we would publish, or null if none is set. */
+  reviewUrl: z.string().nullable(),
+  /**
+   * Tap-throughs in the last 30 days.
+   *
+   * The ONLY feedback signal available: Google never reports which reviews
+   * came from us. The UI must not imply this is a review count.
+   */
+  clicksLast30Days: z.number().int().nonnegative(),
+});
+export type MerchantReviewSettings = z.infer<typeof MerchantReviewSettings>;
 
 // ---------- Shop locations (Day 24) ----------
 //
