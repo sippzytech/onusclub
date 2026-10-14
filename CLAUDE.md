@@ -133,15 +133,17 @@ When adding a new `program_type`, define its config + state shapes in `packages/
   Authorization is applied once, to the `/v1/admin` mount in `index.ts`, not per route —
   see `docs/admin/README.md`.
 
-## Status — Day 23 (current)
+## Status — Day 26 (current)
 
 **Deployed live at `api.onusclub.com` + `app.onusclub.com`**, from branch **`main`**.
 
-⚠️ **Production is behind `main` on migrations.** As of 2026-10-04 the box had `001`–`009`
-applied; `010_trial_period`, `011_merchant_assets`, `012_platform_admin` and
-`013_email_deliveries` are on `main` but not confirmed applied there. Check with
-`docker compose -f docker-compose.prod.yml exec api node dist/db/migrate.js` — it is
-idempotent and skips what is already in `_migrations`. Note that is the **compiled** runner;
+✅ **Production is up to date.** Verified 2026-10-08: all 13 migrations applied
+(`migrate.js` reported `applied: 0`, `verify-deploy.sh` 18/18), security headers live on
+both apps, rate limiting confirmed working against the live API, and the Monday digest
+delivered to a real third-party inbox.
+
+The migration runner is idempotent and skips what is already in `_migrations`, so running
+it after every deploy is free. Note it is the **compiled** `dist/db/migrate.js` —
 `pnpm db:migrate` is dev-image only and will fail in prod.
 
 **Branching**: `main` is the trunk — branch from it, merge back into it, deploy it. It was created on 2026-09-25; before that the repo had no trunk, just 16 unmerged `day-*` branches with `origin/HEAD` pointing at `day-1-skeleton` (which predates auth). Every legacy branch was verified to be an ancestor of `main` before the cut, so they hold nothing unique.
