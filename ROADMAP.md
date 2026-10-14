@@ -10,6 +10,34 @@ See also: [CLAUDE.md](./CLAUDE.md) for stack + conventions, [DEPLOY.md](./DEPLOY
 
 ---
 
+## ⏳ OPEN — the one thing waiting on a human
+
+🚨 **Proximity notifications are built but UNTESTED ON HARDWARE.** Owner's instruction
+2026-10-14: *keep it on hold, only testing is remaining, keep reminding me to test it.*
+
+**Remind the owner about this at the end of any session that touches wallet, locations or
+card design — and whenever they ask what is left.**
+
+Everything is shipped and deployed: shop locations under `/dashboard/settings`, up to 10
+per café, `merchantLocations` on the Google class, `locations[]` on the Apple pass. What
+nobody has confirmed is that the OS actually surfaces the pass near the shop — and no test
+in this repo can, because the trigger is entirely inside iOS and Android.
+
+**The test, when there is time:**
+1. `/dashboard/settings` → Your locations → add Café De Klep's address (paste the Google
+   Maps URL from the browser address bar, not the Share button — Share gives a short link
+   with no coordinates in it).
+2. Stamp any card. That is what pushes the location to Google; it does not happen on save.
+3. Walk within ~100m of the shop with an Android phone and an iPhone, both holding the pass.
+4. The pass should appear on the lock screen / notification shade.
+
+If it does not fire, the first thing to check is whether the *existing* Google class
+actually received the locations — `classBrandingDiffers` has to know about
+`merchantLocations` or they reach newly-created classes only. `pnpm check:wallet` guards
+that, but only at the payload level.
+
+---
+
 ## Backlog — consolidated 2026-10-02
 
 Everything open, ranked. Reviewed in full on 2026-10-02 after Google Wallet went to
@@ -983,8 +1011,8 @@ User has explicitly asked these be saved for later — not picking any of them n
 - ~~**Bump GitHub Actions to v5**~~ ✅ **DONE 2026-10-05** — see the Small/cosmetic list.
 - **First-merchant demo seed script** (1-2 h) — `pnpm seed:demo` drops a realistic "Café De Klep" merchant with stamp + points programs into the DB for showing the dashboard to prospects without manual setup each time.
 - **Customer card archive view** (2-3 h) — `/dashboard/cards` only shows active cards; no way to see expired/blocked. Small product gap.
-- **Daily/weekly merchant digest email** (2-3 h) — cron emails each merchant a summary ("This week: 12 new cards, 47 stamps, 3 redeems"). Stickiness feature.
-- **Onboarding wizard for new merchants** (3-4 h) — first-time signup dumps you on an empty dashboard. A 3-step guided start (create program → share QR → invite first customer) reduces cold-start friction and converts signups to active use.
+- ~~**Daily/weekly merchant digest email**~~ ✅ **DONE 2026-10-05** — shipped as item 18, Mondays 08:00. Confirmed delivering to a real inbox 2026-10-08.
+- ~~**Onboarding wizard for new merchants**~~ ✅ **DONE 2026-10-05** — four derived steps at the top of Overview; see `onboarding-checklist.tsx` for why every step reads real state rather than a stored flag.
 
 ## Perkstar-inspired candidates (post-tear-down, 2026-06-29)
 
