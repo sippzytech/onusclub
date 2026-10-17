@@ -55,6 +55,12 @@ services:
       # BASE_URL_API intentionally not set here so apps/api/.env wins. Set it
       # there to an ngrok HTTPS URL when testing Apple Wallet live updates
       # (iOS requires HTTPS for the pass webServiceURL).
+      #
+      # Sign in with Google, from the repo-root .env so ONE line configures
+      # both this container and web. ⚠️ Listed here means this block WINS over
+      # apps/api/.env — putting the client id there instead does nothing, the
+      # same trap documented for the Wallet vars above. Root .env is the place.
+      GOOGLE_OAUTH_CLIENT_ID: "${GOOGLE_OAUTH_CLIENT_ID:-}"
     ports:
       - "4000:4000"
     volumes:
@@ -80,6 +86,15 @@ services:
       API_BASE_INTERNAL: http://api:4000
       NEXTAUTH_SECRET: dev_nextauth_secret_change_me
       NEXTAUTH_URL: http://localhost:3001
+      # Sign in with Google. The WEB container needs this too, not just the
+      # api: the server components read it and pass it to GoogleButton as a
+      # prop. Without it here the endpoint would work and no button would
+      # appear — which looks like a broken feature rather than an unset var.
+      #
+      # Substituted from the repo-root .env, so one line there configures both
+      # containers, exactly as prod does. Deliberately NOT NEXT_PUBLIC_ —
+      # see apps/web/src/lib/google.ts.
+      GOOGLE_OAUTH_CLIENT_ID: "${GOOGLE_OAUTH_CLIENT_ID:-}"
     ports:
       - "3001:3001"
     volumes:
