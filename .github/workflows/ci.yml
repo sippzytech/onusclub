@@ -43,6 +43,17 @@ jobs:
       - name: Check env vars are wired through prod compose
         run: node scripts/check-env-wiring.mjs
 
+      # AI campaign drafts. The model call costs money per invocation, so CI
+      # never makes one — but both halves worth checking are pure: whether the
+      # prompt carries the facts (and keeps merchant text inside the
+      # untrusted-content delimiters), and whether an over-long draft is
+      # rejected rather than silently trimmed to a sentence cut in half.
+      #
+      # In this job rather than the smoke job because, unlike check:wallet,
+      # nothing here imports config.ts — so it needs no env at all.
+      - name: Check AI draft prompt + validation
+        run: pnpm --filter @onusclub/api run check:drafts
+
       # Platform admin is the one privilege that reads across every tenant, and
       # it is deliberately granted only by SQL — there is no API or UI for it.
       # The `platform_admins` table must therefore have exactly one read path

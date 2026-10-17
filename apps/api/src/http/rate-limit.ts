@@ -212,3 +212,29 @@ export const publicEnrolLimiter = rateLimit({
   windowMs: 10 * 60_000,
   max: 30,
 });
+
+/**
+ * AI campaign drafts. Keyed on the MERCHANT, not the address.
+ *
+ * Every other limiter here guards an unauthenticated endpoint, where the
+ * address is the only thing we know about the caller. This one sits behind
+ * requireAuth, and the resource it protects is not a password or a mailbox —
+ * it is our Anthropic bill. Keying on address would let one merchant spend
+ * freely from a phone, a laptop and the café wifi, while penalising three
+ * different cafés that happen to share an office building.
+ *
+ * ⚠️ Must be mounted AFTER requireAuth, or `req.auth` is undefined and every
+ * caller lands in the same "anonymous" bucket. The fallback is deliberately
+ * one shared bucket rather than one bucket per unknown caller: if the ordering
+ * is ever wrong, the symptom is an obviously broken limit rather than a
+ * silently absent one.
+ *
+ * 20/hour: writing one campaign means trying maybe five. This is sized to stop
+ * a loop, not to ration honest use.
+ */
+export const aiDraftLimiter = rateLimit({
+  name: "ai-draft",
+  windowMs: 60 * 60_000,
+  max: 20,
+  keyOf: (req) => req.auth?.merchantId ?? "anonymous",
+});

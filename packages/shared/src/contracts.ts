@@ -552,12 +552,64 @@ export const AudienceFilter = z.object({
 });
 export type AudienceFilter = z.infer<typeof AudienceFilter>;
 
+// Hard ceilings on wallet message copy, named rather than inlined because two
+// things must agree on them: the composer the merchant types into, and the AI
+// drafter that writes copy *for* that composer. A draft that cannot be posted
+// back through BroadcastCreateInput is not a draft, it is a bug — so the
+// drafter validates against the same numbers rather than its own idea of them.
+export const BROADCAST_HEADER_MAX = 60;
+export const BROADCAST_BODY_MAX = 200;
+
 export const BroadcastCreateInput = z.object({
-  header: z.string().min(1).max(60),
-  body: z.string().min(1).max(200),
+  header: z.string().min(1).max(BROADCAST_HEADER_MAX),
+  body: z.string().min(1).max(BROADCAST_BODY_MAX),
   audienceFilter: AudienceFilter.optional(),
 });
 export type BroadcastCreateInput = z.infer<typeof BroadcastCreateInput>;
+
+// ---------- AI campaign drafts (Day 28) ----------
+//
+// Claude writes campaign copy; it never sends it. The response fills the
+// composer the merchant is already looking at, and the existing Send button is
+// untouched — the only thing between a generated sentence and a real
+// customer's lock screen is a human pressing it.
+
+export const DraftLanguage = z.enum(["nl", "en"]);
+export type DraftLanguage = z.infer<typeof DraftLanguage>;
+
+export const CampaignDraftInput = z.object({
+  // Who the campaign is for. Optional: "all active customers" is a legitimate
+  // broadcast, and the drafter handles it by writing for a general audience.
+  rfmSegment: RfmSegment.optional(),
+  // Lets the copy name the actual reward instead of saying "your reward".
+  programId: z.string().optional(),
+  // What the café wants to say, in their own words. The single most valuable
+  // field — "nieuwe winterkaart" produces copy nothing else can.
+  occasion: z.string().max(200).optional(),
+  // Defaults from merchants.country on the server, not here, so the client
+  // never has to know the rule.
+  language: DraftLanguage.optional(),
+});
+export type CampaignDraftInput = z.infer<typeof CampaignDraftInput>;
+
+// One option. Deliberately the exact shape the composer's two inputs hold.
+export const CampaignDraft = z.object({
+  header: z.string().min(1).max(BROADCAST_HEADER_MAX),
+  body: z.string().min(1).max(BROADCAST_BODY_MAX),
+});
+export type CampaignDraft = z.infer<typeof CampaignDraft>;
+
+export const CampaignDraftResponse = z.object({
+  drafts: z.array(CampaignDraft),
+  language: DraftLanguage,
+  // Echoed back so the UI can say "written for the 23 people at risk" instead
+  // of presenting the copy as if it came from nowhere.
+  audienceCount: z.number().int().nonnegative().nullable(),
+});
+export type CampaignDraftResponse = z.infer<typeof CampaignDraftResponse>;
+
+/** How many options one call asks for. Three is enough to choose, few enough to read. */
+export const CAMPAIGN_DRAFT_COUNT = 3;
 
 export const RunStatus = z.enum(["running", "completed", "failed"]);
 export type RunStatus = z.infer<typeof RunStatus>;
@@ -941,6 +993,39 @@ export const EmailHealth = z.object({
   recentFailures: z.array(EmailDelivery),
 });
 export type EmailHealth = z.infer<typeof EmailHealth>;
+
+// ---------- AI spend (Day 28) ----------
+//
+// Platform-only. This is the first thing in the product that bills per click
+// on a third-party API, so "what did it cost and who caused it" has to be
+// answerable without a log grep. Never shown to merchants: they do not pay per
+// draft, and a token count means nothing to a café owner.
+
+export const AiDraftSpendMerchant = z.object({
+  merchantId: z.string(),
+  businessName: z.string(),
+  calls: z.number().int().nonnegative(),
+  inputTokens: z.number().int().nonnegative(),
+  outputTokens: z.number().int().nonnegative(),
+});
+export type AiDraftSpendMerchant = z.infer<typeof AiDraftSpendMerchant>;
+
+export const AiDraftSpend = z.object({
+  windowDays: z.number().int().positive(),
+  calls: z.number().int().nonnegative(),
+  inputTokens: z.number().int().nonnegative(),
+  outputTokens: z.number().int().nonnegative(),
+  /**
+   * Calls where every returned option failed validation. A sustained non-zero
+   * number means the prompt has drifted out of agreement with the 60/200
+   * character limits — tokens spent for nothing, which otherwise shows up only
+   * as merchants quietly deciding the feature is useless.
+   */
+  emptyCalls: z.number().int().nonnegative(),
+  /** Heaviest users first, capped. Who to talk to, not a full ledger. */
+  topMerchants: z.array(AiDraftSpendMerchant),
+});
+export type AiDraftSpend = z.infer<typeof AiDraftSpend>;
 
 // ---------- Google reviews (Day 27) ----------
 //

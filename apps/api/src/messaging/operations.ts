@@ -143,8 +143,13 @@ interface RfmAggRow extends RowDataPacket {
  * decides who receives a win-back message is the one that must not be wrong.
  * For an SMB this is hundreds of ids, which is a cheap price for a single
  * source of truth.
+ *
+ * Exported since Day 28: the AI drafter needs to tell Claude how many people
+ * are in the segment it is writing for, and it must be the same count the
+ * broadcast will actually reach. Two queries that both claim to define "at
+ * risk" is the drift this function exists to prevent.
  */
-async function customerIdsInSegment(
+export async function customerIdsInSegment(
   merchantId: string,
   segment: RfmSegment
 ): Promise<string[]> {

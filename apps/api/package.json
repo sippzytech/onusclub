@@ -12,9 +12,11 @@
     "db:migrate": "tsx src/db/migrate.ts",
     "smoke": "tsx scripts/smoke.ts",
     "smoke:admin": "tsx scripts/smoke-admin.ts",
-    "check:wallet": "tsx scripts/check-wallet-payload.ts"
+    "check:wallet": "tsx scripts/check-wallet-payload.ts",
+    "check:drafts": "tsx scripts/check-drafts.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.135.0",
     "@onusclub/shared": "workspace:*",
     "@resvg/resvg-js": "^2.6.2",
     "bcryptjs": "^2.4.3",

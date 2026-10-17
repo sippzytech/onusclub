@@ -13,6 +13,7 @@ import {
   primaryHealthFlag,
   type AdminHealthFlag,
   type AdminPlatformMetrics,
+  type AiDraftSpend,
   type EmailHealth,
 } from "@onusclub/shared";
 import { pool } from "../../db/pool.js";
@@ -39,6 +40,84 @@ const WEEKS = 12;
  */
 adminMetricsRouter.get("/email", async (_req: Request, res: Response<EmailHealth>) => {
   return res.json(await loadEmailHealth(null));
+});
+
+/** Window for the AI spend figures. A month is the unit an invoice arrives in. */
+const AI_WINDOW_DAYS = 30;
+/** Enough to see who is driving the bill. Not a ledger. */
+const AI_TOP_MERCHANTS = 5;
+
+interface AiTotalsRow extends RowDataPacket {
+  calls: number;
+  input_tokens: string | number | null;
+  output_tokens: string | number | null;
+  empty_calls: number;
+}
+
+interface AiMerchantRow extends RowDataPacket {
+  merchant_id: string;
+  business_name: string | null;
+  calls: number;
+  input_tokens: string | number | null;
+  output_tokens: string | number | null;
+}
+
+const toInt = (v: string | number | null): number => (v === null ? 0 : Number(v));
+
+/**
+ * GET /v1/admin/metrics/ai — what AI drafting has cost, platform-wide.
+ *
+ * Its own endpoint for the same reason /email is: the question is asked on its
+ * own, when the Anthropic invoice looks wrong, and folding it into /metrics
+ * would make the dashboard's main call do eight aggregates instead of six.
+ *
+ * ⚠️ Cross-tenant by design — this is why it lives under routes/admin/.
+ * Authorization is applied once, to the /v1/admin mount in index.ts.
+ *
+ * Returns null-safe zeroes rather than throwing if `ai_drafts` is missing, so
+ * /admin still renders on a box where migration 015 has not run yet. Same
+ * handling the email panel already has for 013.
+ */
+adminMetricsRouter.get("/ai", async (_req: Request, res: Response<AiDraftSpend>) => {
+  const [totals] = await pool.query<AiTotalsRow[]>(
+    `SELECT COUNT(*)                                   AS calls,
+            SUM(input_tokens)                          AS input_tokens,
+            SUM(output_tokens)                         AS output_tokens,
+            SUM(CASE WHEN drafts_kept = 0 THEN 1 ELSE 0 END) AS empty_calls
+       FROM ai_drafts
+      WHERE created_at >= DATE_SUB(NOW(), INTERVAL ${AI_WINDOW_DAYS} DAY)`
+  );
+
+  const [perMerchant] = await pool.query<AiMerchantRow[]>(
+    `SELECT d.merchant_id,
+            m.business_name,
+            COUNT(*)           AS calls,
+            SUM(d.input_tokens)  AS input_tokens,
+            SUM(d.output_tokens) AS output_tokens
+       FROM ai_drafts d
+       LEFT JOIN merchants m ON m.id = d.merchant_id
+      WHERE d.created_at >= DATE_SUB(NOW(), INTERVAL ${AI_WINDOW_DAYS} DAY)
+      GROUP BY d.merchant_id, m.business_name
+      ORDER BY SUM(d.input_tokens + d.output_tokens) DESC
+      LIMIT ${AI_TOP_MERCHANTS}`
+  );
+
+  return res.json({
+    windowDays: AI_WINDOW_DAYS,
+    calls: toInt(totals[0]?.calls ?? 0),
+    inputTokens: toInt(totals[0]?.input_tokens ?? 0),
+    outputTokens: toInt(totals[0]?.output_tokens ?? 0),
+    emptyCalls: toInt(totals[0]?.empty_calls ?? 0),
+    topMerchants: perMerchant.map((r) => ({
+      merchantId: r.merchant_id,
+      // LEFT JOIN, so a draft from a since-deleted café still shows its spend
+      // rather than vanishing from the total.
+      businessName: r.business_name ?? "(deleted)",
+      calls: toInt(r.calls),
+      inputTokens: toInt(r.input_tokens),
+      outputTokens: toInt(r.output_tokens),
+    })),
+  });
 });
 
 adminMetricsRouter.get("/", async (_req: Request, res: Response<AdminPlatformMetrics>) => {

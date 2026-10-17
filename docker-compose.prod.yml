@@ -70,6 +70,10 @@ services:
       BASE_URL_API: https://${DOMAIN_API}
       RESEND_API_KEY: ${RESEND_API_KEY}
       EMAIL_FROM: ${EMAIL_FROM:-OnUsClub <onboarding@resend.dev>}
+      # AI campaign drafts. Empty → /v1/broadcasts/drafts answers 503 and the
+      # dashboard hides the button. This is OUR key and OUR bill, so the
+      # endpoint is premium-gated and rate-limited per merchant.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       # Lead capture from the marketing site. This block lists every variable
       # explicitly — adding one to .env alone does nothing, and the symptom is
       # the endpoint answering 503 as though it were never configured.

@@ -16,6 +16,7 @@ import {
 } from "@onusclub/shared";
 import { pool } from "../db/pool.js";
 import { authContext, requireAuth } from "../auth/middleware.js";
+import { aiConfigured } from "../ai/client.js";
 import { ApiError } from "../errors.js";
 import { env } from "../config.js";
 import { inspectImage } from "../merchants/image.js";
@@ -79,6 +80,16 @@ export interface MeResponse {
    * nothing trusts this flag for access. False for every café, always.
    */
   isPlatformAdmin: boolean;
+  /**
+   * Whether this deployment has an Anthropic key, so the dashboard can hide
+   * the "Draft with AI" button rather than offer one that always 503s.
+   *
+   * A sibling of isPlatformAdmin and advisory in the same way — a tampered
+   * value makes the button appear, and the endpoint still refuses. Not part of
+   * `preferences`, deliberately: those are per-merchant toggles stored on the
+   * merchants row, and this is a property of the box the api is running on.
+   */
+  aiDraftingAvailable: boolean;
 }
 
 meRouter.get("/", requireAuth, async (req: Request, res: Response<MeResponse>) => {
@@ -122,6 +133,7 @@ meRouter.get("/", requireAuth, async (req: Request, res: Response<MeResponse>) =
     },
     trial: deriveTrial(m.trial_ends_at),
     isPlatformAdmin: await isPlatformAdmin(ctx.userId),
+    aiDraftingAvailable: aiConfigured(),
   });
 });
 

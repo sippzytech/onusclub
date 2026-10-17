@@ -415,6 +415,19 @@ async function main(): Promise<void> {
   }
   assert(premBlocked, "broadcast without premium should 402");
 
+  // Day 28. Checked HERE, while premium is still off, because the whole point
+  // is that the premium gate runs BEFORE the AI key is even looked at — a
+  // non-paying account must not be able to spend our Anthropic tokens, and the
+  // only way to prove the ordering is to test it with premium off.
+  console.log("→ POST /v1/broadcasts/drafts without premium → 402");
+  let draftPremBlocked = false;
+  try {
+    await call("POST", "/v1/broadcasts/drafts", { language: "nl" }, jwt);
+  } catch (err) {
+    draftPremBlocked = String(err).includes("402");
+  }
+  assert(draftPremBlocked, "AI drafts without premium should 402, not 503");
+
   console.log("→ PATCH /v1/me/preferences { isPremium: true }");
   const upgraded = await call<{ isPremium: boolean; cronsEnabled: boolean }>(
     "PATCH",
@@ -2292,6 +2305,17 @@ async function main(): Promise<void> {
     programId: otherProgram.id,
     dryRun: true,
   });
+  // Day 28. The draft endpoint takes a programId in its body, which makes it a
+  // tenant-crossable id even though the path has no :id — so it needs a case
+  // here per the CLAUDE.md rule. The leak it would be: another café's reward
+  // text ("Free haircut") appearing in copy written for our customers.
+  //
+  // Deliberately checkable with no ANTHROPIC_API_KEY: the route resolves the
+  // program before it looks at the key, so this returns 404 rather than 503
+  // and the isolation property is proven in CI without a paid model call.
+  await denied("draft copy about their program", "POST", "/v1/broadcasts/drafts", {
+    programId: otherProgram.id,
+  });
 
   console.log("→ isolation: another merchant's location is unreachable");
   const otherLocation = await call<{ id: string }>(
@@ -2663,6 +2687,71 @@ async function main(): Promise<void> {
     emptyFinal!.broadcast.status === "completed",
     `empty-segment broadcast should complete, got ${emptyFinal!.broadcast.status}`
   );
+
+  // ---------- Day 28: AI campaign drafts ----------
+  //
+  // The model call itself is NOT exercised here. Every invocation costs real
+  // money, and what is worth asserting about the prompt and the response
+  // validator is pure — that lives in `pnpm check:drafts`. What this section
+  // covers is the endpoint's contract: the gates, the validation, and the
+  // degrade path.
+
+  console.log("→ /v1/me reports whether AI drafting is available on this box");
+  const meAi = await call<{ aiDraftingAvailable: boolean }>("GET", "/v1/me", undefined, jwt);
+  assert(
+    typeof meAi.aiDraftingAvailable === "boolean",
+    "/v1/me must tell the dashboard whether to show the Draft button"
+  );
+
+  console.log("→ drafts reject an unknown language with a 400");
+  let badLang = false;
+  try {
+    await call("POST", "/v1/broadcasts/drafts", { language: "de" }, jwt);
+  } catch (err) {
+    badLang = String(err).includes("400");
+  }
+  assert(badLang, "an unknown draft language should 400");
+
+  console.log("→ drafts reject an unbounded occasion with a 400");
+  // That string goes straight into a paid prompt, so the cap is not cosmetic.
+  let longOccasion = false;
+  try {
+    await call("POST", "/v1/broadcasts/drafts", { occasion: "x".repeat(201) }, jwt);
+  } catch (err) {
+    longOccasion = String(err).includes("400");
+  }
+  assert(longOccasion, "an over-long occasion should 400 before reaching the model");
+
+  console.log("→ drafts require auth");
+  let draftUnauth = false;
+  try {
+    await call("POST", "/v1/broadcasts/drafts", { language: "nl" });
+  } catch (err) {
+    draftUnauth = String(err).includes("401");
+  }
+  assert(draftUnauth, "/v1/broadcasts/drafts did not require auth");
+
+  if (meAi.aiDraftingAvailable) {
+    // A key IS configured — most likely a developer testing the real thing.
+    // Do not call the model from the smoke suite: CI would then spend money on
+    // every push, and a provider outage would fail an unrelated test run.
+    console.log("  (ANTHROPIC_API_KEY is set — skipping the 503 degrade check)");
+  } else {
+    console.log("→ with no key, drafts answer 503, not 500");
+    // The failure this guards: a missing optional integration surfacing as a
+    // crash. Every other optional integration here degrades to a 503, and a
+    // 500 would send the merchant to support for something that is simply off.
+    let notConfigured = false;
+    let sawFiveHundred = false;
+    try {
+      await call("POST", "/v1/broadcasts/drafts", { language: "nl" }, jwt);
+    } catch (err) {
+      notConfigured = String(err).includes("503");
+      sawFiveHundred = String(err).includes("500");
+    }
+    assert(!sawFiveHundred, "an absent ANTHROPIC_API_KEY crashed the endpoint");
+    assert(notConfigured, "an absent ANTHROPIC_API_KEY should answer 503");
+  }
 
   // ---------- Day 19: customer CSV import / export ----------
 

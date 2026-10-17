@@ -10,6 +10,89 @@ See also: [CLAUDE.md](./CLAUDE.md) for stack + conventions, [DEPLOY.md](./DEPLOY
 
 ---
 
+### Day 28 — AI campaign drafts
+
+Everything needed to run a good win-back campaign already existed: six RFM segments,
+audience filters that target them, async dispatch, per-card delivery audit, live progress.
+The missing piece was the part a café owner actually gets stuck on — the words. The
+composer handed them two empty boxes (60 chars, 200 chars) under a dropdown that says "At
+risk — regulars who have gone quiet". Knowing *who* to message was solved; knowing *what
+to say to them in Dutch in 200 characters* was not, and that is where a broadcast feature
+stops being used.
+
+So: **Draft with AI** in the composer. Pick a segment, optionally type the occasion
+("nieuwe winterkaart"), get three options, click one into the form, edit, send.
+
+**This is the first LLM call anywhere in the codebase**, and the first thing in the
+product that bills per click on a third-party API. Most of the design is about that.
+
+- **Claude drafts; it never sends.** The endpoint cannot create a broadcast and the Send
+  button is unchanged. Applying a draft calls `setHeader` / `setBody` and nothing else —
+  from there the merchant is editing an ordinary form. The only thing between a generated
+  sentence and a real customer's lock screen is a human pressing Send, and that is the
+  property to preserve if this ever grows.
+- **`claude-opus-5-5`, structured outputs, `effort: "low"`.** The output schema asks for
+  `{ drafts: [{header, body}] }`, and every option is then re-validated against
+  `CampaignDraft` — the *same* zod schema the composer posts back through
+  `BroadcastCreateInput`. `BROADCAST_HEADER_MAX` / `BROADCAST_BODY_MAX` are now named
+  constants in `packages/shared` precisely so those two cannot drift; `check:drafts`
+  asserts a maximum-length draft is postable. Low effort because this is copywriting
+  inside a 200-character ceiling, not reasoning.
+- ⚠️ **Over-long drafts are dropped, never trimmed.** A body cut at 200 characters
+  mid-sentence is worse than two options instead of three, and silent trimming would hide
+  a prompt that had drifted out of agreement with the limits. `ai_drafts.drafts_kept` is
+  what surfaces that drift; a run of zeroes shows on `/admin`.
+- ⚠️ **Merchant strings are data, not instructions.** Business name, reward text and the
+  occasion go inside a delimited block the system prompt names as untrusted, and
+  `sanitiseMerchantText` strips the delimiter and control characters so nobody can close
+  the block early. The real mitigation is that the merchant reviews the output before it
+  reaches anyone — but this is the first LLM call in the repo and that bug class is not
+  worth opting into.
+- **The prompt gets facts, from one source.** The segment brief quotes
+  `DEFAULT_RFM_THRESHOLDS` rather than retyping "a month", and the audience count comes
+  from `customerIdsInSegment` — the same function the broadcast will use to pick
+  recipients, now exported. Two definitions of "at risk" is exactly the drift that
+  function exists to prevent.
+- **Dutch by default, English on a toggle.** Defaults from `merchants.country` server-side
+  so the dashboard never has to know the rule. Informal `je`, never `u`.
+- **Degrades to off.** `ANTHROPIC_API_KEY` is optional with an empty default: absent → the
+  endpoint answers **503** and `/v1/me` tells the dashboard to hide the button (a sibling
+  of `isPlatformAdmin`, advisory in the same way). The api still boots. 🚨 The var is in
+  `docker-compose.prod.yml` — `check-env-wiring.mjs` would otherwise fail CI, which is the
+  point.
+- **Gated on premium and capped at 20/hour, keyed on `merchantId` not IP** — the only
+  limiter here that does, because the resource is our Anthropic bill rather than a login
+  form. Premium is checked *before* the key, so a non-paying account cannot spend our
+  tokens even where a key is configured; smoke proves the ordering with premium off.
+- **Migration `015_ai_drafts`** meters every call: merchant, segment, model, token counts,
+  `drafts_kept`. Written inside the client, the `sendEmail` → `email_deliveries`
+  precedent, and it swallows its own errors. Surfaced on `/admin` inside the Email panel.
+  Deliberately **no euro figure** — token prices change and a stale constant in a
+  dashboard is worse than no number. Also deliberately not the drafts themselves: that
+  would mean storing copy that was never sent or approved, and then deciding how long to
+  keep it. It is a meter, not an archive.
+- **Audience moved above the text inputs.** Fine when the merchant wrote their own copy;
+  wrong once the draft is written *for* a segment, because everyone presses Draft on an
+  empty audience and then wonders why segmentation changed nothing.
+- **`pnpm check:drafts`** — 33 pure assertions, no key, no spend, in the typecheck job
+  (nothing there imports `config.ts`). Same reasoning as `check:wallet`: the integration
+  cannot be exercised for free, so what gets checked is the question we ask and whether
+  we would accept a wrong answer. Smoke covers the gates, the 400s, the 503 degrade, and
+  a cross-tenant case — `programId` is a tenant-crossable id in the body, so the route
+  resolves the program *before* checking the key purely to keep that case provable in CI
+  without a paid call.
+
+Not in this change: auto-send or a scheduled campaign agent; AI copy for the
+birthday/inactivity sweeps (hardcoded renderers — AI would mean per-merchant templates
+re-drafted every cron run); per-customer personalisation (200 names = 200 calls and a
+merchant who can review none of them); merchants bringing their own key.
+
+**Still unverified:** whether the copy is good in Dutch. Nothing offline can test that —
+three options and a mandatory human edit are the design's answer. A live call has not been
+made yet; it needs a real `ANTHROPIC_API_KEY`.
+
+---
+
 ### Day 27 — Google reviews: the ask, not the reward
 
 `CLAUDE.md` claimed we win on a "Google reviews integration loop". It did not exist:

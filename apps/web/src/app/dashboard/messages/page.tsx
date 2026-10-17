@@ -11,7 +11,8 @@ import { SweepTriggers } from "./sweep-triggers";
 export const dynamic = "force-dynamic";
 
 export default async function MessagesPage(): Promise<JSX.Element> {
-  const { jwt, user, merchant, preferences, trial } = await requireSession();
+  const { jwt, user, merchant, preferences, trial, aiDraftingAvailable } =
+    await requireSession();
 
   if (!preferences.isPremium) {
     return (
@@ -52,7 +53,7 @@ export default async function MessagesPage(): Promise<JSX.Element> {
               Sends in the background — you can leave this page and check back later.
             </p>
             <div className="mt-4">
-              <BroadcastComposer />
+              <BroadcastComposer aiAvailable={aiDraftingAvailable} />
             </div>
           </div>
 

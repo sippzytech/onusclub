@@ -4,6 +4,7 @@ import {
   primaryHealthFlag,
   type AdminMerchantList,
   type AdminPlatformMetrics,
+  type AiDraftSpend,
   type EmailHealth,
 } from "@onusclub/shared";
 import { apiFetch } from "@/lib/api";
@@ -43,6 +44,12 @@ export default async function AdminOverviewPage(): Promise<JSX.Element> {
   // open on a box that has the code but not the migration — same rule as the
   // analytics fetch on the merchant Overview page.
   const email = await apiFetch<EmailHealth>("/v1/admin/metrics/email", { jwt }).catch(
+    () => null
+  );
+
+  // Same rule, migration 015. Allowed to fail so /admin still opens before the
+  // migration has been run on the box.
+  const ai = await apiFetch<AiDraftSpend>("/v1/admin/metrics/ai", { jwt }).catch(
     () => null
   );
 
@@ -192,6 +199,70 @@ export default async function AdminOverviewPage(): Promise<JSX.Element> {
               )}
             </>
           )}
+
+          {/*
+            AI spend sits inside the Email panel rather than claiming a third
+            column, because it answers the same kind of question: what are the
+            paid integrations doing. There is deliberately no euro figure —
+            token prices change and a stale constant in the dashboard would be
+            worse than no number. Tokens are what we store; converting them is
+            the invoice's job.
+          */}
+          <div className="mt-4 border-t border-slate-100 pt-3">
+            <h3 className="text-sm font-medium text-slate-900">AI drafts</h3>
+            {ai === null ? (
+              <p className="text-[11px] text-slate-500 mt-1">
+                Unavailable — migration 015 may not be applied.
+              </p>
+            ) : ai.calls === 0 ? (
+              <p className="text-[11px] text-slate-500 mt-1">
+                Nothing drafted in the last {ai.windowDays} days.
+              </p>
+            ) : (
+              <>
+                <p className="text-[11px] text-slate-500 mt-0.5">
+                  Last {ai.windowDays} days.
+                </p>
+                <dl className="mt-2 space-y-1.5 text-sm">
+                  <div className="flex justify-between gap-2">
+                    <dt className="text-slate-600">Drafts requested</dt>
+                    <dd className="tabular-nums text-slate-900">{ai.calls}</dd>
+                  </div>
+                  <div className="flex justify-between gap-2">
+                    <dt className="text-slate-600">
+                      Tokens
+                      <span className="block text-[11px] text-slate-400">in / out</span>
+                    </dt>
+                    <dd className="tabular-nums text-slate-900">
+                      {ai.inputTokens.toLocaleString("nl-NL")} /{" "}
+                      {ai.outputTokens.toLocaleString("nl-NL")}
+                    </dd>
+                  </div>
+                  {/* The drift alarm: tokens spent and nothing usable returned
+                      means the prompt no longer agrees with the 60/200 limits. */}
+                  {ai.emptyCalls > 0 && (
+                    <div className="flex justify-between gap-2">
+                      <dt className="text-amber-800">
+                        Returned nothing usable
+                        <span className="block text-[11px] text-amber-700">
+                          every option broke the length limits
+                        </span>
+                      </dt>
+                      <dd className="tabular-nums font-medium text-amber-900">
+                        {ai.emptyCalls}
+                      </dd>
+                    </div>
+                  )}
+                </dl>
+                {ai.topMerchants.length > 0 && (
+                  <p className="text-[11px] text-slate-500 mt-2">
+                    Heaviest: {ai.topMerchants[0].businessName} (
+                    {ai.topMerchants[0].calls})
+                  </p>
+                )}
+              </>
+            )}
+          </div>
         </section>
       </div>
 

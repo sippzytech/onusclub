@@ -103,8 +103,8 @@ Switching issuers is an env-var change, never a code change — `GOOGLE_WALLET_I
 
 ## Schema
 
-See `apps/api/src/db/migrations/` — the numbered SQL files are the single source of truth, `001_initial.sql` through `014_review_click.sql`. Core tables: `merchants`, `locations`, `loyalty_programs`, `customers`, `loyalty_cards`, `card_events`, `staff_users`, `auth_tokens`; later migrations add `broadcasts`, `sweep_runs`, `message_deliveries`, `apple_pass_registrations`, `points_batches`, `leads`, `merchant_assets`, `platform_admins`, `admin_audit_log`,
-`email_deliveries`.
+See `apps/api/src/db/migrations/` — the numbered SQL files are the single source of truth, `001_initial.sql` through `015_ai_drafts.sql`. Core tables: `merchants`, `locations`, `loyalty_programs`, `customers`, `loyalty_cards`, `card_events`, `staff_users`, `auth_tokens`; later migrations add `broadcasts`, `sweep_runs`, `message_deliveries`, `apple_pass_registrations`, `points_batches`, `leads`, `merchant_assets`, `platform_admins`, `admin_audit_log`,
+`email_deliveries`, `ai_drafts`.
 
 ⚠️ **Append new `card_events.event_type` values at the END of the ENUM.** MySQL 8 does an
 in-place ALTER for an appended value and a full table rebuild for one inserted mid-list —
@@ -144,11 +144,16 @@ When adding a new `program_type`, define its config + state shapes in `packages/
   Authorization is applied once, to the `/v1/admin` mount in `index.ts`, not per route —
   see `docs/admin/README.md`.
 
-## Status — Day 26 (current)
+## Status — Day 28 (current)
 
 **Deployed live at `api.onusclub.com` + `app.onusclub.com`**, from branch **`main`**.
 
-✅ **Production is up to date.** Verified 2026-10-08: all 13 migrations applied
+⚠️ **`main` is ahead of production by two migrations.** `014_review_click` (Day 27) and
+`015_ai_drafts` (Day 28) are on `main` and not yet applied on the box. Both are additive
+and the code degrades without them — `/admin` catches the missing table and the AI ledger
+swallows its own insert errors — but the next deploy must run the migration step.
+
+✅ Last fully verified 2026-10-08: all 13 migrations applied at that point
 (`migrate.js` reported `applied: 0`, `verify-deploy.sh` 18/18), security headers live on
 both apps, rate limiting confirmed working against the live API, and the Monday digest
 delivered to a real third-party inbox.
@@ -183,10 +188,12 @@ What works end-to-end:
 - ✅ Per-card delivery audit (broadcasts + sweeps) with manual retry
 - ✅ Premium feature gate (fake unlock for now) + crons-enabled kill-switch
 - ✅ Staff/team accounts (`/dashboard/team`, owner-only CRUD)
-- ✅ Four test layers, all gated in CI on every PR: `pnpm smoke` (API black-box, includes
+- ✅ Five test layers, all gated in CI on every PR: `pnpm smoke` (API black-box, includes
   the cross-tenant isolation section), `pnpm smoke:admin` (needs `DATABASE_URL`, because
   granting platform admin is SQL-only), `pnpm check:wallet` (pure assertions on the Google
-  Wallet class payload — that integration cannot be exercised outside production), and
+  Wallet class payload — that integration cannot be exercised outside production),
+  `pnpm check:drafts` (pure assertions on the AI draft prompt and response validation —
+  same reasoning, except the cost is money per call rather than permanence), and
   `pnpm e2e` (Playwright, in `e2e/`, browser flows only — it deliberately does not re-test
   the API). ⚠️ The QR scanner is **not** covered: it is camera-only with no manual-entry
   fallback, so a test would really be testing `html5-qrcode`. See `playwright.config.ts`.
@@ -251,6 +258,29 @@ What works end-to-end:
   role, so revocation is instant); there is no "profit" figure anywhere and that is
   deliberate; and every balance adjustment is visible to the café on **their own**
   dashboard, with the reason — don't remove that.
+- ✅ **Google reviews — the ask, not the reward** (Day 27): the review link the merchant
+  already has, surfaced on their customer's card for 14 days after a redemption, with
+  taps counted via `review_click`. 🚨 **Never add a reward for reviewing.** Google's Fake
+  Engagement policy names loyalty points explicitly and the penalty lands on the
+  **café's** listing. Sentiment gating ("did you enjoy it?") is banned separately.
+- ✅ **AI campaign drafts** (Day 28): `POST /v1/broadcasts/drafts` → three options for the
+  broadcast composer, Dutch by default. **The first LLM call in the codebase.** Five
+  things to know before touching `apps/api/src/ai/`:
+  - **Claude drafts, it never sends.** The endpoint cannot create a broadcast; applying a
+    draft only fills the two composer inputs. Keep it that way.
+  - Every option is re-validated against `CampaignDraft`, which shares
+    `BROADCAST_HEADER_MAX` / `BROADCAST_BODY_MAX` with `BroadcastCreateInput`. An
+    over-long draft is **dropped, never trimmed** — a body cut mid-sentence is worse than
+    two options, and trimming would hide prompt drift. `ai_drafts.drafts_kept` is the
+    drift signal, shown on `/admin`.
+  - Merchant strings go inside a delimited untrusted block; `sanitiseMerchantText` stops
+    anyone closing it early. The prompt's segment brief and audience count come from
+    `DEFAULT_RFM_THRESHOLDS` and `customerIdsInSegment` — never retype either.
+  - `ANTHROPIC_API_KEY` empty → 503 and the button is hidden; the api still boots.
+    Premium is checked **before** the key, and the 20/hour limiter keys on `merchantId`,
+    not IP, because the resource is our bill.
+  - The route resolves `programId` **before** the key check, deliberately, so the
+    cross-tenant case stays provable in CI without a paid call. Don't reorder it.
 
 ### Naming: three different names, on purpose
 

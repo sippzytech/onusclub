@@ -16,6 +16,12 @@ export interface Session {
    * nothing but whether a link appears.
    */
   isPlatformAdmin: boolean;
+  /**
+   * Whether this deployment has an Anthropic key. Decides whether the
+   * broadcast composer offers "Draft with AI" at all — a button that always
+   * answers 503 is worse than no button.
+   */
+  aiDraftingAvailable: boolean;
 }
 
 export async function requireSession(): Promise<Session> {

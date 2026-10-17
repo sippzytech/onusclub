@@ -46,6 +46,15 @@ const EnvSchema = z.object({
   // Where "new lead" notifications go. A lead nobody sees is the same as the
   // lead being discarded, which is the bug this feature exists to fix.
   LEADS_NOTIFY_EMAIL: z.string().default("onusclub.official@gmail.com"),
+  // Anthropic, for AI campaign drafts (Day 28). Empty → the drafts endpoint
+  // returns 503 and the dashboard hides the button; nothing else changes.
+  //
+  // Deliberately optional with an empty default, like RESEND_API_KEY and the
+  // APPLE_* block: an absent key is a feature being switched off, never a
+  // reason for the api to refuse to boot. The one integration that *does* fail
+  // startup is JWT_SECRET, because a weak signing key is not a thing to run
+  // with — a missing copywriter is.
+  ANTHROPIC_API_KEY: z.string().optional().default(""),
   // Apple Wallet. All empty → endpoint returns 503 "not configured".
   // P12_PASSWORD empty is the canonical "wallet offline" signal.
   APPLE_TEAM_ID: z.string().optional().default(""),
