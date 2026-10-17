@@ -60,6 +60,38 @@ No migration was needed for the setting itself. Those two columns had been waiti
 
 ---
 
+## 🔶 DEFERRED — host MySQL on the shared VPS is reachable from the internet
+
+Found 2026-10-15 while hardening SSH. Port **3306 on 187.127.149.147 accepts connections
+from anywhere**, serving a *host-installed* MySQL (not OnUsClub's, which is correctly on
+`127.0.0.1:33061`) carrying `builder_crm`, `mypaltan_db`, `sippzy_db`, `sippzy_outreach`.
+Five accounts are defined with host `%`, including `sippzy_admin`. Port 3000 (Metabase) is
+likewise open. No firewall exists: `ufw` inactive, iptables policy ACCEPT.
+
+One external IP (`134.209.71.144`, DigitalOcean — same range as the SSH scanners) has
+probed it: `HANDSHAKE_ERRORS: 2`, `AUTHENTICATION_ERRORS: 0`, i.e. it grabbed the version
+banner and left. **No login was ever attempted and there is no sign of compromise.**
+
+**Owner's decision 2026-10-17: deferred, deliberately.** Nothing on that MySQL is live or
+in use, a password is still required, and OnUsClub is moving to its own VPS (item 1), which
+retires the exposure rather than patching it.
+
+🚨 **Re-check this if the OnUsClub migration slips, or if anything on that MySQL goes
+live.** A password is then the only control on a globally reachable admin account.
+
+**If it ever does need closing**, the investigation is already done — two different fixes
+are required and the obvious ones are both wrong:
+- **3306 is a host process**, so an ordinary firewall rule works. But `bind-address =
+  127.0.0.1` would NOT: Metabase (172.17.0.2) and n8n (172.18.0.2) reach it via the bridge
+  gateway `172.17.0.1`, not loopback, and would be cut off instantly.
+- **3000 is Docker-published**, so `ufw deny 3000` appears to work and silently does
+  nothing — Docker writes its own iptables rules. It needs a rule in the `DOCKER-USER`
+  chain, which is currently empty.
+- Legitimate consumers are only Metabase (3,346 connections) and n8n (558). Nothing
+  external connects, so closing it to the internet breaks nothing.
+
+---
+
 ## ⏳ OPEN — the one thing waiting on a human
 
 🚨 **Proximity notifications are built but UNTESTED ON HARDWARE.** Owner's instruction
