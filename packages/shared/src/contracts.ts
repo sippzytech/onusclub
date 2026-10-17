@@ -84,6 +84,53 @@ export const PasswordAuthResult = z.object({
 });
 export type PasswordAuthResult = z.infer<typeof PasswordAuthResult>;
 
+// ---------- Sign in with Google (Day 29) ----------
+//
+// Google Identity Services, ID-token flow. The browser gets a JWT signed by
+// Google and posts the one string here; the api verifies it and mints its own
+// JWT exactly as the password path does. No client secret, no redirect URI, no
+// callback route, no state parameter — none of the OAuth-redirect bug classes
+// apply.
+
+export const GoogleAuthInput = z.object({
+  /** The ID token from Google's button. Verified server-side; never decoded in the browser. */
+  idToken: z.string().min(1).max(4000),
+  /**
+   * Only sent on the second call, after `needs_business_name`.
+   *
+   * Google gives us a person, not a business — and a merchant row cannot be
+   * created without a name to generate the public slug from. So signup is two
+   * calls with the same token rather than one.
+   */
+  businessName: z.string().min(1).max(200).optional(),
+});
+export type GoogleAuthInput = z.infer<typeof GoogleAuthInput>;
+
+/**
+ * A discriminated union rather than an error, because "no account yet" is a
+ * normal outcome on `/signup` and only reads as a problem on `/login`. Letting
+ * each page decide is cleaner than making one of them interpret a 4xx.
+ *
+ * Not an account-enumeration leak: the caller has just proved to Google that
+ * they control this address, so they may know whether their own has an account.
+ */
+export const GoogleAuthResult = z.discriminatedUnion("status", [
+  z.object({
+    status: z.literal("authenticated"),
+    jwt: z.string(),
+    user: SessionUser,
+    merchant: Merchant,
+    publicSlug: z.string(),
+  }),
+  z.object({
+    status: z.literal("needs_business_name"),
+    /** Both from the VERIFIED token, so the UI can show them read-only. */
+    email: z.string().email(),
+    name: z.string().nullable(),
+  }),
+]);
+export type GoogleAuthResult = z.infer<typeof GoogleAuthResult>;
+
 // ---------- Merchant preferences (premium gate + cron switch) ----------
 
 export const MerchantPreferences = z.object({
@@ -429,7 +476,8 @@ export type PublicMerchant = z.infer<typeof PublicMerchant>;
 
 export const PublicEnrolInput = z
   .object({
-    name: z.string().min(1).max(200),
+    // Optional ONLY because a Google token supplies it. See the refine below.
+    name: z.string().min(1).max(200).optional(),
     phone: z.string().max(20).optional(),
     email: z.string().email().max(200).optional(),
     birthday: z
@@ -437,10 +485,31 @@ export const PublicEnrolInput = z
       .regex(/^\d{4}-\d{2}-\d{2}$/, "use YYYY-MM-DD")
       .optional(),
     programId: z.string().min(1),
+    /**
+     * Google ID token from the enrolment page's Google button (Day 29).
+     *
+     * 🚨 When this is present the server takes name and email from the
+     * VERIFIED token and discards whatever `name` / `email` the body sent.
+     * Merely checking that a token is valid while still reading the body's
+     * email would let a caller present their own real token alongside someone
+     * else's address — enrolling as, and later being recognised as, a person
+     * they are not. See the enrol handler in apps/api/src/routes/public.ts.
+     *
+     * `birthday` and `programId` still come from the form: Google does not
+     * return a birthday without an extra scope and a People API call, and most
+     * accounts have never set one.
+     */
+    googleIdToken: z.string().min(1).max(4000).optional(),
   })
   .refine(
-    (v) => (v.phone && v.phone.trim() !== "") || (v.email && v.email.trim() !== ""),
-    { message: "phone or email is required" }
+    (v) =>
+      // A verified Google identity carries both the name and the email, so it
+      // satisfies this rule on its own. Everyone not using Google is held to
+      // exactly the original requirement.
+      (v.googleIdToken && v.googleIdToken.trim() !== "") ||
+      ((v.name && v.name.trim() !== "") &&
+        ((v.phone && v.phone.trim() !== "") || (v.email && v.email.trim() !== ""))),
+    { message: "a name plus a phone or email is required" }
   );
 export type PublicEnrolInput = z.infer<typeof PublicEnrolInput>;
 

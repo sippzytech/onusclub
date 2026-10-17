@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import type { PublicMerchant } from "@onusclub/shared";
 import { ApiCallError, apiFetch } from "@/lib/api";
+import { googleClientId } from "@/lib/google";
 import { PublicEnrolForm } from "./enrol-form";
 
 export const dynamic = "force-dynamic";
@@ -52,6 +53,7 @@ export default async function PublicMerchantPage({
               <PublicEnrolForm
                 slug={merchant.publicSlug}
                 programs={merchant.programs}
+                googleClientId={googleClientId()}
               />
             </div>
           )}

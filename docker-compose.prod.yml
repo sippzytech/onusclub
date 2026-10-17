@@ -74,6 +74,10 @@ services:
       # dashboard hides the button. This is OUR key and OUR bill, so the
       # endpoint is premium-gated and rate-limited per merchant.
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      # Sign in with Google. The api needs it as the `audience` when verifying
+      # an ID token — without that check a token minted for any other site
+      # would be accepted. Empty → the Google endpoints answer 503.
+      GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID:-}
       # Lead capture from the marketing site. This block lists every variable
       # explicitly — adding one to .env alone does nothing, and the symptom is
       # the endpoint answering 503 as though it were never configured.
@@ -127,6 +131,13 @@ services:
       NEXT_PUBLIC_API_BASE: https://${DOMAIN_API}
       NEXT_PUBLIC_WEB_BASE: https://${DOMAIN_WEB}
       API_BASE_INTERNAL: http://api:4000
+      # Sign in with Google. Note the DELIBERATE absence of a NEXT_PUBLIC_
+      # prefix: Next inlines those into client bundles at build time, and this
+      # block is runtime, so a client component reading NEXT_PUBLIC_* would get
+      # an empty string in production while .env looked correct. The server
+      # components read this and pass it down as a prop. Not a secret — an
+      # OAuth client ID is public by design.
+      GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID:-}
       NEXTAUTH_SECRET: ${NEXTAUTH_SECRET}
       NEXTAUTH_URL: https://${DOMAIN_WEB}
     depends_on:

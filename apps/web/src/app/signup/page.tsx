@@ -1,5 +1,12 @@
 import Link from "next/link";
+import { googleClientId } from "@/lib/google";
 import { SignupForm } from "./signup-form";
+
+// 🚨 Required. This page was STATICALLY PRERENDERED before Google sign-in,
+// which means process.env would have been read at BUILD time — the client id
+// would have baked in as empty and the button would silently never appear in
+// production. See lib/google.ts for the two ways this goes wrong.
+export const dynamic = "force-dynamic";
 
 export default function SignupPage(): JSX.Element {
   return (
@@ -30,7 +37,7 @@ export default function SignupPage(): JSX.Element {
               Pick a password and you&apos;re in.
             </p>
           </div>
-          <SignupForm />
+          <SignupForm googleClientId={googleClientId()} />
           <p className="text-xs text-brand-olive text-center">
             Already have an account?{" "}
             <Link

@@ -10,6 +10,88 @@ See also: [CLAUDE.md](./CLAUDE.md) for stack + conventions, [DEPLOY.md](./DEPLOY
 
 ---
 
+### Day 29 — Sign in with Google, on both surfaces
+
+Two groups type credentials into this product. Café owners (`/signup`, `/login`) invent
+and forget a password — low volume, but it is the first impression and "create a password"
+is where people abandon. Customers (`/m/[slug]`) are the real volume: everyone, at a
+counter, with a queue behind them, typing four fields on a phone.
+
+Beyond the typing, the customer side fixes two existing defects: **typo'd emails silently
+never receive the card invite** (nothing validated `jan@gmial.com`), and **dedupe is only
+as good as what was typed** — `routes/public.ts` matches on email or phone, so a slightly
+different spelling on a second visit became a second customer with a second card.
+
+Both surfaces are additive. Passwords stay; the manual enrolment form stays complete.
+Google refuses to run inside embedded webviews (Instagram's in-app browser), and not every
+customer has a Google account — so neither path could be removed even if we wanted to.
+
+- **Google Identity Services ID-token flow.** The browser gets a JWT signed by Google and
+  posts the one string; the api verifies it and mints its own JWT as the password path
+  does. **No client secret, no redirect URI, no callback route, no state parameter** —
+  none of the OAuth-redirect bug classes apply. `google-auth-library` was already a
+  dependency (the Wallet signer uses it), so this added no package.
+- ⚠️ **Three server-side checks, none optional** (`apps/api/src/auth/google.ts`):
+  Google's signature; **`audience` pinned to our client id** — Google issues ID tokens to
+  every site using Sign in with Google, and without this a token minted for an unrelated
+  app would verify perfectly; and **`email_verified === true`**.
+- ⚠️ **`email_verified` is load-bearing, not hygiene.** A Google sign-in whose verified
+  email matches an existing password account **logs into that account** — the standard
+  behaviour, safe only because Google asserts the address. Google can return unverified
+  addresses on some Workspace configs, and accepting one would be an account-takeover
+  path. `google_sub` is matched *first* and written on link: an email can change and a
+  Workspace admin can rename one, and matching email-only would turn that into "no account
+  found" and invite the owner to create a second café.
+- **One endpoint for owner login AND signup.** From a verified identity the only
+  difference is whether a row exists, so splitting them would mean two lookups
+  disagreeing about the linking rule. Google gives a person, not a business, and a
+  merchant row needs a name to generate the slug from — so signup is two calls with the
+  same token: `needs_business_name`, then the name. A discriminated union, not an error,
+  because that outcome is normal on `/signup` and only a signpost on `/login`.
+- 🚨 **On enrolment, a present `googleIdToken` is the ONLY source of name and email** and
+  the body's values are discarded. Verifying a token proves who the caller *is*; it says
+  nothing about any other field they sent. Reading the body's email alongside a valid
+  token would let someone enrol under an address they do not control — and then be
+  matched to it by the dedupe and receive that person's invite. Identity is resolved into
+  locals before any DB work so nothing downstream can reach for `input.email` by accident.
+- **Extended the existing enrol endpoint rather than adding one.** All of it — dedupe,
+  duplicate-card suppression, card creation, wallet provisioning — already lives there,
+  and a second copy is how the two drift. `PublicEnrolInput.refine` now reads "a token, or
+  a name plus one contact", which leaves the original rule untouched for everyone else.
+- 🚨 **The env var deliberately has no `NEXT_PUBLIC_` twin, and this is the thing most
+  likely to have shipped broken.** Next inlines `NEXT_PUBLIC_*` into client bundles at
+  **build** time while compose supplies env at **runtime**. Every pre-existing
+  `NEXT_PUBLIC_*` read in this repo happens to be in a *server* component, which is the
+  only reason the runtime-only compose block works. A client component reading one would
+  compile to `""` in production: no button, no error, nothing logged, `.env` correct.
+  **Found a second instance of the same failure while building it** — `/signup` was
+  statically prerendered, so even a server-side read there would have captured the *build*
+  environment. Both are now grep-asserted in CI, and the whole trap is written up in
+  `apps/web/src/lib/google.ts`.
+- 🔴 **Fixed a pre-existing bug found in the path.** `apps/web/src/app/api/public/[slug]/enrol/route.ts`
+  never passed `clientIp: forwardedFor(req)`, so the api saw only the web container and
+  **every customer of every café shared one `publicEnrolLimiter` bucket** — 30 enrolments
+  per 10 minutes, platform-wide. On a launch morning with 150 people scanning the QR, the
+  31st would have been rate-limited. The limiter was sized for exactly that scenario and
+  could not see it.
+- **Migration `016_google_sub`** adds `staff_users.google_sub`, nullable (every existing
+  owner has none) and UNIQUE (one Google account must not reach two logins; MySQL allows
+  multiple NULLs in a unique index, which is the behaviour wanted).
+- **`pnpm check:google`** — 23 pure assertions, no network, in the typecheck job. The
+  happy path is untestable in CI, so what gets checked is the contract: a verified token
+  satisfies the enrolment identity rule on its own, nothing else newly does, and
+  `needs_business_name` carries no jwt. Smoke adds the degrade, the 400s, and the one that
+  matters: **a rejected token creates nothing** — asserted by counting customers either
+  side of a junk-token enrolment that also carries someone else's email.
+
+**Deployed switched off.** No `GOOGLE_OAUTH_CLIENT_ID` on the box, so the endpoints answer
+503 and no button renders anywhere. Waiting on the OAuth consent screen and client id in
+the `sippzy-wallet` console — see the open item below. Apple Sign In is deliberately not
+here: it needs a client secret that is itself a JWT requiring regeneration every six
+months, which is a recurring chore to take on its own merits.
+
+---
+
 ### Day 28 — AI campaign drafts
 
 Everything needed to run a good win-back campaign already existed: six RFM segments,
@@ -182,10 +264,39 @@ are required and the obvious ones are both wrong:
 
 ---
 
-## ⏳ OPEN — the one thing waiting on a human
+## ⏳ OPEN — waiting on a human
 
-🚨 **Proximity notifications are built but UNTESTED ON HARDWARE.** Owner's instruction
-2026-10-14: *keep it on hold, only testing is remaining, keep reminding me to test it.*
+### 1. 🔶 Google sign-in needs a client id (Day 29)
+
+Built, tested and deployed **switched off**: no `GOOGLE_OAUTH_CLIENT_ID`, so the endpoints
+answer 503 and no button renders. Nothing else is blocked, and no code change is needed
+once the id exists.
+
+In the Google Cloud console, on the **existing** `sippzy-wallet` project — this touches
+nothing to do with the Wallet service account:
+
+1. **APIs & Services → OAuth consent screen.** User type **External**. App name
+   `On Us Club`, a support email, and the homepage / privacy / terms URLs on
+   `onusclub.com`.
+2. **Publishing status → In production.** While it reads *Testing*, only allowlisted
+   Google accounts can sign in — useless for café customers. ✅ This needs **no Google
+   security review**: that applies only to sensitive or restricted scopes, and this uses
+   `openid`, `email`, `profile`.
+3. **Credentials → Create credentials → OAuth client ID → Web application.**
+4. **Authorized JavaScript origins** — exactly these two: `https://app.onusclub.com` and
+   `http://localhost:3001`. (Authorized redirect URIs stay empty; this flow has no
+   redirect.)
+5. Take the **Client ID** (ends `.apps.googleusercontent.com`). It is **not a secret** —
+   it ships in the page HTML by design. **Ignore the client secret**, this flow never uses
+   one.
+
+Then `GOOGLE_OAUTH_CLIENT_ID=…` in `/docker/stampdeck/.env`, restart api + web, and
+`grep -P '[^\x00-\x7F]' .env` to catch the macOS smart-quote substitution.
+
+### 2. 🚨 Proximity notifications are built but UNTESTED ON HARDWARE
+
+Owner's instruction 2026-10-14: *keep it on hold, only testing is remaining, keep
+reminding me to test it.*
 
 **Remind the owner about this at the end of any session that touches wallet, locations or
 card design — and whenever they ask what is left.**

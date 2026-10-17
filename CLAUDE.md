@@ -103,7 +103,7 @@ Switching issuers is an env-var change, never a code change — `GOOGLE_WALLET_I
 
 ## Schema
 
-See `apps/api/src/db/migrations/` — the numbered SQL files are the single source of truth, `001_initial.sql` through `015_ai_drafts.sql`. Core tables: `merchants`, `locations`, `loyalty_programs`, `customers`, `loyalty_cards`, `card_events`, `staff_users`, `auth_tokens`; later migrations add `broadcasts`, `sweep_runs`, `message_deliveries`, `apple_pass_registrations`, `points_batches`, `leads`, `merchant_assets`, `platform_admins`, `admin_audit_log`,
+See `apps/api/src/db/migrations/` — the numbered SQL files are the single source of truth, `001_initial.sql` through `016_google_sub.sql`. Core tables: `merchants`, `locations`, `loyalty_programs`, `customers`, `loyalty_cards`, `card_events`, `staff_users`, `auth_tokens`; later migrations add `broadcasts`, `sweep_runs`, `message_deliveries`, `apple_pass_registrations`, `points_batches`, `leads`, `merchant_assets`, `platform_admins`, `admin_audit_log`,
 `email_deliveries`, `ai_drafts`.
 
 ⚠️ **Append new `card_events.event_type` values at the END of the ENUM.** MySQL 8 does an
@@ -144,21 +144,31 @@ When adding a new `program_type`, define its config + state shapes in `packages/
   Authorization is applied once, to the `/v1/admin` mount in `index.ts`, not per route —
   see `docs/admin/README.md`.
 
-## Status — Day 28 (current)
+## Status — Day 29 (current)
 
 **Deployed live at `api.onusclub.com` + `app.onusclub.com`**, from branch **`main`**.
 
-✅ **Production is up to date.** Verified 2026-10-17 after deploying Day 28: all **15**
-migrations applied (`migrate.js` reported `applied: 0` on a second run,
-`verify-deploy.sh` 20/20), `ai_drafts` present, no errors in the api log after the
-restart. Earlier verification on 2026-10-08 covered security headers on both apps, rate
-limiting against the live API, and the Monday digest reaching a real third-party inbox.
+⚠️ **`main` is ahead of production by one migration**: `016_google_sub` (Day 29). The
+next deploy must run the migration step.
 
-⚠️ **AI campaign drafts are deployed but switched OFF in production.** There is no
-`ANTHROPIC_API_KEY` on the box, so `/v1/broadcasts/drafts` answers 503 and the composer
-does not render the button — which is the designed state, not a gap. Turning it on is an
-env-var change and a container restart, never a code change or a migration. Deliberately
-deferred until a real café asks for it: the key is pay-as-you-go against *our* account.
+✅ Last verified 2026-10-17 after deploying Day 28: all 15 migrations applied at that
+point (`migrate.js` reported `applied: 0` on a second run, `verify-deploy.sh` 20/20), no
+errors in the api log after the restart. Earlier verification on 2026-10-08 covered
+security headers on both apps, rate limiting against the live API, and the Monday digest
+reaching a real third-party inbox.
+
+⚠️ **Two features are deployed but switched OFF in production, by design.** Both answer
+503 and render no button when their variable is absent, and the api boots normally. The
+503 is the designed state, not a bug — do not chase it.
+
+| Feature | Variable | Why it is off |
+|---|---|---|
+| AI campaign drafts | `ANTHROPIC_API_KEY` | Pay-as-you-go against *our* account at ~1–2c per press. Deferred until a paying café asks. |
+| Sign in with Google | `GOOGLE_OAUTH_CLIENT_ID` | Waiting on the OAuth consent screen + client id in the `sippzy-wallet` console. |
+
+Turning either on is one env line in `/docker/stampdeck/.env` plus a container restart —
+never a code change. Run `grep -P '[^\x00-\x7F]' .env` afterwards; macOS substitutes
+curly quotes on paste.
 
 The migration runner is idempotent and skips what is already in `_migrations`, so running
 it after every deploy is free. Note it is the **compiled** `dist/db/migrate.js` —
@@ -190,15 +200,18 @@ What works end-to-end:
 - ✅ Per-card delivery audit (broadcasts + sweeps) with manual retry
 - ✅ Premium feature gate (fake unlock for now) + crons-enabled kill-switch
 - ✅ Staff/team accounts (`/dashboard/team`, owner-only CRUD)
-- ✅ Five test layers, all gated in CI on every PR: `pnpm smoke` (API black-box, includes
+- ✅ Six test layers, all gated in CI on every PR: `pnpm smoke` (API black-box, includes
   the cross-tenant isolation section), `pnpm smoke:admin` (needs `DATABASE_URL`, because
-  granting platform admin is SQL-only), `pnpm check:wallet` (pure assertions on the Google
-  Wallet class payload — that integration cannot be exercised outside production),
-  `pnpm check:drafts` (pure assertions on the AI draft prompt and response validation —
-  same reasoning, except the cost is money per call rather than permanence), and
-  `pnpm e2e` (Playwright, in `e2e/`, browser flows only — it deliberately does not re-test
-  the API). ⚠️ The QR scanner is **not** covered: it is camera-only with no manual-entry
-  fallback, so a test would really be testing `html5-qrcode`. See `playwright.config.ts`.
+  granting platform admin is SQL-only), `pnpm e2e` (Playwright, in `e2e/`, browser flows
+  only — it deliberately does not re-test the API), plus three pure-assertion scripts for
+  integrations that **cannot be exercised for free**: `pnpm check:wallet` (the Google
+  Wallet class payload — classes are permanent and undeletable), `pnpm check:drafts` (the
+  AI draft prompt + response validation — every call costs money) and `pnpm check:google`
+  (the Google auth contracts — a real ID token needs a browser signing in). ⚠️
+  `check:wallet` imports `config.ts` so it needs the api's env and runs in the smoke job;
+  the other two need nothing and run in the typecheck job. ⚠️ The QR scanner is **not**
+  covered: it is camera-only with no manual-entry fallback, so a test would really be
+  testing `html5-qrcode`. See `playwright.config.ts`.
 - ✅ **Card design system** (Day 16): shared SVG renderer, per-program design editor in
   `/dashboard/card-builder`, Apple Wallet `strip.png` artwork. See `docs/card-design/README.md`.
   Deployed and **verified on a physical iPhone 2026-09-18**.
@@ -283,6 +296,29 @@ What works end-to-end:
     not IP, because the resource is our bill.
   - The route resolves `programId` **before** the key check, deliberately, so the
     cross-tenant case stays provable in CI without a paid call. Don't reorder it.
+- ✅ **Sign in with Google** (Day 29), on **both** surfaces: café owners (`/login`,
+  `/signup`) and customers (`/m/[slug]`). Google Identity Services ID-token flow —
+  **no client secret, no redirect URI, no callback route**, and `google-auth-library` was
+  already a dependency. Passwords and the manual enrolment form both stay. Four things to
+  know before touching `apps/api/src/auth/google.ts`:
+  - 🚨 **The env var must never gain a `NEXT_PUBLIC_` twin.** Next inlines those into
+    client bundles at **build** time while compose supplies env at **runtime**, so a
+    client component reading one compiles to `""` in production — no button, no error,
+    `.env` looking correct. The id is read in the **server** component and passed down as
+    a prop, and any page doing so must export `force-dynamic` (a prerendered page reads
+    the *build* env — `/signup` was static and needed it added). Both failure modes are
+    grep-asserted in CI. Full write-up in `apps/web/src/lib/google.ts`.
+  - ⚠️ **`email_verified` is load-bearing.** A Google sign-in whose verified email matches
+    an existing password account **logs into that account** — safe only because Google
+    asserts the address. Never relax that check. `google_sub` is matched first and written
+    on link, because an email can change and `sub` cannot.
+  - 🚨 **On enrolment, a present `googleIdToken` is the ONLY source of name and email**;
+    whatever the body sent is discarded. Verifying a token proves who the caller is and
+    says nothing about any other field they sent — reading the body's email alongside a
+    valid token would let someone enrol as a person they are not.
+  - Google gives a person, not a business, so owner signup is two calls with the same
+    token: `needs_business_name`, then the name. Owners created this way have
+    `password_hash NULL`, which `/login` already handles.
 
 ### Naming: three different names, on purpose
 

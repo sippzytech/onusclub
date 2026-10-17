@@ -1,12 +1,41 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
+import Link from "next/link";
+import { GoogleButton } from "@/components/google-button";
 
-export function LoginForm(): JSX.Element {
+export function LoginForm({ googleClientId }: { googleClientId: string }): JSX.Element {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [noGoogleAccount, setNoGoogleAccount] = useState(false);
+
+  async function onGoogle(idToken: string): Promise<void> {
+    setError(null);
+    setNoGoogleAccount(false);
+    setPending(true);
+    const res = await fetch("/api/auth/google", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ idToken }),
+    });
+    if (!res.ok) {
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      setError(body.error ?? "could not sign in with Google");
+      setPending(false);
+      return;
+    }
+    const data = (await res.json()) as { status: string };
+    // On the LOGIN page, "no account yet" is not an error — it is a signpost.
+    // The same response on /signup reveals the business-name field instead.
+    if (data.status === "needs_business_name") {
+      setNoGoogleAccount(true);
+      setPending(false);
+      return;
+    }
+    window.location.href = "/dashboard";
+  }
 
   async function onSubmit(e: FormEvent<HTMLFormElement>): Promise<void> {
     e.preventDefault();
@@ -31,7 +60,36 @@ export function LoginForm(): JSX.Element {
   const labelClass = "block text-sm font-medium text-brand-green";
 
   return (
-    <form onSubmit={onSubmit} className="space-y-4">
+    <div className="space-y-4">
+      {/* Google above the form: it is one tap against three fields, so it goes
+          where the eye lands first. The password form stays complete below —
+          Google refuses to run inside embedded webviews, and an owner locked
+          out of their Google account still has to be able to get in. */}
+      <GoogleButton
+        clientId={googleClientId}
+        onCredential={onGoogle}
+        text="signin_with"
+        disabled={pending}
+      />
+      {googleClientId !== "" ? (
+        <div className="flex items-center gap-3">
+          <span className="h-px flex-1 bg-brand-green/10" />
+          <span className="text-xs text-brand-olive">or</span>
+          <span className="h-px flex-1 bg-brand-green/10" />
+        </div>
+      ) : null}
+
+      {noGoogleAccount ? (
+        <div className="rounded-lg border border-brand-gold/40 bg-brand-gold/10 p-3 text-sm text-brand-green">
+          No OnUsClub account uses that Google address yet.{" "}
+          <Link href="/signup" className="underline underline-offset-4">
+            Create one
+          </Link>
+          .
+        </div>
+      ) : null}
+
+      <form onSubmit={onSubmit} className="space-y-4">
       {/* htmlFor/id on both: without the association a screen reader reads an
           unlabelled text box, and the visible "Email" above it is decoration.
           It also means clicking the label focuses the field. */}
@@ -79,6 +137,7 @@ export function LoginForm(): JSX.Element {
       >
         {pending ? "Signing in…" : "Sign in"}
       </button>
-    </form>
+      </form>
+    </div>
   );
 }

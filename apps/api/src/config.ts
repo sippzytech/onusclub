@@ -46,6 +46,18 @@ const EnvSchema = z.object({
   // Where "new lead" notifications go. A lead nobody sees is the same as the
   // lead being discarded, which is the bug this feature exists to fix.
   LEADS_NOTIFY_EMAIL: z.string().default("onusclub.official@gmail.com"),
+  // Sign in with Google (Day 29). Empty → every Google endpoint answers 503
+  // and no button renders anywhere; the api still boots.
+  //
+  // 🚨 There is deliberately NO `NEXT_PUBLIC_` twin of this. Next.js inlines
+  // NEXT_PUBLIC_* into client bundles at BUILD time, and prod compose supplies
+  // env at RUNTIME — so a client component reading one would compile to the
+  // empty string in production while .env looked perfectly correct. The web
+  // app reads this same name server-side and passes it down as a prop.
+  //
+  // Not a secret: an OAuth client ID ships in the page HTML by design. The
+  // Google *client secret* is never used — the ID-token flow has no redirect.
+  GOOGLE_OAUTH_CLIENT_ID: z.string().optional().default(""),
   // Anthropic, for AI campaign drafts (Day 28). Empty → the drafts endpoint
   // returns 503 and the dashboard hides the button; nothing else changes.
   //

@@ -5,12 +5,14 @@ import {
   AuthRequestInput,
   AuthVerifyInput,
   ForgotPasswordInput,
+  GoogleAuthInput,
   PasswordLoginInput,
   PasswordSignupInput,
   ResetPasswordInput,
   type AuthRequestResult,
   type AuthVerifyResult,
   type ForgotPasswordResult,
+  type GoogleAuthResult,
   type Merchant,
   type PasswordAuthResult,
   type SessionUser,
@@ -20,6 +22,7 @@ import { ApiError } from "../errors.js";
 import { env } from "../config.js";
 import { issueMagicLink } from "../auth/magic-link.js";
 import { signJwt } from "../auth/jwt.js";
+import { requireGoogleConfigured, verifyGoogleIdToken } from "../auth/google.js";
 // Rate limits on the endpoints where the absence actually mattered: unlimited
 // password guesses, and unlimited outbound email on a shared quota.
 import {
@@ -238,6 +241,223 @@ authRouter.post(
     const jwt = signJwt({ userId: u.id, merchantId: m.id, role: u.role });
 
     return res.json({ jwt, user, merchant, publicSlug: m.public_slug ?? "" });
+  }
+);
+
+// ---------------------------------------------------------------------------
+// POST /v1/auth/google — one endpoint for both login and signup (Day 29)
+//
+// Login and signup are the same request here because, from a verified Google
+// identity, the only difference is whether a row already exists. Splitting
+// them would mean two endpoints doing the same lookup and disagreeing about
+// the account-linking rule.
+//
+// Rate-limited with loginLimiter: this is a sign-in endpoint and the account
+// creation it can perform is the same thing /signup does. Keyed on address
+// plus the submitted email there; here the body has no email (it is inside the
+// token), so the key falls back to "?" and becomes address-only — which is the
+// right shape for a path where credential-stuffing is not possible anyway.
+// ---------------------------------------------------------------------------
+
+interface GoogleUserRow extends RowDataPacket {
+  id: string;
+  merchant_id: string;
+  email: string;
+  name: string | null;
+  role: "owner" | "staff";
+  google_sub: string | null;
+}
+
+authRouter.post(
+  "/google",
+  loginLimiter,
+  async (req: Request, res: Response<GoogleAuthResult>) => {
+    // ⚠️ Validate BEFORE the configured check, so a client sending no token
+    // gets 400 rather than 503. The other order makes a client bug read as
+    // "the feature is switched off", which sends the wrong person looking in
+    // the wrong place. Same ordering as the AI drafts endpoint.
+    const input = GoogleAuthInput.parse(req.body);
+    requireGoogleConfigured();
+
+    // Nothing below reads the request body for identity. Everything comes from
+    // the verified token.
+    const identity = await verifyGoogleIdToken(input.idToken);
+
+    // Match on `google_sub` FIRST, then the verified email.
+    //
+    // sub is immutable; a Google account can change its email address, and a
+    // Workspace admin can rename one. Matching email-first would turn such a
+    // change into "no account found" and invite the owner to create a second
+    // café — while the sub we already stored was sitting right there.
+    //
+    // The email fallback is what lets an owner who signed up with a password
+    // start using the Google button on that same account.
+    const [users] = await pool.execute<GoogleUserRow[]>(
+      `SELECT id, merchant_id, email, name, role, google_sub
+         FROM staff_users
+        WHERE google_sub = ? OR email = ?
+        ORDER BY google_sub IS NULL
+        LIMIT 1`,
+      [identity.sub, identity.email]
+    );
+
+    if (users.length > 0) {
+      const u = users[0];
+
+      // First time this account has been used with Google: record the sub so
+      // every later sign-in matches on it rather than the mutable email.
+      //
+      // ⚠️ This is the account-linking step, and it is safe ONLY because
+      // verifyGoogleIdToken refused to return an unverified email. Without
+      // that check, anyone able to set any address on a Google account could
+      // take over the matching OnUsClub account.
+      if (u.google_sub === null) {
+        await pool.execute("UPDATE staff_users SET google_sub = ? WHERE id = ?", [
+          identity.sub,
+          u.id,
+        ]);
+        logger.info(
+          { userId: u.id, merchantId: u.merchant_id },
+          "linked an existing account to a Google identity"
+        );
+      }
+
+      const [merchants] = await pool.execute<MerchantWithSlugRow[]>(
+        `SELECT id, business_name, owner_email, country, status, public_slug
+           FROM merchants WHERE id = ? LIMIT 1`,
+        [u.merchant_id]
+      );
+      if (merchants.length === 0) throw ApiError.unauthorized("merchant not found");
+      const m = merchants[0];
+
+      return res.json({
+        status: "authenticated",
+        jwt: signJwt({ userId: u.id, merchantId: m.id, role: u.role }),
+        user: {
+          id: u.id,
+          email: u.email,
+          name: u.name,
+          role: u.role,
+          merchantId: u.merchant_id,
+        },
+        merchant: {
+          id: m.id,
+          businessName: m.business_name,
+          ownerEmail: m.owner_email,
+          country: m.country,
+          status: m.status,
+        },
+        publicSlug: m.public_slug ?? "",
+      });
+    }
+
+    // No account. Google told us who the person is but not what their café is
+    // called, and a merchant row cannot be created without a name to generate
+    // the public slug from. So: ask, and let them resend the same token.
+    if (!input.businessName) {
+      return res.json({
+        status: "needs_business_name",
+        email: identity.email,
+        name: identity.name,
+      });
+    }
+
+    // ---- Create the café. Mirrors POST /signup, minus the password. ----
+    const conn = await pool.getConnection();
+    try {
+      await conn.beginTransaction();
+
+      // Re-checked inside the transaction rather than trusting the SELECT
+      // above: two taps on a slow connection are two requests, and without
+      // this the second one creates a duplicate café. The password signup
+      // guards the same way.
+      const [existingMerchant] = await conn.execute<CountRow[]>(
+        "SELECT COUNT(*) AS c FROM merchants WHERE owner_email = ?",
+        [identity.email]
+      );
+      if (existingMerchant[0].c > 0) {
+        throw ApiError.conflict("a merchant with this owner email already exists");
+      }
+
+      const merchantId = randomUUID();
+      const userId = randomUUID();
+      const publicSlug = await generateUniqueSlug(input.businessName);
+
+      await conn.execute<ResultSetHeader>(
+        `INSERT INTO merchants
+           (id, business_name, owner_email, country, status, public_slug, trial_ends_at)
+         VALUES (?, ?, ?, 'NL', 'trial', ?, ${
+           env.TRIAL_DAYS_DEFAULT > 0
+             ? `DATE_ADD(NOW(), INTERVAL ${env.TRIAL_DAYS_DEFAULT} DAY)`
+             : "NULL"
+         })`,
+        [merchantId, input.businessName, identity.email, publicSlug]
+      );
+
+      // password_hash stays NULL, and that already works: /login checks for it
+      // and returns the same "invalid email or password" as a wrong password,
+      // deliberately not revealing which. If this owner later wants a password
+      // too, forgot-password sets one — the two doors then coexist on one
+      // account rather than being mutually exclusive.
+      await conn.execute<ResultSetHeader>(
+        `INSERT INTO staff_users
+           (id, merchant_id, email, name, role, google_sub)
+         VALUES (?, ?, ?, ?, 'owner', ?)`,
+        [userId, merchantId, identity.email, identity.name, identity.sub]
+      );
+
+      await conn.commit();
+
+      // Same best-effort welcome email as the password path. A café that signs
+      // up with Google should not silently miss its own QR link.
+      void sendEmail({
+        kind: "welcome",
+        merchantId,
+        to: identity.email,
+        subject: `Welcome to OnUsClub, ${input.businessName}`,
+        text:
+          `Hi ${identity.name ?? "there"},\n\n` +
+          `Your OnUsClub account for ${input.businessName} is ready.\n\n` +
+          `Sign in with Google: ${env.BASE_URL_WEB}/login\n\n` +
+          `Your public signup link for customers (use it as a QR code on your counter):\n` +
+          `${env.BASE_URL_WEB}/m/${publicSlug}\n\n` +
+          `— OnUsClub`,
+        html:
+          `<p>Hi ${identity.name ?? "there"},</p>` +
+          `<p>Your OnUsClub account for <strong>${input.businessName}</strong> is ready.</p>` +
+          `<p><a href="${env.BASE_URL_WEB}/login">Sign in with Google</a></p>` +
+          `<p>Your public signup link for customers:<br>` +
+          `<a href="${env.BASE_URL_WEB}/m/${publicSlug}">${env.BASE_URL_WEB}/m/${publicSlug}</a></p>` +
+          `<p>— OnUsClub</p>`,
+      }).catch((err: unknown) =>
+        logger.warn({ err, ownerEmail: identity.email }, "welcome email failed")
+      );
+
+      return res.status(201).json({
+        status: "authenticated",
+        jwt: signJwt({ userId, merchantId, role: "owner" }),
+        user: {
+          id: userId,
+          email: identity.email,
+          name: identity.name,
+          role: "owner",
+          merchantId,
+        },
+        merchant: {
+          id: merchantId,
+          businessName: input.businessName,
+          ownerEmail: identity.email,
+          country: "NL",
+          status: "trial",
+        },
+        publicSlug,
+      });
+    } catch (err) {
+      await conn.rollback();
+      throw err;
+    } finally {
+      conn.release();
+    }
   }
 );
 

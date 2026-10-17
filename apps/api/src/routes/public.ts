@@ -35,6 +35,7 @@ import { buildHeroPng } from "../card-art/raster.js";
 import { objectOnCurrentIssuer } from "../wallet/state.js";
 import { loadMerchantLocations } from "../merchants/locations.js";
 import { publicEnrolLimiter } from "../http/rate-limit.js";
+import { verifyGoogleIdToken } from "../auth/google.js";
 
 export const publicRouter: Router = Router();
 
@@ -115,6 +116,37 @@ publicRouter.post(
   async (req: Request, res: Response<PublicEnrolResult>) => {
     const input = PublicEnrolInput.parse(req.body);
 
+    // ---- Identity (Day 29) --------------------------------------------
+    //
+    // 🚨 When a Google token is present it is the ONLY source of name and
+    // email, and whatever the body sent for those two is discarded.
+    //
+    // The failure this prevents: a caller presenting their own perfectly valid
+    // Google token alongside somebody else's email address. If the handler
+    // merely *checked* that the token verified and then went on using
+    // `input.email`, that caller would be enrolled under an address they do
+    // not control — and would then be matched to it by the dedupe below, and
+    // receive that person's card invite. Verifying a token proves who the
+    // caller is; it says nothing about any other field they sent.
+    //
+    // Resolved into locals before any database work, so nothing downstream can
+    // reach for input.name / input.email by accident.
+    let name: string;
+    let email: string | undefined;
+    if (input.googleIdToken) {
+      const identity = await verifyGoogleIdToken(input.googleIdToken);
+      // Google's display name can be absent on a bare account. Falling back to
+      // the local part of the address beats storing null, which would render
+      // as an empty row in the café's customer list.
+      name = identity.name ?? identity.email.split("@")[0];
+      email = identity.email;
+    } else {
+      // The zod refine guarantees both of these when there is no token.
+      name = input.name as string;
+      email = input.email;
+    }
+    const phone = input.phone;
+
     const [merchants] = await pool.execute<MerchantRow[]>(
       `SELECT id, business_name, brand_color, logo_url, public_slug, status
          FROM merchants WHERE public_slug = ? LIMIT 1`,
@@ -141,17 +173,17 @@ publicRouter.post(
       // Match an existing customer by phone or email to avoid duplicates when
       // the same person scans the QR twice.
       let customerId: string | null = null;
-      if (input.email) {
+      if (email) {
         const [rows] = await conn.execute<CustomerRow[]>(
           `SELECT id FROM customers WHERE merchant_id = ? AND email = ? LIMIT 1`,
-          [merchantId, input.email]
+          [merchantId, email]
         );
         if (rows.length > 0) customerId = rows[0].id;
       }
-      if (!customerId && input.phone) {
+      if (!customerId && phone) {
         const [rows] = await conn.execute<CustomerRow[]>(
           `SELECT id FROM customers WHERE merchant_id = ? AND phone = ? LIMIT 1`,
-          [merchantId, input.phone]
+          [merchantId, phone]
         );
         if (rows.length > 0) customerId = rows[0].id;
       }
@@ -166,9 +198,9 @@ publicRouter.post(
           [
             customerId,
             merchantId,
-            input.name,
-            input.phone ?? null,
-            input.email ?? null,
+            name,
+            phone ?? null,
+            email ?? null,
             input.birthday ?? null,
           ]
         );

@@ -761,6 +761,101 @@ async function main(): Promise<void> {
   }
   assert(replay401, "used reset token should 401 on replay");
 
+  // ---------- Day 29: Sign in with Google ----------
+  //
+  // The happy path cannot be tested here: a real ID token can only be produced
+  // by a browser signing in to a Google account. What this section covers is
+  // everything around it — the degrade, the validation, and the one assertion
+  // that actually matters (a rejected token must not fall through to the
+  // manual path). The contract shapes live in `pnpm check:google`.
+
+  console.log("→ google auth requires an idToken (400, before any Google call)");
+  let googleNoToken = false;
+  try {
+    await call("POST", "/v1/auth/google", {});
+  } catch (err) {
+    googleNoToken = String(err).includes("400");
+  }
+  assert(googleNoToken, "POST /v1/auth/google with no token should 400");
+
+  // Whether a client id is configured decides what the junk-token cases
+  // answer, so branch on it rather than asserting one of the two.
+  const googleOn =
+    (process.env.GOOGLE_OAUTH_CLIENT_ID ?? "").trim() !== "";
+
+  if (googleOn) {
+    console.log("  (GOOGLE_OAUTH_CLIENT_ID is set — junk tokens should 401)");
+    let junk401 = false;
+    try {
+      await call("POST", "/v1/auth/google", { idToken: "not-a-jwt" });
+    } catch (err) {
+      junk401 = String(err).includes("401");
+    }
+    assert(junk401, "a junk Google token should 401");
+  } else {
+    console.log("→ with no client id, google auth answers 503, not 500");
+    // The degrade every optional integration here uses. A 500 would send a
+    // café owner to support over a feature that is simply switched off.
+    let notConfigured = false;
+    let sawFiveHundred = false;
+    try {
+      await call("POST", "/v1/auth/google", { idToken: "not-a-jwt" });
+    } catch (err) {
+      notConfigured = String(err).includes("503");
+      sawFiveHundred = String(err).includes("500");
+    }
+    assert(!sawFiveHundred, "an absent GOOGLE_OAUTH_CLIENT_ID crashed the endpoint");
+    assert(notConfigured, "an absent GOOGLE_OAUTH_CLIENT_ID should answer 503");
+  }
+
+  console.log("→ a rejected Google token on enrol creates NOTHING");
+  // 🚨 The assertion that matters on the customer surface. If a bad token fell
+  // through to the manual path, a caller could send a junk token alongside
+  // someone else's email and be enrolled as them. The request must fail and
+  // the café's customer list must be untouched.
+  const beforeCustomers = await call<{ customers: Array<{ id: string }> }>(
+    "GET",
+    "/v1/customers",
+    undefined,
+    pwLogin.jwt
+  );
+  let enrolTokenRejected = false;
+  try {
+    await call("POST", `/v1/public/m/${pwSignup.publicSlug}/enrol`, {
+      programId: pwProg.id,
+      googleIdToken: "not-a-jwt",
+      // Deliberately present: proves identity is NOT read from the body on
+      // this path, since the request fails rather than falling back to these.
+      name: "Should Not Exist",
+      email: "should-not-exist@example.com",
+    });
+  } catch (err) {
+    enrolTokenRejected = /\b(401|503)\b/.test(String(err));
+  }
+  assert(enrolTokenRejected, "a junk Google token was accepted on enrol");
+  const afterCustomers = await call<{ customers: Array<{ id: string }> }>(
+    "GET",
+    "/v1/customers",
+    undefined,
+    pwLogin.jwt
+  );
+  assert(
+    afterCustomers.customers.length === beforeCustomers.customers.length,
+    `a rejected Google enrolment created a customer (${beforeCustomers.customers.length} → ${afterCustomers.customers.length})`
+  );
+
+  console.log("→ enrol with neither a token nor contact details still 400s");
+  let enrolNoIdentity = false;
+  try {
+    await call("POST", `/v1/public/m/${pwSignup.publicSlug}/enrol`, {
+      programId: pwProg.id,
+      name: "Nameless Contact",
+    });
+  } catch (err) {
+    enrolNoIdentity = String(err).includes("400");
+  }
+  assert(enrolNoIdentity, "enrol with no contact details should still 400");
+
   // ---------- Day 9: card expiry sweep ----------
 
   console.log("→ create a program with expiryDays: 7");

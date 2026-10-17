@@ -13,7 +13,8 @@
     "smoke": "tsx scripts/smoke.ts",
     "smoke:admin": "tsx scripts/smoke-admin.ts",
     "check:wallet": "tsx scripts/check-wallet-payload.ts",
-    "check:drafts": "tsx scripts/check-drafts.ts"
+    "check:drafts": "tsx scripts/check-drafts.ts",
+    "check:google": "tsx scripts/check-google-auth.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.135.0",

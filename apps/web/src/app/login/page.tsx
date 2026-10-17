@@ -1,5 +1,10 @@
 import Link from "next/link";
+import { googleClientId } from "@/lib/google";
 import { LoginForm } from "./login-form";
+
+// Required by googleClientId() — a prerendered page would read the BUILD
+// environment, not the container's. See lib/google.ts.
+export const dynamic = "force-dynamic";
 
 export default function LoginPage({
   searchParams,
@@ -39,7 +44,7 @@ export default function LoginPage({
             </div>
           ) : null}
 
-          <LoginForm />
+          <LoginForm googleClientId={googleClientId()} />
 
           <div className="flex items-center justify-between text-xs text-brand-olive pt-2">
             <Link className="hover:text-brand-green underline-offset-4 hover:underline" href="/forgot-password">
