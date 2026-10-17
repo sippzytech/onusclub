@@ -148,15 +148,17 @@ When adding a new `program_type`, define its config + state shapes in `packages/
 
 **Deployed live at `api.onusclub.com` + `app.onusclub.com`**, from branch **`main`**.
 
-⚠️ **`main` is ahead of production by two migrations.** `014_review_click` (Day 27) and
-`015_ai_drafts` (Day 28) are on `main` and not yet applied on the box. Both are additive
-and the code degrades without them — `/admin` catches the missing table and the AI ledger
-swallows its own insert errors — but the next deploy must run the migration step.
+✅ **Production is up to date.** Verified 2026-10-17 after deploying Day 28: all **15**
+migrations applied (`migrate.js` reported `applied: 0` on a second run,
+`verify-deploy.sh` 20/20), `ai_drafts` present, no errors in the api log after the
+restart. Earlier verification on 2026-10-08 covered security headers on both apps, rate
+limiting against the live API, and the Monday digest reaching a real third-party inbox.
 
-✅ Last fully verified 2026-10-08: all 13 migrations applied at that point
-(`migrate.js` reported `applied: 0`, `verify-deploy.sh` 18/18), security headers live on
-both apps, rate limiting confirmed working against the live API, and the Monday digest
-delivered to a real third-party inbox.
+⚠️ **AI campaign drafts are deployed but switched OFF in production.** There is no
+`ANTHROPIC_API_KEY` on the box, so `/v1/broadcasts/drafts` answers 503 and the composer
+does not render the button — which is the designed state, not a gap. Turning it on is an
+env-var change and a container restart, never a code change or a migration. Deliberately
+deferred until a real café asks for it: the key is pay-as-you-go against *our* account.
 
 The migration runner is idempotent and skips what is already in `_migrations`, so running
 it after every deploy is free. Note it is the **compiled** `dist/db/migrate.js` —

@@ -87,9 +87,16 @@ birthday/inactivity sweeps (hardcoded renderers — AI would mean per-merchant t
 re-drafted every cron run); per-customer personalisation (200 names = 200 calls and a
 merchant who can review none of them); merchants bringing their own key.
 
+**Deployed 2026-10-17, switched off.** `verify-deploy.sh` 20/20, migration 015 applied, no
+`ANTHROPIC_API_KEY` on the box — so the endpoint answers 503 and the button does not
+render. That is the designed state. Switching it on later is one env var plus a container
+restart: no code change, no migration, nothing to redeploy.
+
 **Still unverified:** whether the copy is good in Dutch. Nothing offline can test that —
-three options and a mandatory human edit are the design's answer. A live call has not been
-made yet; it needs a real `ANTHROPIC_API_KEY`.
+three options and a mandatory human edit are the design's answer. **No live call has ever
+been made**, locally or in prod. Deferred on purpose: an API key is pay-as-you-go against
+our own account at roughly 1–2 cents per press, and with no paying café nobody is pressing
+it. Turn it on the week a merchant asks "what do I write?".
 
 ---
 
