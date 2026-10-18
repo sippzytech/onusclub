@@ -57,9 +57,9 @@ could actually be choosing between.
 | **Perkstar** | 🇬🇧 UK | ✅ **Torn down 2026-06-29** | [PERKSTAR_ANALYSIS.md](./PERKSTAR_ANALYSIS.md). Named in CLAUDE.md as a primary competitor. The COPY list is fully shipped; items 9, 10, 11, 14, 15 remain. |
 | **Tap2** (Tap2Loyal, `tap2.ai`) | 🇳🇱 **Maastricht** | 🟡 Marketing pages only — **🚫 trial requires payment, dropped** | Real, trading, Dutch, wallet-native, no customer app. Advertises **automations, referrals and tracked print materials**. No way to verify without paying. |
 | **iStampr** | 🇵🇱 PL | 🟡 Homepage reviewed 2026-10-18 | Referral programme, campaign multipliers (2× stamps, Fri–Sun, one location), per-location programmes, native cashier app. 99 zł/mo. Reaches the same no-reward conclusion on Google reviews that Day 27 did. |
-| **Loopy Loyalty** | 🌍 Global | ⬜ **To visit — trial verified card-free** | Category pioneer. $25/$69/$95 per month, 15-day trial; card only needed to publish. |
+| **Loopy Loyalty** | 🌍 Global | 🟡 **Public pages reviewed 2026-10-18** | Category pioneer, but **thinner than us** — no points, no segmentation, no geofencing advertised. Has Zapier + Make. |
 | **LoyaltyPass** | 🇪🇸/🇬🇧/🇫🇷/Nordics | ⬜ **To visit — claims card-free trial** | $99/mo, 14 days. Also runs a large comparison-blog operation — useful intel on how the category positions itself. |
-| **Passtastic** | 🌍 30+ countries | 🏆 **NEXT — trial verified card-free** | 3,000+ shops. €39/mo after 14 days, *"pay nothing until you publish"*. **Tiers, automations, "ready to redeem" groups and one-tap messaging** — four backlog items in one dashboard. |
+| **Passtastic** | 🌍 30+ countries | 🟡 **Public pages reviewed 2026-10-18** | 3,000+ shops. €39/mo after 14 days, *"pay nothing until you publish"*. **Tiers, automations, "ready to redeem" groups and one-tap messaging** — four backlog items in one dashboard. |
 | **Stamplit** | 🌍 | ⬜ To visit | Straight wallet stamp cards. |
 | **7Stamp** | 🌍 | ⬜ To visit | No-app stamp cards + loyalty campaigns. Listed on Capterra/GetApp, so real reviews exist. |
 | **Stampit** | 🌍 | ⬜ To visit | Stamp cards **and coupons** in both wallets. |
@@ -278,6 +278,94 @@ reached the same conclusion as Day 27. Their delay is arguably better than our
 14-day-on-the-card-page window and is worth revisiting — though Day 27 rejected wallet
 push for this deliberately, so changing it means reversing a reasoned decision.
 
+---
+
+## Passtastic — public pages, 2026-10-18
+
+⚠️ **Marketing pages only.** The Claude-in-Chrome extension was not connected, so nobody
+has been inside the product. Everything here is what they chose to publish.
+
+### Six automations, and we have two of them
+
+| Their automation | Us |
+|---|---|
+| Welcome push on first scan | ❌ — we create the card and say nothing |
+| **Reward-ready push** (fires at the goal) | ❌ — C1's automation twin |
+| Win-back at **30 / 60 / 90 days** | 🟡 one sweep, one threshold |
+| Birthday / anniversary | ✅ |
+| Geofenced reminder | ✅ Day 24 |
+| Coupon-to-loyalty bridge | n/a — no coupon type |
+
+🚨 **The useful conclusion: three fixed triggers get most of P9's value for a fifth of the
+cost.** P9 is a composable rules engine at 4–5 days. These three are cron jobs at ~1.5
+days total and cover what merchants actually ask for. → **C9**. Let demand for *custom*
+rules justify P9 instead of assuming it.
+
+### Other gaps worth noting
+
+- **Sign-up form on the café's own website**, on *every* tier. We have `/m/[slug]` and
+  nothing embeddable. → **C10**
+- **Custom sign-up fields**, gated behind their middle tier — evidence someone pays for
+  them. → **C11**
+- **70+ card templates** to our 24. The Perkstar doc already concluded diminishing returns
+  past ~15, so this is noted, not chased.
+- **POS integrations**: Square, Lightspeed, Holded, plus Zapier/Make and API/webhooks on
+  the middle tier. ⚠️ Lightspeed matters for NL — it is also what Piggy integrates with.
+- **"Online sales of memberships, bundles and store credit at 0.99% + Stripe"** — a
+  revenue line we do not have, and a reason memberships pair with billing.
+
+### Their pricing shape, which is more interesting than their prices
+
+Four tiers by **locations**: Single → Multi (3) → Groups (10+) → Enterprise. Then two
+add-ons priced separately: **extra location** and **extra scanner**.
+
+We have one price and a boolean premium flag. Theirs grows with the customer and charges
+for what actually scales — locations and scanners — rather than for customers or cards.
+Worth having in hand whenever pricing is revisited, alongside Joyn's €17/€51/€68 ladder.
+
+⚠️ Two caveats on their numbers: the fetch returned **INR**, almost certainly geo-detected
+rather than their European rate (an earlier read showed €39/month), and their own page
+disagrees with itself — the calculator and the tier table quote different figures. Do not
+quote Passtastic's prices anywhere without re-checking from an EU IP.
+
+---
+
+## Loopy Loyalty — public pages, 2026-10-18
+
+The "category pioneer", and **thinner than us on features** — which is the main finding.
+15-day trial, no card until you publish. $25 / $69 / $95 per month.
+
+### What they have that we do not
+
+- **Zapier + Make**. Also on Passtastic. Two for two among competitors whose integrations
+  are documented, and it is the category's standard answer to "do you integrate with X".
+  → **C12** (outbound webhooks buy all of it at once)
+- **Anti-gaming measures marketed as a feature.** We *have* the rule — one stamp per day
+  per card, in `cards/operations.ts` — and never mention it anywhere a merchant can see.
+  Free credibility; put it on the marketing site.
+- Real public review scores (4.6–4.8).
+
+### What we have that they do not appear to
+
+Points cards at all (they are stamps/punches only), points **expiry**, geofencing, RFM
+segmentation, delivery audit with retry, email delivery visibility, the Google reviews
+loop. Their own pages say there is **no segmentation** and **no location-based
+messaging**.
+
+⚠️ Read that gently: an absent feature on a marketing page is not proof of an absent
+feature in the product. But a 15-year-old category leader not *advertising* segmentation
+suggests SMB customers do not ask for it — worth remembering before over-investing in
+analytics depth.
+
+### Pricing shape — the third data point
+
+Tiers scale on **card designs (1/3/10) × locations (1/3/10) × sub-users (3/10/50)**.
+Passtastic scales on locations + scanners; Joyn on feature tiers. All three grow with the
+customer. **None of them charges per customer or per card** — and neither do we, which is
+worth keeping.
+
+---
+
 ### The running tally — who has what
 
 Counting the same feature across competitors is the clearest prioritisation signal there
@@ -293,6 +381,7 @@ time there is a vote.
 | **"One stamp away"** | — | — | — | ✅ | ✅ *("ready to redeem")* | ❌ **C1** |
 | Push → return attribution | ✅ | ✅ | — | ✅ | — | ❌ **C2** |
 | Native staff app | ✅ | ? | ✅ | — | — | ❌ web scanner (**P15**) |
+| Zapier / Make / webhooks | — | ✅ | — | — | ✅ | ❌ **C12** |
 | Merchant ROI | ✅ | — | — | — | — | ❌ **P17** |
 | Points **expiry** (FIFO) | — | — | — | — | — | ✅ |
 | Card design system | ✅ | — | — | — | — | ✅ (24 templates) |

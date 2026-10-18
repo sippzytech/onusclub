@@ -607,6 +607,52 @@ so it does not fall under that rule. Still, it serves a different *buyer* (someo
 an event, not a café building repeat custom), so the question is whether it is our market
 at all before it is a question of effort.
 
+#### 🆕 From Passtastic, 2026-10-18
+
+**C9. Three more lifecycle triggers** — *~1–1.5 days. The cheap 80% of P9.*
+Passtastic ships six automations. Three of them we simply do not have, and each is a
+*fixed* trigger — no rules engine needed:
+
+- **Welcome push on first scan.** The moment a card is added, say hello. We create the
+  card and send nothing. This is the single cheapest unshipped idea on either list.
+- **Reward-ready push.** Fire automatically when a customer reaches the goal. This is
+  **C1's automation twin**: C1 gives the merchant a segment to message, this removes the
+  merchant from the loop entirely. Build them together — same threshold calculation.
+- **Escalating win-back at 30 / 60 / 90 days.** We have **one** inactivity sweep at a
+  single threshold. Three escalating touches is strictly better and is the same cron with
+  a day-bucket.
+
+⚠️ **The real insight: this is most of P9's value for a fifth of the cost.** P9 (a
+composable rules engine, 4–5 days) is the "right" answer, but three more fixed triggers
+cover the cases merchants actually ask for. Ship C9 first; let demand for *custom* rules
+justify P9 rather than assuming it.
+
+**C10. Embeddable sign-up widget** — *~1 day.*
+Passtastic puts a "sign-up form on your website" on **every** tier. We have `/m/[slug]`
+and nothing else — a café with its own site cannot put enrolment on it. A small embeddable
+script or iframe pointing at the existing public enrol endpoint. Pairs with C7/P11: an
+embed is just another tracked source.
+
+**C11. Custom sign-up fields** — *~1 day.*
+Ours are fixed: name, phone, email, birthday. Passtastic gates custom fields behind its
+middle tier, which says they are worth paying for. A salon wants a hair type; a gym wants
+a goal. `config_json` on the program plus a JSON column on `customers` fits without DDL on
+existing tables — the same polymorphism Day 14 proved.
+
+**C12. Outbound webhooks** — *~1 day. Buys every integration at once.*
+Passtastic sells Zapier + Make on its middle tier; Loopy Loyalty sells Zapier + Make too.
+It is the category's standard answer to "do you integrate with X" — and it is answered
+once, not per-integration.
+
+The cheap version is **outbound webhooks on card events**: enrol, stamp, redeem, reward
+reached. A merchant-configurable URL per merchant, signed, retried. Zapier, Make, n8n and
+anyone's own backend then work without us building a single named integration.
+
+💡 **We already run n8n on the same VPS** (`n8n.sippzy.com`, see CLAUDE.md). A webhook
+would be demonstrable the day it ships, with no third-party account.
+⚠️ Outbound HTTP from the api to merchant-controlled URLs is an SSRF surface — block
+private ranges and localhost, cap redirects, and time out hard.
+
 **Suggested bundle: C1 + C2 together**, about a day and a half, as one "prove the campaign
 worked" push. It closes the only real gap in our dashboard against both competitors.
 
