@@ -12,7 +12,23 @@ Multi-tenant SaaS for **digital loyalty cards** for cafés, salons, and similar 
 
 ## Positioning
 
-Competitors: **Perkstar** (UK) and **Tap2** (NL).
+**[COMPETITORS.md](./COMPETITORS.md)** is the map — ~35 companies in five tiers, with
+what has been analysed and what has not. **[PERKSTAR_ANALYSIS.md](./PERKSTAR_ANALYSIS.md)**
+is the one proper tear-down (18 screenshots from a paid sandbox).
+
+This file used to name only **Perkstar** (UK) and **Tap2** (NL). Two corrections from the
+2026-10-18 sweep:
+
+- **Tap2 has never actually been analysed**, and did not surface in any 2026 search.
+  Confirm it is still trading before planning against it.
+- 🚨 **The real incumbents in our own market were missing entirely: Piggy** (NL, 1.3M
+  users, 1,600+ businesses, Lightspeed-integrated) **and Joyn** (BE/NL, 2.2M cardholders).
+  They are *networks* — one shared consumer card and app across many shops — so a café
+  joining Piggy gets 1.3M existing members, which we structurally cannot offer. That is a
+  real moat. The trade is that the customer belongs to Piggy, the card is Piggy-branded,
+  and the café is one of 1,600. Our counter is the whole pitch: **your** brand on the
+  card, **your** list, exportable, in the wallet with no app.
+
 We win on: **Netherlands-first**, SMB-friendly UX, transparent pricing, and asking for
 Google reviews at the moment a reward is claimed.
 
@@ -352,4 +368,6 @@ Read ROADMAP.md before planning anything new.
 
 - **[DEPLOY.md](./DEPLOY.md)** — first-time VPS deploy + day-to-day deploy commands.
 - **[METABASE.md](./METABASE.md)** — wire the existing VPS Metabase to OnUsClub data, with 7 starter SQL queries.
+- **[COMPETITORS.md](./COMPETITORS.md)** — the competitor map: ~35 companies in five tiers, what has been analysed, what to visit next, and what came out of each visit.
+- **[PERKSTAR_ANALYSIS.md](./PERKSTAR_ANALYSIS.md)** — the one deep tear-down, from a paid sandbox account. The COPY list is fully shipped; items 9, 10, 11, 14, 15 remain.
 - **[README.md](./README.md)** — local-dev quickstart.

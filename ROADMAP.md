@@ -544,6 +544,56 @@ Gated separately on the first real customer: **1** (EU hosting), **4** (Resend P
 
 ### P1 — next builds
 
+#### 🆕 From the competitor sweep, 2026-10-18
+
+Six ideas from Punchd and iStampr, ranked. Full reasoning and the list of who still needs
+visiting is in **[COMPETITORS.md](./COMPETITORS.md)**.
+
+**C1. "One stamp away" segment** — *~0.5 day. Do this first.*
+Punchd surfaces it as a headline segment ("168 customers · 1 stamp from a reward") and it
+is the highest-intent audience in the whole product: someone at 9 of 10 needs one nudge to
+convert. **We already hold the data** — `card_state.stamps_current` against the program's
+`stamps_required` — and never expose it. Our six RFM buckets are all *recency*-based;
+none of them is about *progress*. Ships as an `AudienceFilter` field plus a segment card
+on Analytics. Points cards get the equivalent against `points_for_reward`.
+
+**C2. Campaign attribution — "came back after this"** — *~1 day. Pairs with C1.*
+Punchd shows "came back from push: 742 (14%)". We write every send to
+`message_deliveries` and every visit to `card_events` and **never join them**, so a café
+cannot tell whether a broadcast did anything — which is the question that decides whether
+they keep paying us. A join on (card_id, delivery sent_at → next txn event within N days)
+gives an honest number.
+⚠️ Do **not** copy Punchd's "78% read rate". Neither wallet reports opens; that figure
+cannot be real. "Visited within 7 days" is computable and more useful.
+
+**C3. Stamp multipliers / happy-hour campaigns** — *~1–2 days.*
+iStampr: *"2× stamps · Fri to Sun · Canal Side only"*, applied automatically at the till.
+The single easiest thing on either competitor's site for a café owner to understand and
+ask for. Time-boxed and optionally location-boxed. Fits `config_json` with no DDL, but
+the scanner and the stamp path both need to know the active multiplier, and `card_events`
+should record what was applied so history stays explicable.
+
+**C4. Referral programme** — *~3–4 days. The only acquisition lever.*
+iStampr: shareable codes, *"you choose what each side earns, and it only pays out on a
+real first purchase"*. **Everything we have built so far is retention** — this is the one
+feature that brings in someone who has never heard of the café. Same as Perkstar item #10,
+deferred once already; a second competitor having it should raise it. Pairs naturally with
+Perkstar item #11 (UTM on the enrol form, ~0.5 day) which gives it attribution.
+
+**C5. Tiers (Gold / Silver)** — *~2–3 days.*
+Punchd has automatic tier segmentation; Passtastic sells "levels". Already on this list as
+Perkstar item #14. Three competitors now have it.
+
+**C6. Per-customer message button** — *~0.5 day.*
+Punchd puts "Remind" and "DM" on the customer profile. `sendCustomCardMessage` already
+exists in our API with no UI in front of it — this is wiring, not building.
+
+**Suggested bundle: C1 + C2 together**, about a day and a half, as one "prove the campaign
+worked" push. It closes the only real gap in our dashboard against both competitors.
+
+---
+
+
 **5. Google Wallet hero image** ✅ **DONE 2026-10-03.** Originally: The card design system feeds the customer
 page, the Apple strip and the editor preview — but never Google Wallet, so Android passes
 show no stamp art. Deferred originally as "low value while in demo mode"; that expired
