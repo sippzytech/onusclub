@@ -322,41 +322,44 @@ are required and the obvious ones are both wrong:
 
 ## ⏳ OPEN — waiting on a human
 
-### 1. 🚨 The marketing site advertises a Google policy violation
+### 1. 🚨 Marketing site: fabricated testimonials
 
-**Different repo** (the Netlify marketing site, not this monorepo), so it cannot be fixed
-from here. Found 2026-10-18 while debugging the OAuth consent screen.
+The review-rewards claim is **FIXED and live** (2026-10-18, `onusclubwebsite@866cdbe`):
+both `components/StatsBar.tsx` and `components/Retention.tsx` said *"Automated review
+rewards get you 5× more Google reviews"* — a thing Google bans, with the penalty landing
+on the café's own listing, and a thing this product deliberately does not do. Verified
+gone from the served HTML and the JS chunks.
 
-The `onusclub.com` homepage carries this stat:
+**What was found alongside it and NOT changed**, because it is a content decision rather
+than a bug fix:
 
-> **5× More Google Reviews** — "Automated review rewards get you 5× more Google reviews,
-> boosting local SEO and building trust with new customers."
+`components/Reviews.tsx` carries **six named testimonials with photographs** — Sophie van
+den Berg of Bloom Coffee, Daan Visser of Visser Barbers, Amara Osei of Glow Salon, Lars
+Hendriks of IronHouse Gym, Dr. Noor Khalil of Khalil Dental, Marco de Wit of Verde Juice
+Bar — complete with specific claims like *"a 40% jump in repeat visits within the first
+month."*
 
-Two problems, and the first is the serious one:
+**There are no real cafés.** Every merchant in production is test data. So these are
+invented people, invented businesses and invented results, illustrated with Unsplash
+photographs of real, identifiable strangers.
 
-1. **It describes something Google bans.** Day 27 established this: the Fake Engagement
-   policy prohibits incentivising reviews and names loyalty points explicitly, and the
-   penalty lands on the **café's** listing — reviews removed, a warning badge, a block on
-   new reviews. The product's own Settings page tells cafés exactly that. The homepage
-   sells the banned thing while the dashboard warns against it.
-2. **It is false about our own product.** There is no reward mechanism. Day 27 shipped
-   *the ask, never the reward*, deliberately.
+Three separate problems:
 
-It may also be **why consent-screen brand verification keeps failing**: domain ownership
-was cleared with a Search Console TXT record, leaving only "not compliant with the Google
-APIs Terms of Service" — and Google is reviewing that exact page. Unproven, but it is the
-one thing on the page that contradicts Google's own policies.
+- **EU/NL consumer law.** Fabricated testimonials are a misleading commercial practice
+  under the Unfair Commercial Practices Directive, and the Netherlands enforces it. The
+  invented statistics make it worse than invented praise.
+- **Google APIs Terms of Service** — the very thing consent-screen brand verification
+  keeps failing on. Removing the review-rewards line may not be enough while this stands.
+- **The photographs are of real people** who never endorsed anything, attributed to names
+  that are not theirs.
 
-**Suggested replacement:** *"More Google reviews — ask customers at the moment they claim
-a reward, when they're most pleased with you."* Drop "rewards" and "automated". Keep the
-5× only if there is a real source for it.
+**Options:** remove the section until there are real customers; relabel it unmistakably
+as illustrative (weak — the photos still imply real endorsement); or replace it with
+product screenshots and honest feature copy. The last is the only one that is both safe
+and still sells.
 
-While in there: check the Reviews/testimonials section is genuine (invented testimonials
-are their own ToS problem), and that the privacy and terms pages actually load — Google
-checks both.
-
-This blocks **nothing**. Google sign-in is live and working without brand verification;
-the only thing riding on it is a logo on a dialog.
+Also unverified: the remaining stats (60% more visits, 3× more spend, 25% higher
+retention, and the 5× that was kept). They read as industry figures but carry no source.
 
 ### 2. 🚨 Proximity notifications are built but UNTESTED ON HARDWARE
 
