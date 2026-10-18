@@ -19,15 +19,25 @@ is the one proper tear-down (18 screenshots from a paid sandbox).
 This file used to name only **Perkstar** (UK) and **Tap2** (NL). Two corrections from the
 2026-10-18 sweep:
 
-- **Tap2 has never actually been analysed**, and did not surface in any 2026 search.
-  Confirm it is still trading before planning against it.
-- 🚨 **The real incumbents in our own market were missing entirely: Piggy** (NL, 1.3M
-  users, 1,600+ businesses, Lightspeed-integrated) **and Joyn** (BE/NL, 2.2M cardholders).
-  They are *networks* — one shared consumer card and app across many shops — so a café
-  joining Piggy gets 1.3M existing members, which we structurally cannot offer. That is a
-  real moat. The trade is that the customer belongs to Piggy, the card is Piggy-branded,
-  and the café is one of 1,600. Our counter is the whole pitch: **your** brand on the
-  card, **your** list, exportable, in the wallet with no app.
+- **Tap2 is real and is the closest competitor found.** `tap2.ai` / "Tap2Loyal", based in
+  **Maastricht**, wallet-native with no customer app, stamps + points + event cards, works
+  with any POS. They also publish *"Apps vs klantenkaarten: waarom eenvoud altijd wint"* —
+  our exact positioning, in Dutch, already. **"No app to download" is the price of entry
+  here, not a differentiator.** Against Tap2 we differentiate on depth (points expiry,
+  card design, RFM, deliverability) and the Google reviews loop.
+- **Piggy** (NL, 1.3M users, 1,600+ businesses, Lightspeed-integrated) **and Joyn** (BE,
+  2.2M cardholders, 1.1M app downloads) were missing entirely. **Both require a customer
+  app**, so by our own axis neither is a direct competitor — but they are who a Dutch café
+  actually compares us to, and their dashboards and pricing ladders are still worth
+  copying. Joyn runs three tiers (€17 / €51 / €68 per month) where we have one price and a
+  boolean premium gate.
+
+**The classification axis** (and the reason the list is sorted this way): **if the
+customer must download an app, it is not a direct competitor** — our whole promise is that
+they do not. Still tear those companies down; the model difference says nothing about
+their dashboard, analytics or merchant tooling. Just do not read their user numbers as a
+scoreboard: those members came through a consumer app, a channel we deliberately do not
+build.
 
 We win on: **Netherlands-first**, SMB-friendly UX, transparent pricing, and asking for
 Google reviews at the moment a reward is claimed.

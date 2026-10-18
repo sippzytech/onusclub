@@ -593,6 +593,60 @@ worked" push. It closes the only real gap in our dashboard against both competit
 
 ---
 
+#### 🆕 Still outstanding from Perkstar (DEFER list, never built)
+
+The Perkstar COPY list is fully shipped. These are the DEFER items that were never picked
+up, restated here so they stop living only in `PERKSTAR_ANALYSIS.md`. Numbering kept from
+that doc so the two files line up.
+
+**P9. Push automation rules — "event → wait → message"** — *4–5 days.*
+A real trigger engine: *after a visit, wait 2 days, send X*; *after 30 days quiet, send
+Y*. We have **fixed** cron sweeps (birthday, inactivity) that a merchant cannot change —
+not rules they can compose. ⚠️ **Three competitors now have this**: Perkstar, and Tap2
+sells "behavioural triggers: post-visit rewards, inactivity reminders, win-back". It is
+the single biggest remaining feature gap.
+
+**P10. Referral programme** — *2–4 days. Same as C4.*
+🚨 **Now confirmed at THREE competitors** — Perkstar, iStampr ("you choose what each side
+earns, pays out only on a real first purchase") and Tap2 ("one-scan referral"). It is the
+only acquisition feature any of them has, and everything we have built is retention. This
+should probably outrank most of the C-list.
+
+**P11. UTM tracking on the enrol form** — *0.5 day.*
+One column on `customers`, propagated from the public landing page. Cheap on its own, and
+it is what gives P10 attribution. Do them together.
+
+**P14. Tiers (Gold / Silver)** — *2–3 days. Same as C5.*
+Perkstar, Punchd and Passtastic all have it. Originally deferred to pair with Stripe
+billing; that pairing is optional — tiers are a loyalty mechanic, the soft-walls are the
+billing part.
+
+**P15. Scanner PWA** — *2–3 days.*
+Make `/dashboard/scan` installable so staff get a home-screen icon instead of a browser
+tab. Deferred on "wait until staff complain" and nobody has — but note **Tap2 and iStampr
+both ship a native staff app**, and "there's an app for the till" reassures non-technical
+owners even when a web scanner is functionally identical.
+
+**P16. First-party feedback collection** — *3–4 days.*
+Day 27 shipped the Google review **ask**; it did not build feedback we own. Perkstar has a
+"reputation" panel — feedback rating, total feedback, reviews collected — and a star
+rating column on the customer table that would otherwise be empty noise.
+⚠️ Keep the Day 27 rule intact: asking privately for feedback is fine, but it must not
+become **review gating** — you cannot route happy customers to Google and unhappy ones to
+a private form. Google bans that separately from incentivising, and the penalty lands on
+the café.
+
+**P17. 🆕 Merchant-facing ROI** — *1–2 days.*
+Perkstar shows each merchant: revenue, **rewards cost**, platform fee, and the resulting
+return. We capture `amount_cents` and we know how many rewards were redeemed, so most of
+the inputs exist — the missing one is what a reward *costs the café*, which would be a
+field on the program (e.g. "a free coffee costs me €0.80").
+⚠️ This is **not** the same decision as `/admin` having no profit figure. That one is
+about *our* platform economics and stays. This is a café seeing its own return, which is
+the number that justifies the subscription at renewal.
+
+---
+
 
 **5. Google Wallet hero image** ✅ **DONE 2026-10-03.** Originally: The card design system feeds the customer
 page, the Apple strip and the editor preview — but never Google Wallet, so Android passes

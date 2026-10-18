@@ -16,6 +16,30 @@ homepage is marketing — features that may not exist, numbers with no source, a
 chosen to flatter. Where a free trial exists, take it; a logged-in hour beats a day of
 reading landing pages.
 
+## 🧭 The classification axis: does the customer have to download an app?
+
+**This is our single biggest selling point, so it is the line that sorts this list.**
+
+A company whose customers must install an app is **not competing for the same sale**. A
+café choosing between us and them is choosing between two different promises, and ours
+("nothing to download — it lands in the wallet they already have") wins that argument on
+its own. Perkstar, Tap2 and iStampr all make the same argument, which is how you can tell
+it is the category's real dividing line.
+
+So:
+
+- **Direct competitor** — wallet-native, no customer app. Beat them on features.
+- **Not a direct competitor** — own consumer app. **Still worth tearing down**, because
+  the model difference says nothing about their dashboard, their analytics, their pricing
+  structure or their merchant tooling, all of which may be better than ours. Copy freely;
+  just do not panic about their user numbers, because those users came through a channel
+  we deliberately do not have.
+
+⚠️ One honest caveat: a consumer app is a weakness *for the café's customer* and a
+**strength for the network** — an app is how Piggy accumulated 1.3M members who can be
+pointed at any of its 1,600 shops. We cannot do that, and should not pretend the trade is
+one-sided.
+
 ⚠️ **Do not copy claims, only mechanics.** Several of these sites make statistical claims
 ("5× more reviews", "78% read rate") with no source. We removed our own fabricated
 testimonials on 2026-10-18 precisely because that road ends in a misleading-practice
@@ -31,7 +55,7 @@ could actually be choosing between.
 | Company | Country | Status | Notes |
 |---|---|---|---|
 | **Perkstar** | 🇬🇧 UK | ✅ **Torn down 2026-06-29** | [PERKSTAR_ANALYSIS.md](./PERKSTAR_ANALYSIS.md). Named in CLAUDE.md as a primary competitor. The COPY list is fully shipped; items 9, 10, 11, 14, 15 remain. |
-| **Tap2** | 🇳🇱 NL | ⬜ To visit | Named in CLAUDE.md as the other primary competitor, but **never actually analysed**, and it did not surface in any 2026 search — worth confirming it is still trading before planning against it. |
+| **Tap2** (Tap2Loyal, `tap2.ai`) | 🇳🇱 **Maastricht** | 🟡 **Reviewed 2026-10-18** | Real, trading, Dutch, wallet-native, no customer app. See the tear-down below — they have **automations, referrals and tracked print materials** that we do not. |
 | **iStampr** | 🇵🇱 PL | 🟡 Homepage reviewed 2026-10-18 | Referral programme, campaign multipliers (2× stamps, Fri–Sun, one location), per-location programmes, native cashier app. 99 zł/mo. Reaches the same no-reward conclusion on Google reviews that Day 27 did. |
 | **Loopy Loyalty** | 🌍 Global | ⬜ To visit | Repeatedly called the category pioneer for wallet-pass stamp cards. 15-day trial. Probably the most mature product on this list. |
 | **LoyaltyPass** | 🇪🇸/🇬🇧/🇫🇷/Nordics | ⬜ To visit | $99/mo, US/UK/AU/NZ/CA/UAE/DE, 14-day trial. Also runs a large comparison-blog operation — useful intel on how the category positions itself. |
@@ -53,30 +77,37 @@ could actually be choosing between.
 | **oappso loyalty** | 🌍 | ⬜ To visit | |
 | **Punchd** | 🇮🇳 IN | 🟡 Homepage reviewed 2026-10-18 | Tiers, prepaid wallet credit, AI drafting, and the **"one stamp away"** segment. See the Day 31 backlog items. |
 
-## Tier 2 — The Dutch incumbents (different model, same customers) 🚨
+## Tier 2 — The app-based networks (NOT direct competitors, still worth tearing down) 🚨
 
-**These matter more commercially than anything in Tier 1**, and neither is in CLAUDE.md.
-They are not wallet-pass startups — they are established consumer networks with their own
-apps and real scale in our exact market.
+✅ **Sanchit's read was right, and it is now confirmed: both of these require a customer
+app, so neither is a direct competitor by the axis above.** They are *networks* — one
+shared consumer card earning across many shops, with their own app and their own user
+base.
 
-| Company | Country | Scale | Status |
-|---|---|---|---|
-| **Piggy** | 🇳🇱 NL | **1.3M users, 1,600+ businesses.** Founded 2012. Fully integrated with Lightspeed POS. "The Netherlands' largest digital savings program for local shops." | ⬜ To visit |
-| **Joyn** | 🇧🇪 BE / 🇳🇱 NL | **2.2M cardholders.** | ⬜ To visit |
+| Company | Country | Scale | Customer app? | Status |
+|---|---|---|---|---|
+| **Piggy** | 🇳🇱 NL | **1.3M users, 1,600+ businesses.** Founded 2012. Integrated with Lightspeed POS. "The Netherlands' largest digital savings program for local shops." | **Yes** — app, physical card, or phone number | ⬜ To visit |
+| **Joyn** | 🇧🇪 BE (+NL/FR) | **2.2M cardholders, 1.1M app downloads.** Tiers at **€16.96 / €50.96 / €67.96 per month** (annual) | **Yes** — "1.1M App downloads" on their own homepage | ⬜ To visit |
 
-**Why they are a different question.** Piggy and Joyn are *networks*: one consumer card
-that earns across many shops, with a consumer app and a shared user base. A café joining
-Piggy gets access to 1.3M existing members — something we structurally cannot offer.
+**So why are they still on the list, and marked 🚨?**
 
-That is their moat and it is real. But it is also the trade: on Piggy the customer
-belongs to Piggy, the card is Piggy-branded, and the café is one of 1,600. Our pitch is
-the opposite — *your* brand on the card, *your* customer list, exportable, in the wallet
-with no app. "You own your list" is already on the marketing site and it is aimed
-squarely at this.
+Because the model difference says nothing about the *product*. Their dashboards, their
+analytics, their pricing ladders and their merchant tooling may each be better than ours,
+and all of that is copyable. Joyn's three-tier ladder is immediately interesting: we have
+one price (€30/mo) and a single boolean premium gate, where they have a shape that lets a
+small shop in cheaply and grows with them.
 
-When visiting these two, the questions are: what does a café actually pay, what POS
-integration is required, how much branding does the café get, and can the café export
-its own customers.
+**And because they are who a Dutch café actually compares us to** — not a UK startup.
+
+⚠️ Do not read their user numbers as a scoreboard we are losing. Those members arrived
+through a consumer app and a shared network, a channel we have deliberately chosen not to
+build. The honest trade: on Piggy the customer belongs to Piggy, the card is
+Piggy-branded, and the café is one of 1,600. "Your brand, your list, exportable" is the
+counter, and it is already on the marketing site.
+
+**Questions for the visit:** what does a café actually pay; is a tablet or terminal
+required; how much of the card is the café's branding; can the café export its own
+customer list; and what does the merchant dashboard show that ours does not.
 
 ## Tier 3 — POS-attached loyalty (bundled, hard to displace)
 
@@ -115,6 +146,52 @@ Como · Punchh · Paytronix · Antavo · Zinrelo · Yotpo · Smile.io · Loyalty
 
 ---
 
+## Tap2 — first look, 2026-10-18
+
+**The correction first.** `CLAUDE.md` has named Tap2 as a primary competitor since the
+start, and yesterday I doubted it was still trading because it did not surface in a
+search. **It is trading, and it is the most directly comparable company found so far.**
+
+- **`tap2.ai` / "Tap2Loyal"**, based in **Maastricht, Netherlands** — our market, our
+  model, our language.
+- **Wallet-native, no customer app.** "Cards live directly in Apple Wallet and Google
+  Wallet… added in about 5 seconds, no account creation." Same promise as ours, word for
+  word in places.
+- **Works with any POS**, plus an "Infrastructure API" for chains — so they are reaching
+  upmarket as well as down.
+
+### What they have that we do not
+
+| Feature | Note |
+|---|---|
+| **Automations** — behavioural triggers | "Post-visit rewards, inactivity reminders, win-back incentives." Ours are *fixed* cron sweeps a merchant cannot compose. → backlog **P9** |
+| **Referrals** — "one-scan referral" | **Third competitor with this.** → **P10** |
+| **Event cards** — a third card type | For a special event, with reminders and live updates. Genuinely different from stamp/points, and our polymorphic `program_type` + `config_json` was built for exactly this kind of addition. Worth thinking about. |
+| **Print materials — branded and *tracked*** | Not just a QR poster (already on our backlog) but **per-poster attribution**: which flyer, table tent or window sticker actually produced sign-ups. That is the same mechanic as Perkstar's UTM item (**P11**) pointed at physical media, and it is a smarter version of the idea than ours. |
+
+### What we have that they do not advertise
+
+Points **expiry** (our FIFO batch engine), a card **design system** with 24 templates,
+RFM segmentation with tunable thresholds, per-card **delivery audit with retry**, email
+delivery visibility, and Google sign-in on both sides.
+
+### The uncomfortable bit
+
+They also publish an article titled *"Apps vs klantenkaarten: waarom eenvoud altijd wint"*
+— apps versus loyalty cards, why simplicity always wins. **That is our positioning,
+argued in Dutch, by a Dutch company, already.** "No app to download" is not a
+differentiator against Tap2; it is the price of entry. Against them we differentiate on
+depth — expiry, design, segmentation, deliverability — and on the Google reviews loop.
+
+⚠️ Separately: **`tap2points.nl` appears to be a different product** (NFC tap-to-earn,
+nine sectors, no wallet passes mentioned). Same "Tap2" prefix, different mechanic. Do not
+conflate them when doing the full tear-down.
+
+**Next step for Tap2:** take the free trial. Everything above is from marketing pages, and
+the one competitor we know properly is the one we got a sandbox account for.
+
+---
+
 ## What came out of the first two visits
 
 From **Punchd** and **iStampr**, 2026-10-18. All six are now in the ROADMAP backlog as
@@ -128,12 +205,39 @@ Day 31 candidates.
 | iStampr | **Referral programme** | The only *acquisition* feature on either site. Everything we have built is retention. Perkstar item #10 is the same idea, already deferred once. |
 | iStampr | **Campaign multipliers** | "2× stamps, Fri–Sun, Canal Side only." Time- and location-boxed, applied automatically at the till. The easiest thing on this page for a café owner to understand and ask for. |
 | Punchd + Passtastic | **Tiers** | Perkstar item #14, already on the backlog. Two more competitors having it raises it. |
+| Tap2 | **Event cards** | A third card type for one-off events with reminders and live updates. Our polymorphic schema was built for exactly this. |
+| Tap2 | **Tracked print materials** | Per-poster attribution — which flyer or table tent produced sign-ups. A smarter version of the QR-poster idea already on the backlog, and the physical-media twin of UTM tracking (P11). |
 
 **Validation worth recording:** iStampr asks for Google reviews *"a couple of hours after
 a visit, never at the till"* with **nothing offered in return**. An independent competitor
 reached the same conclusion as Day 27. Their delay is arguably better than our
 14-day-on-the-card-page window and is worth revisiting — though Day 27 rejected wallet
 push for this deliberately, so changing it means reversing a reasoned decision.
+
+### The running tally — who has what
+
+Counting the same feature across competitors is the clearest prioritisation signal there
+is. Everything built so far has been reasoned from first principles; this is the first
+time there is a vote.
+
+| Feature | Perkstar | Tap2 | iStampr | Punchd | Passtastic | **Us** |
+|---|:--:|:--:|:--:|:--:|:--:|:--:|
+| **Referral** | ✅ | ✅ | ✅ | — | — | ❌ **P10** |
+| **Composable automations** | ✅ | ✅ | — | — | — | ❌ **P9** (fixed sweeps only) |
+| **Tiers / levels** | ✅ | — | — | ✅ | ✅ | ❌ **P14** |
+| Campaign multipliers | — | — | ✅ | — | — | ❌ **C3** |
+| "One stamp away" | — | — | — | ✅ | — | ❌ **C1** |
+| Push → return attribution | ✅ | ✅ | — | ✅ | — | ❌ **C2** |
+| Native staff app | ✅ | ? | ✅ | — | — | ❌ web scanner (**P15**) |
+| Merchant ROI | ✅ | — | — | — | — | ❌ **P17** |
+| Points **expiry** (FIFO) | — | — | — | — | — | ✅ |
+| Card design system | ✅ | — | — | — | — | ✅ (24 templates) |
+| Delivery audit + retry | — | — | — | — | — | ✅ |
+| Google reviews — **no reward** | — | — | ✅ | — | — | ✅ |
+
+**Referral is the clear winner: three of five, and the only acquisition feature anyone
+has.** Automations are second. Both have been deferred twice.
+
 
 ---
 
