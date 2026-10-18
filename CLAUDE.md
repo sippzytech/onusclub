@@ -103,12 +103,21 @@ Switching issuers is an env-var change, never a code change — `GOOGLE_WALLET_I
 
 ## Schema
 
-See `apps/api/src/db/migrations/` — the numbered SQL files are the single source of truth, `001_initial.sql` through `016_google_sub.sql`. Core tables: `merchants`, `locations`, `loyalty_programs`, `customers`, `loyalty_cards`, `card_events`, `staff_users`, `auth_tokens`; later migrations add `broadcasts`, `sweep_runs`, `message_deliveries`, `apple_pass_registrations`, `points_batches`, `leads`, `merchant_assets`, `platform_admins`, `admin_audit_log`,
+See `apps/api/src/db/migrations/` — the numbered SQL files are the single source of truth, `001_initial.sql` through `017_drop_stale_logo_url.sql`. Core tables: `merchants`, `locations`, `loyalty_programs`, `customers`, `loyalty_cards`, `card_events`, `staff_users`, `auth_tokens`; later migrations add `broadcasts`, `sweep_runs`, `message_deliveries`, `apple_pass_registrations`, `points_batches`, `leads`, `merchant_assets`, `platform_admins`, `admin_audit_log`,
 `email_deliveries`, `ai_drafts`.
 
 ⚠️ **Append new `card_events.event_type` values at the END of the ENUM.** MySQL 8 does an
 in-place ALTER for an appended value and a full table rebuild for one inserted mid-list —
 on the biggest table in the product, on the scan hot path.
+
+🚨 **Never store a URL built from `BASE_URL_API`.** `merchants.logo_url` did exactly
+that — frozen at upload time — and migration `017` dropped it. A stored URL goes stale
+the moment a domain changes, and in production that is **silent**: Google fetches
+`programLogo` server-side and caches it *by URI*, so café logos stop updating with
+nothing erroring anywhere. The EU VPS migration would have hit every merchant at once.
+Logo URLs are now derived on every read from `merchant_assets.version` in
+`apps/api/src/merchants/logo.ts`, and a CI grep fails on any new `logo_url` reference.
+The same rule applies to any future asset URL.
 
 ⚠️ **`loyalty_cards.card_state.points_current` is a CACHE, not the ledger.** The
 authoritative points balance is `SUM(points_batches.points_remaining)` over non-expired
@@ -144,12 +153,14 @@ When adding a new `program_type`, define its config + state shapes in `packages/
   Authorization is applied once, to the `/v1/admin` mount in `index.ts`, not per route —
   see `docs/admin/README.md`.
 
-## Status — Day 29 (current)
+## Status — Day 30 (current)
 
 **Deployed live at `api.onusclub.com` + `app.onusclub.com`**, from branch **`main`**.
 
-⚠️ **`main` is ahead of production by one migration**: `016_google_sub` (Day 29). The
-next deploy must run the migration step.
+✅ **Production is up to date.** Deployed and verified 2026-10-18: all **17** migrations
+applied, `verify-deploy.sh` **22/22**, no errors in the api log after the restart. A
+pre-deploy `mysqldump` is at `/docker/stampdeck/backups/pre-day30-*.sql` because `017`
+drops a column.
 
 ✅ Last verified 2026-10-17 after deploying Day 28: all 15 migrations applied at that
 point (`migrate.js` reported `applied: 0` on a second run, `verify-deploy.sh` 20/20), no
@@ -157,14 +168,17 @@ errors in the api log after the restart. Earlier verification on 2026-10-08 cove
 security headers on both apps, rate limiting against the live API, and the Monday digest
 reaching a real third-party inbox.
 
-⚠️ **Two features are deployed but switched OFF in production, by design.** Both answer
+⚠️ **One feature is deployed but switched OFF in production, by design.** Both answer
 503 and render no button when their variable is absent, and the api boots normally. The
 503 is the designed state, not a bug — do not chase it.
 
 | Feature | Variable | Why it is off |
 |---|---|---|
 | AI campaign drafts | `ANTHROPIC_API_KEY` | Pay-as-you-go against *our* account at ~1–2c per press. Deferred until a paying café asks. |
-| Sign in with Google | `GOOGLE_OAUTH_CLIENT_ID` | Waiting on the OAuth consent screen + client id in the `sippzy-wallet` console. |
+
+✅ **Sign in with Google is LIVE** as of 2026-10-18 — client id configured on the box,
+`/v1/auth/google` answers 401 to a junk token (not 503), and the button renders on
+`/login`, `/signup` and `/m/[slug]`.
 
 Turning either on is one env line in `/docker/stampdeck/.env` plus a container restart —
 never a code change. Run `grep -P '[^\x00-\x7F]' .env` afterwards; macOS substitutes

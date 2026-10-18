@@ -10,6 +10,55 @@ See also: [CLAUDE.md](./CLAUDE.md) for stack + conventions, [DEPLOY.md](./DEPLOY
 
 ---
 
+### Day 30 — Logo URLs are derived, not frozen
+
+`merchants.logo_url` stored the finished absolute URL, built from `BASE_URL_API` at
+upload time and never recomputed. Change the api's domain and every logo uploaded before
+the change points at the old one.
+
+Found by accident: a dev machine's `BASE_URL_API` was an ngrok tunnel used for Apple
+Wallet testing, the tunnel expired, and the Settings page rendered a broken image at a
+hostname that no longer resolved.
+
+🚨 **The production form is worse because nothing visibly breaks.** Google fetches
+`programLogo` **server-side and caches it by URI**, so a stale URL does not show a broken
+image on a customer's pass — the logo quietly stops updating, or vanishes, with nothing
+erroring in our logs or Google's. The **EU VPS migration already on the roadmap would
+have done this to every merchant at once.** And `resync-wallet-class-logos.ts`, the tool
+written to repair exactly this drift, read the same frozen column — it would have
+faithfully re-pushed the dead URL to every class, cementing the problem rather than
+fixing it.
+
+- `merchant_assets` already held the bytes, content type and `version` (the content
+  hash). The URL is a pure function of `(merchant_id, version, current BASE_URL_API)`, so
+  `src/merchants/logo.ts` computes it on every read and **migration `017` drops the
+  column**. Five read sites updated; the wallet hot path takes a `LEFT JOIN` rather than
+  a second query.
+- **Dropped rather than nulled.** A column that looks authoritative but is never read is
+  how this gets reintroduced — the same shape as `google_place_id` sitting unread since
+  001 while the product claimed a feature built on it. A CI grep now fails on any new
+  `logo_url` reference, excluding comments.
+- **Proved it works**: pointing the dev `BASE_URL_API` back at localhost fixed the broken
+  logo with **no data change at all**. Smoke now asserts two independent readers (the
+  dashboard and the public merchant page) derive the *same* URL — if they ever disagree,
+  something has started reading a stored copy again.
+
+Also fixed two smoke assertions that read the **host's** environment to predict how the
+**api** — which runs in a container — is configured. The Google branch broke the moment a
+client id was set for the container but not exported in the shell; the leads branch had
+been failing that way for a while and was being worked around by exporting the secret
+manually. Both now branch on what the api actually answers, so `pnpm smoke` runs clean
+with no environment juggling.
+
+And local dev no longer spends the production email quota: `RESEND_API_KEY` is blank in
+`apps/api/.env`, so sends record as `skipped`. Local had accumulated **1,991 failed
+sends** in 30 days — smoke-test merchants at `@example.com`, rejected by Resend because
+local lacked `EMAIL_FROM` and fell back to `onboarding@resend.dev`, which only delivers
+to the account owner. Production was unaffected throughout (2 sent, 0 failed) because it
+uses the verified `noreply@send.onusclub.com`.
+
+---
+
 ### Day 29 — Sign in with Google, on both surfaces
 
 Two groups type credentials into this product. Café owners (`/signup`, `/login`) invent
@@ -84,9 +133,16 @@ customer has a Google account — so neither path could be removed even if we wa
   matters: **a rejected token creates nothing** — asserted by counting customers either
   side of a junk-token enrolment that also carries someone else's email.
 
-**Deployed switched off.** No `GOOGLE_OAUTH_CLIENT_ID` on the box, so the endpoints answer
-503 and no button renders anywhere. Waiting on the OAuth consent screen and client id in
-the `sippzy-wallet` console — see the open item below. Apple Sign In is deliberately not
+✅ **LIVE in production since 2026-10-18.** Client id configured, migration `016`
+applied, `verify-deploy.sh` 22/22. Verified end-to-end locally first: signup via Google
+asks only for the business name, sign-out/sign-in returns to the same dashboard.
+
+⚠️ The OAuth **consent-screen brand verification** is still failing, and that is fine —
+it gates only whether the *logo* appears on Google's dialog, not whether sign-in works.
+Domain ownership was cleared with a Search Console TXT record; the remaining complaint is
+Terms-of-Service compliance, and the likely cause is that the marketing site advertises
+"automated review rewards" — a thing Google bans and this product deliberately does not
+do. See the open item below. Apple Sign In is deliberately not
 here: it needs a client secret that is itself a JWT requiring regeneration every six
 months, which is a recurring chore to take on its own merits.
 
@@ -266,32 +322,41 @@ are required and the obvious ones are both wrong:
 
 ## ⏳ OPEN — waiting on a human
 
-### 1. 🔶 Google sign-in needs a client id (Day 29)
+### 1. 🚨 The marketing site advertises a Google policy violation
 
-Built, tested and deployed **switched off**: no `GOOGLE_OAUTH_CLIENT_ID`, so the endpoints
-answer 503 and no button renders. Nothing else is blocked, and no code change is needed
-once the id exists.
+**Different repo** (the Netlify marketing site, not this monorepo), so it cannot be fixed
+from here. Found 2026-10-18 while debugging the OAuth consent screen.
 
-In the Google Cloud console, on the **existing** `sippzy-wallet` project — this touches
-nothing to do with the Wallet service account:
+The `onusclub.com` homepage carries this stat:
 
-1. **APIs & Services → OAuth consent screen.** User type **External**. App name
-   `On Us Club`, a support email, and the homepage / privacy / terms URLs on
-   `onusclub.com`.
-2. **Publishing status → In production.** While it reads *Testing*, only allowlisted
-   Google accounts can sign in — useless for café customers. ✅ This needs **no Google
-   security review**: that applies only to sensitive or restricted scopes, and this uses
-   `openid`, `email`, `profile`.
-3. **Credentials → Create credentials → OAuth client ID → Web application.**
-4. **Authorized JavaScript origins** — exactly these two: `https://app.onusclub.com` and
-   `http://localhost:3001`. (Authorized redirect URIs stay empty; this flow has no
-   redirect.)
-5. Take the **Client ID** (ends `.apps.googleusercontent.com`). It is **not a secret** —
-   it ships in the page HTML by design. **Ignore the client secret**, this flow never uses
-   one.
+> **5× More Google Reviews** — "Automated review rewards get you 5× more Google reviews,
+> boosting local SEO and building trust with new customers."
 
-Then `GOOGLE_OAUTH_CLIENT_ID=…` in `/docker/stampdeck/.env`, restart api + web, and
-`grep -P '[^\x00-\x7F]' .env` to catch the macOS smart-quote substitution.
+Two problems, and the first is the serious one:
+
+1. **It describes something Google bans.** Day 27 established this: the Fake Engagement
+   policy prohibits incentivising reviews and names loyalty points explicitly, and the
+   penalty lands on the **café's** listing — reviews removed, a warning badge, a block on
+   new reviews. The product's own Settings page tells cafés exactly that. The homepage
+   sells the banned thing while the dashboard warns against it.
+2. **It is false about our own product.** There is no reward mechanism. Day 27 shipped
+   *the ask, never the reward*, deliberately.
+
+It may also be **why consent-screen brand verification keeps failing**: domain ownership
+was cleared with a Search Console TXT record, leaving only "not compliant with the Google
+APIs Terms of Service" — and Google is reviewing that exact page. Unproven, but it is the
+one thing on the page that contradicts Google's own policies.
+
+**Suggested replacement:** *"More Google reviews — ask customers at the moment they claim
+a reward, when they're most pleased with you."* Drop "rewards" and "automated". Keep the
+5× only if there is a real source for it.
+
+While in there: check the Reviews/testimonials section is genuine (invented testimonials
+are their own ToS problem), and that the privacy and terms pages actually load — Google
+checks both.
+
+This blocks **nothing**. Google sign-in is live and working without brand verification;
+the only thing riding on it is a logo on a dialog.
 
 ### 2. 🚨 Proximity notifications are built but UNTESTED ON HARDWARE
 
