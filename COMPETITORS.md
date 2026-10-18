@@ -287,10 +287,10 @@ time there is a vote.
 | Feature | Perkstar | Tap2 | iStampr | Punchd | Passtastic | **Us** |
 |---|:--:|:--:|:--:|:--:|:--:|:--:|
 | **Referral** | ✅ | ✅ | ✅ | — | — | ❌ **P10** |
-| **Composable automations** | ✅ | ✅ | — | — | — | ❌ **P9** (fixed sweeps only) |
+| **Composable automations** | ✅ | ✅ | — | — | ✅ | ❌ **P9** (fixed sweeps only) |
 | **Tiers / levels** | ✅ | — | — | ✅ | ✅ | ❌ **P14** |
 | Campaign multipliers | — | — | ✅ | — | — | ❌ **C3** |
-| "One stamp away" | — | — | — | ✅ | — | ❌ **C1** |
+| **"One stamp away"** | — | — | — | ✅ | ✅ *("ready to redeem")* | ❌ **C1** |
 | Push → return attribution | ✅ | ✅ | — | ✅ | — | ❌ **C2** |
 | Native staff app | ✅ | ? | ✅ | — | — | ❌ web scanner (**P15**) |
 | Merchant ROI | ✅ | — | — | — | — | ❌ **P17** |
@@ -300,7 +300,12 @@ time there is a vote.
 | Google reviews — **no reward** | — | — | ✅ | — | — | ✅ |
 
 **Referral is the clear winner: three of five, and the only acquisition feature anyone
-has.** Automations are second. Both have been deferred twice.
+has.** Automations are second, now also three of five. Both have been deferred twice.
+
+And **C1 "one stamp away" is at two of five** — Punchd names it that, Passtastic calls the
+same group "ready to redeem". It is also the cheapest item on either list, about half a
+day, running on data we already hold and never expose. *Cheap* plus *independently
+invented twice* is the strongest case on this page for doing something first.
 
 
 ---
