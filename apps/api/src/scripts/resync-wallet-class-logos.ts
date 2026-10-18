@@ -34,6 +34,7 @@ import { pool } from "../db/pool.js";
 import { logger } from "../logger.js";
 import { walletEnabled, walletRequest } from "../wallet/client.js";
 import { classId, logoUriFor, programLogoFor } from "../wallet/state.js";
+import { loadLogoUrls } from "../merchants/logo.js";
 
 const DRY_RUN = process.argv.includes("--dry-run");
 
@@ -41,7 +42,6 @@ interface MerchantRow extends RowDataPacket {
   id: string;
   business_name: string;
   brand_color: string | null;
-  logo_url: string | null;
 }
 
 async function run(): Promise<void> {
@@ -55,11 +55,19 @@ async function run(): Promise<void> {
   // testing; repairing their logo would be pointless. They should be deleted
   // in the console instead.
   const [merchants] = await pool.execute<MerchantRow[]>(
-    `SELECT id, business_name, brand_color, logo_url
+    `SELECT id, business_name, brand_color
        FROM merchants
       WHERE google_wallet_class_id IS NOT NULL
       ORDER BY created_at`
   );
+
+  // ⚠️ Logo URLs are DERIVED from merchant_assets.version, never read from a
+  // stored column. This script previously read merchants.logo_url, which was
+  // frozen at upload time — so after any BASE_URL_API change the "repair"
+  // would have faithfully re-pushed the dead URL to every class, making the
+  // one tool meant to fix stale logos the thing that cemented them.
+  // See merchants/logo.ts.
+  const logoUrls = await loadLogoUrls(merchants.map((m) => m.id));
 
   let checked = 0;
   let patched = 0;
@@ -73,7 +81,7 @@ async function run(): Promise<void> {
       id: m.id,
       businessName: m.business_name,
       brandColor: m.brand_color,
-      logoUrl: m.logo_url,
+      logoUrl: logoUrls.get(m.id) ?? null,
     };
     const id = classId(m.id);
     const want = logoUriFor(branding);

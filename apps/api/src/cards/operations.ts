@@ -29,6 +29,7 @@ import type { WalletEvent } from "../wallet/state.js";
 import { sendApnsPushBatch } from "../wallet-apple/apns.js";
 import { writeAuditLog } from "../admin/audit.js";
 import { loadMerchantLocations } from "../merchants/locations.js";
+import { logoUrlFromVersion } from "../merchants/logo.js";
 import type { AdminActor } from "../admin/authorize.js";
 
 interface CardRow extends RowDataPacket {
@@ -77,7 +78,8 @@ interface SyncRow extends RowDataPacket {
   merchant_id: string;
   business_name: string;
   brand_color: string | null;
-  logo_url: string | null;
+  /** From merchant_assets, LEFT JOINed. Null when the merchant has no logo. */
+  logo_version: string | null;
   google_wallet_class_id: string | null;
   program_id: string;
   program_name: string;
@@ -249,8 +251,17 @@ export async function syncCardToWallet(
 ): Promise<void> {
   try {
     const [rows] = await pool.execute<SyncRow[]>(
-      `SELECT m.id AS merchant_id, m.business_name, m.brand_color, m.logo_url,
+      // ⚠️ The logo comes from merchant_assets.version and is turned into a
+      // URL below, never read from a stored column. Google caches programLogo
+      // BY URI, so a URL frozen at upload time would keep pointing at whatever
+      // BASE_URL_API was that day — and a later domain change would silently
+      // break every café's pass logo with nothing erroring. See
+      // merchants/logo.ts.
+      //
+      // LEFT JOIN rather than a second query: this is the stamp hot path.
+      `SELECT m.id AS merchant_id, m.business_name, m.brand_color,
               m.google_wallet_class_id,
+              a.version AS logo_version,
               p.id AS program_id, p.name AS program_name, p.program_type,
               p.config_json AS program_config, p.reward_text,
               c.qr_token, c.card_state, c.google_wallet_object_id,
@@ -259,6 +270,8 @@ export async function syncCardToWallet(
          JOIN merchants m ON m.id = c.merchant_id
          JOIN loyalty_programs p ON p.id = c.program_id
          JOIN customers cu ON cu.id = c.customer_id
+         LEFT JOIN merchant_assets a
+                ON a.merchant_id = m.id AND a.kind = 'logo'
         WHERE c.id = ? AND c.merchant_id = ?
         LIMIT 1`,
       [cardId, merchantId]
@@ -270,7 +283,7 @@ export async function syncCardToWallet(
       id: row.merchant_id,
       businessName: row.business_name,
       brandColor: row.brand_color,
-      logoUrl: row.logo_url,
+      logoUrl: logoUrlFromVersion(row.merchant_id, row.logo_version),
       // Geofence points for the LoyaltyClass. This runs on every stamp, which
       // is also how a location added later reaches a café whose class already
       // exists: ensureLoyaltyClass compares and PATCHes. One extra indexed

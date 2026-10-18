@@ -1,0 +1,49 @@
+-- Drop merchants.logo_url. It held a URL that could go stale and then lie.
+--
+-- WHAT IT WAS
+--
+-- The finished absolute URL of a merchant's logo, built from BASE_URL_API at
+-- UPLOAD time and then frozen in this column forever:
+--
+--   https://<whatever BASE_URL_API was that day>/v1/public/m/<id>/logo.png?v=<hash>
+--
+-- WHY THAT IS A BUG AND NOT JUST UNTIDY
+--
+-- The host is captured once and never recomputed, so changing the api's domain
+-- orphans every logo uploaded before the change. Found on a dev machine whose
+-- BASE_URL_API was an ngrok tunnel used for Apple Wallet testing: the tunnel
+-- expired, and the Settings page rendered a broken image pointing at a
+-- hostname that no longer resolved.
+--
+-- 🚨 The production form is worse because nothing visibly breaks. Google
+-- fetches programLogo SERVER-SIDE and caches it by URI, so a stale URL does
+-- not show a broken image on a customer's pass — the logo simply stops
+-- updating, or disappears, with no error anywhere in our logs or Google's.
+-- The EU VPS migration already on the roadmap would have done this to every
+-- merchant at once.
+--
+-- And `resync-wallet-class-logos.ts`, the tool written to repair exactly this
+-- kind of drift, read this same column — so it would have re-pushed the dead
+-- URL to every class, cementing the problem instead of fixing it.
+--
+-- WHY DROPPING RATHER THAN NULLING
+--
+-- merchant_assets already stores the bytes, the content type and `version`,
+-- the content hash. The URL is a pure function of (merchant_id, version,
+-- current BASE_URL_API), so it is now computed on every read in
+-- src/merchants/logo.ts. Keeping a column that LOOKS authoritative but is
+-- never read is how the next person reintroduces the bug — the same shape as
+-- google_place_id sitting unread since 001 while the product claimed a feature
+-- built on it.
+--
+-- Nothing is lost: every row's logo is still in merchant_assets, and the
+-- derived URL for an unchanged BASE_URL_API is byte-identical to what this
+-- column held.
+--
+-- ⚠️ ORDERING. Deploy runs `up -d --build` BEFORE `migrate.js`, so the new
+-- code — which never references this column — is already serving when the
+-- column disappears. A rollback to a pre-Day-30 image would break on the
+-- missing column; restoring it is `ALTER TABLE merchants ADD COLUMN logo_url
+-- VARCHAR(500) NULL` plus a re-upload, since the old values were wrong anyway.
+
+ALTER TABLE merchants DROP COLUMN logo_url;

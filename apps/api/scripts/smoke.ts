@@ -778,35 +778,34 @@ async function main(): Promise<void> {
   }
   assert(googleNoToken, "POST /v1/auth/google with no token should 400");
 
-  // Whether a client id is configured decides what the junk-token cases
-  // answer, so branch on it rather than asserting one of the two.
-  const googleOn =
-    (process.env.GOOGLE_OAUTH_CLIENT_ID ?? "").trim() !== "";
-
-  if (googleOn) {
-    console.log("  (GOOGLE_OAUTH_CLIENT_ID is set — junk tokens should 401)");
-    let junk401 = false;
-    try {
-      await call("POST", "/v1/auth/google", { idToken: "not-a-jwt" });
-    } catch (err) {
-      junk401 = String(err).includes("401");
-    }
-    assert(junk401, "a junk Google token should 401");
-  } else {
-    console.log("→ with no client id, google auth answers 503, not 500");
-    // The degrade every optional integration here uses. A 500 would send a
-    // café owner to support over a feature that is simply switched off.
-    let notConfigured = false;
-    let sawFiveHundred = false;
-    try {
-      await call("POST", "/v1/auth/google", { idToken: "not-a-jwt" });
-    } catch (err) {
-      notConfigured = String(err).includes("503");
-      sawFiveHundred = String(err).includes("500");
-    }
-    assert(!sawFiveHundred, "an absent GOOGLE_OAUTH_CLIENT_ID crashed the endpoint");
-    assert(notConfigured, "an absent GOOGLE_OAUTH_CLIENT_ID should answer 503");
+  // ⚠️ Branch on what the API actually answers, NOT on this process's env.
+  //
+  // The smoke script runs on the host; the api runs in a container with its
+  // own environment. Reading process.env here to predict the api's config was
+  // wrong the moment the two diverged — which happened as soon as a client id
+  // was configured for the container but not exported on the host. The api is
+  // the only thing that knows how the api is configured.
+  console.log("→ a junk Google token is rejected, and never with a 500");
+  let googleJunkStatus = "";
+  try {
+    await call("POST", "/v1/auth/google", { idToken: "not-a-jwt" });
+  } catch (err) {
+    googleJunkStatus = String(err);
   }
+  assert(
+    !googleJunkStatus.includes("500"),
+    "a junk Google token crashed the endpoint"
+  );
+  const googleOn = googleJunkStatus.includes("401");
+  assert(
+    googleOn || googleJunkStatus.includes("503"),
+    `expected 401 (configured) or 503 (switched off), got: ${googleJunkStatus}`
+  );
+  console.log(
+    googleOn
+      ? "   ✓ a client id is configured — junk rejected with 401"
+      : "   ✓ no client id — degrades to 503, not 500"
+  );
 
   console.log("→ a rejected Google token on enrol creates NOTHING");
   // 🚨 The assertion that matters on the customer surface. If a bad token fell
@@ -2659,6 +2658,31 @@ async function main(): Promise<void> {
   );
   assert(brand1.brandColor === "#7B2D26", `brand colour wrong: ${brand1.brandColor}`);
 
+  // Day 30. Two independent readers must produce the SAME url, because both
+  // now derive it from merchant_assets.version rather than from a stored
+  // copy. If these ever disagree, something has started reading a frozen
+  // column again — which is the bug that made a dev machine's logo point at
+  // an expired ngrok tunnel, and would have silently broken every café's
+  // wallet logo on the EU VPS migration.
+  console.log("→ the dashboard and the public page derive the SAME logo url");
+  // Run against the password-signup merchant, because it is the one with a
+  // public slug — the legacy POST /v1/merchants path used above does not
+  // generate one.
+  const brandPw = await call<Branding>(
+    "PATCH",
+    "/v1/me/branding",
+    { logoBase64: pngHeader.toString("base64") },
+    pwLogin.jwt
+  );
+  const pubAfterLogo = await call<{ logoUrl: string | null }>(
+    "GET",
+    `/v1/public/m/${pwSignup.publicSlug}`
+  );
+  assert(
+    pubAfterLogo.logoUrl !== null && pubAfterLogo.logoUrl === brandPw.logoUrl,
+    `two readers disagree about the logo url: ${pubAfterLogo.logoUrl} vs ${brandPw.logoUrl}`
+  );
+
   console.log("→ the public url serves the image without auth (Google fetches it)");
   const logoPath = new URL(brand1.logoUrl!).pathname + new URL(brand1.logoUrl!).search;
   const logoRes = await fetch(`${BASE}${logoPath}`);
@@ -3035,14 +3059,26 @@ async function main(): Promise<void> {
   const leadsSecret = process.env.LEADS_INGEST_SECRET ?? "";
 
   if (!leadsSecret) {
-    console.log("→ leads: LEADS_INGEST_SECRET unset, asserting the endpoint is closed");
+    console.log("→ leads: no secret on this host, asserting the endpoint is closed to us");
+    // ⚠️ Same lesson as the Google branch above: this script runs on the host
+    // and the api runs in a container, so the host's env does not tell us how
+    // the api is configured. Without the secret we cannot exercise the happy
+    // path either way — all that can be asserted is that we are refused.
+    //
+    //   503  no secret configured at all, endpoint closed
+    //   401  a secret IS configured and we do not hold it
+    //
+    // Both prove it is not open. Asserting 503 specifically used to fail the
+    // whole suite whenever the container had a secret and the shell did not.
     let closed = false;
+    let detail = "";
     try {
       await call("POST", "/v1/public/leads", { source: "demo", email: "x@example.com" });
     } catch (err) {
-      closed = String(err).includes("503");
+      detail = String(err);
+      closed = /\b(503|401)\b/.test(detail);
     }
-    assert(closed, "leads endpoint should 503 when no secret is configured");
+    assert(closed, `leads endpoint should be closed without a secret, got: ${detail || "success"}`);
   } else {
     const leadEmail = `lead-${Date.now()}@example.com`;
 

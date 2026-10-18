@@ -20,6 +20,7 @@ import { aiConfigured } from "../ai/client.js";
 import { ApiError } from "../errors.js";
 import { env } from "../config.js";
 import { inspectImage } from "../merchants/image.js";
+import { loadLogoUrl } from "../merchants/logo.js";
 import { isPlatformAdmin } from "../admin/authorize.js";
 import { loadEmailHealth } from "../email/health.js";
 
@@ -46,7 +47,6 @@ interface MerchantRow extends RowDataPacket {
   crons_enabled: number;
   trial_ends_at: Date | null;
   brand_color: string | null;
-  logo_url: string | null;
 }
 
 /**
@@ -293,28 +293,20 @@ meRouter.patch(
 // the merchant's own logo. This is that write path.
 // ---------------------------------------------------------------------------
 
-interface AssetVersionRow extends RowDataPacket {
-  version: string;
-}
-
-/** Public URL of a merchant's stored logo, cache-busted by content hash. */
-function logoUrlFor(merchantId: string, version: string): string {
-  const base = env.BASE_URL_API.replace(/\/$/, "");
-  return `${base}/v1/public/m/${merchantId}/logo.png?v=${version}`;
-}
-
 meRouter.get(
   "/branding",
   requireAuth,
   async (req: Request, res: Response<MerchantBrandingResponse>) => {
     const ctx = authContext(req);
     const [rows] = await pool.execute<MerchantRow[]>(
-      "SELECT brand_color, logo_url FROM merchants WHERE id = ? LIMIT 1",
+      "SELECT brand_color FROM merchants WHERE id = ? LIMIT 1",
       [ctx.merchantId]
     );
     return res.json({
       brandColor: rows[0]?.brand_color ?? null,
-      logoUrl: rows[0]?.logo_url ?? null,
+      // Derived from merchant_assets.version on every read, never stored —
+      // see merchants/logo.ts for the staleness bug that caused.
+      logoUrl: await loadLogoUrl(ctx.merchantId),
     });
   }
 );
@@ -328,10 +320,11 @@ meRouter.patch(
 
     if (input.logoBase64 !== undefined) {
       if (input.logoBase64 === null) {
+        // Deleting the asset row IS the removal. There is no second place
+        // recording that a logo exists, so the two cannot disagree.
         await pool.execute("DELETE FROM merchant_assets WHERE merchant_id = ? AND kind = 'logo'", [
           ctx.merchantId,
         ]);
-        await pool.execute("UPDATE merchants SET logo_url = NULL WHERE id = ?", [ctx.merchantId]);
       } else {
         const buf = Buffer.from(input.logoBase64, "base64");
         // Inspected from the file's own header, not the browser's claim about
@@ -348,10 +341,6 @@ meRouter.patch(
                                    version = VALUES(version)`,
           [ctx.merchantId, checked.info.contentType, buf, checked.version]
         );
-        await pool.execute("UPDATE merchants SET logo_url = ? WHERE id = ?", [
-          logoUrlFor(ctx.merchantId, checked.version),
-          ctx.merchantId,
-        ]);
       }
     }
 
@@ -363,12 +352,12 @@ meRouter.patch(
     }
 
     const [rows] = await pool.execute<MerchantRow[]>(
-      "SELECT brand_color, logo_url FROM merchants WHERE id = ? LIMIT 1",
+      "SELECT brand_color FROM merchants WHERE id = ? LIMIT 1",
       [ctx.merchantId]
     );
     return res.json({
       brandColor: rows[0]?.brand_color ?? null,
-      logoUrl: rows[0]?.logo_url ?? null,
+      logoUrl: await loadLogoUrl(ctx.merchantId),
     });
   }
 );

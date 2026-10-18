@@ -61,6 +61,31 @@ jobs:
       - name: Check Google auth contracts
         run: pnpm --filter @onusclub/api run check:google
 
+      # 🚨 merchants.logo_url was DROPPED in migration 017. It stored a URL
+      # built from BASE_URL_API at upload time and frozen forever, so any
+      # domain change orphaned every existing logo — silently, because Google
+      # caches programLogo by URI and nothing errors when it goes stale.
+      #
+      # The URL is now derived on every read in src/merchants/logo.ts. Any new
+      # reference to the column means someone has started storing derived data
+      # again, and the column no longer exists so it would fail at runtime.
+      - name: Check nothing references the dropped logo_url column
+        run: |
+          # Comment lines excluded: several files explain this history on
+          # purpose, and flagging the explanation would be absurd.
+          hits=$(grep -rn 'logo_url' apps/api/src apps/api/scripts \
+                   --include='*.ts' \
+                   | grep -vE ':[0-9]+:[[:space:]]*(\*|//)' || true)
+          if [ -n "$hits" ]; then
+            echo "logo_url is referenced, but the column was dropped in 017:"
+            echo "$hits"
+            echo ""
+            echo "Logo URLs are derived from merchant_assets.version."
+            echo "Use loadLogoUrl() / logoUrlFromVersion() in merchants/logo.ts."
+            exit 1
+          fi
+          echo "✓ nothing references the dropped logo_url column"
+
       # 🚨 Two ways the Google client id silently becomes an empty string in
       # production, both of which look like a correct .env and a missing
       # button. Neither throws, neither logs. See apps/web/src/lib/google.ts.

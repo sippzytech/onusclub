@@ -36,6 +36,7 @@ import { objectOnCurrentIssuer } from "../wallet/state.js";
 import { loadMerchantLocations } from "../merchants/locations.js";
 import { publicEnrolLimiter } from "../http/rate-limit.js";
 import { verifyGoogleIdToken } from "../auth/google.js";
+import { loadLogoUrl } from "../merchants/logo.js";
 
 export const publicRouter: Router = Router();
 
@@ -43,7 +44,6 @@ interface MerchantRow extends RowDataPacket {
   id: string;
   business_name: string;
   brand_color: string | null;
-  logo_url: string | null;
   public_slug: string;
   status: "active" | "suspended" | "trial";
 }
@@ -73,7 +73,7 @@ publicRouter.get(
   "/m/:slug",
   async (req: Request, res: Response<PublicMerchant>) => {
     const [merchants] = await pool.execute<MerchantRow[]>(
-      `SELECT id, business_name, brand_color, logo_url, public_slug, status
+      `SELECT id, business_name, brand_color, public_slug, status
          FROM merchants WHERE public_slug = ? LIMIT 1`,
       [req.params.slug]
     );
@@ -92,7 +92,8 @@ publicRouter.get(
     return res.json({
       businessName: m.business_name,
       brandColor: m.brand_color,
-      logoUrl: m.logo_url,
+      // Derived, not stored — see merchants/logo.ts.
+      logoUrl: await loadLogoUrl(m.id),
       publicSlug: m.public_slug,
       programs: programs.map((p) => {
         const cfg = parseJson<{ stamps_required?: number }>(p.config_json);
@@ -148,7 +149,7 @@ publicRouter.post(
     const phone = input.phone;
 
     const [merchants] = await pool.execute<MerchantRow[]>(
-      `SELECT id, business_name, brand_color, logo_url, public_slug, status
+      `SELECT id, business_name, brand_color, public_slug, status
          FROM merchants WHERE public_slug = ? LIMIT 1`,
       [req.params.slug]
     );
