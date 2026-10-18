@@ -187,6 +187,33 @@ depth — expiry, design, segmentation, deliverability — and on the Google rev
 nine sectors, no wallet passes mentioned). Same "Tap2" prefix, different mechanic. Do not
 conflate them when doing the full tear-down.
 
+### ⚠️ How tear-downs actually get done — Sanchit signs up, Claude analyses
+
+Asked 2026-10-18 whether Claude could take competitors' free trials directly. **No, and
+it is worth writing down why so it is not re-asked each time.**
+
+- **No browser.** Claude can fetch a page's text, not log into an app and click through
+  it. A modern dashboard is JavaScript rendered behind auth; fetching it returns an empty
+  shell, which is exactly the part of the product worth seeing.
+- **Signing up would mean creating an account on a competitor's service under a
+  misleading identity**, and most SaaS terms prohibit access by competitors. That is a
+  business risk for OnUsClub, not just an etiquette problem.
+
+**The working model is the one that produced PERKSTAR_ANALYSIS.md**: Sanchit takes the
+trial and screenshots the dashboard; Claude turns the screenshots into a classified
+inventory. Eighteen screenshots produced the most useful competitive document in this
+repo, and it took one session.
+
+**What to capture, in this order** (roughly 15 minutes per competitor):
+
+1. The **overview/home** screen — every metric card and chart
+2. **Analytics** in full, including any date-range switcher
+3. The **customer list**, and one **customer detail** page
+4. The **campaign/messaging** composer, especially any automation or trigger builder
+5. **Settings** and the **pricing/upgrade** screen — where the paywall sits says what
+   they think is valuable
+6. Anything labelled referral, tiers, levels, or automations
+
 **Next step for Tap2:** take the free trial. Everything above is from marketing pages, and
 the one competitor we know properly is the one we got a sandbox account for.
 

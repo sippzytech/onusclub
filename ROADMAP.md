@@ -588,6 +588,25 @@ Perkstar item #14. Three competitors now have it.
 Punchd puts "Remind" and "DM" on the customer profile. `sendCustomCardMessage` already
 exists in our API with no UI in front of it — this is wiring, not building.
 
+**C7. Tracked print materials** — *~1–1.5 days. Pairs with P11.*
+Tap2 ships "branded, tracked marketing collateral". The backlog already has print-ready
+QR posters; **the word that matters is *tracked***. Not one QR per café but one per
+*placement* — window sticker, table tent, flyer, counter card — so the café learns which
+physical thing actually produced sign-ups. Mechanically it is the same column P11 adds for
+UTM, pointed at paper: a `source` on the enrol link that lands on `customers`. Build it
+with P11, not separately, or it is two migrations for one idea.
+
+**C8. Event cards** — *~2 days. Think before building.*
+Tap2's third card type: a pass for a one-off event, with reminders and live updates. Our
+polymorphic schema (`program_type` + `config_json` + `card_state`) was built for exactly
+this and Day 14 proved adding a type needs no DDL — so it is cheap *mechanically*.
+⚠️ But CLAUDE.md deliberately rules out multipass/discount/cashback/gift/coupon as
+separate types on the grounds that stamp + points already cover them. An event card is
+genuinely different — it has no balance and no reward, it is a dated thing that expires —
+so it does not fall under that rule. Still, it serves a different *buyer* (someone running
+an event, not a café building repeat custom), so the question is whether it is our market
+at all before it is a question of effort.
+
 **Suggested bundle: C1 + C2 together**, about a day and a half, as one "prove the campaign
 worked" push. It closes the only real gap in our dashboard against both competitors.
 
