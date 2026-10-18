@@ -55,11 +55,11 @@ could actually be choosing between.
 | Company | Country | Status | Notes |
 |---|---|---|---|
 | **Perkstar** | 🇬🇧 UK | ✅ **Torn down 2026-06-29** | [PERKSTAR_ANALYSIS.md](./PERKSTAR_ANALYSIS.md). Named in CLAUDE.md as a primary competitor. The COPY list is fully shipped; items 9, 10, 11, 14, 15 remain. |
-| **Tap2** (Tap2Loyal, `tap2.ai`) | 🇳🇱 **Maastricht** | 🟡 **Reviewed 2026-10-18** | Real, trading, Dutch, wallet-native, no customer app. See the tear-down below — they have **automations, referrals and tracked print materials** that we do not. |
+| **Tap2** (Tap2Loyal, `tap2.ai`) | 🇳🇱 **Maastricht** | 🟡 Marketing pages only — **🚫 trial requires payment, dropped** | Real, trading, Dutch, wallet-native, no customer app. Advertises **automations, referrals and tracked print materials**. No way to verify without paying. |
 | **iStampr** | 🇵🇱 PL | 🟡 Homepage reviewed 2026-10-18 | Referral programme, campaign multipliers (2× stamps, Fri–Sun, one location), per-location programmes, native cashier app. 99 zł/mo. Reaches the same no-reward conclusion on Google reviews that Day 27 did. |
-| **Loopy Loyalty** | 🌍 Global | ⬜ To visit | Repeatedly called the category pioneer for wallet-pass stamp cards. 15-day trial. Probably the most mature product on this list. |
-| **LoyaltyPass** | 🇪🇸/🇬🇧/🇫🇷/Nordics | ⬜ To visit | $99/mo, US/UK/AU/NZ/CA/UAE/DE, 14-day trial. Also runs a large comparison-blog operation — useful intel on how the category positions itself. |
-| **Passtastic** | 🌍 30+ countries | ⬜ To visit | Claims 3,000+ shops. Stamps, points, levels **and** coupons — the "levels" (tiers) are worth looking at. Free to start. |
+| **Loopy Loyalty** | 🌍 Global | ⬜ **To visit — trial verified card-free** | Category pioneer. $25/$69/$95 per month, 15-day trial; card only needed to publish. |
+| **LoyaltyPass** | 🇪🇸/🇬🇧/🇫🇷/Nordics | ⬜ **To visit — claims card-free trial** | $99/mo, 14 days. Also runs a large comparison-blog operation — useful intel on how the category positions itself. |
+| **Passtastic** | 🌍 30+ countries | 🏆 **NEXT — trial verified card-free** | 3,000+ shops. €39/mo after 14 days, *"pay nothing until you publish"*. **Tiers, automations, "ready to redeem" groups and one-tap messaging** — four backlog items in one dashboard. |
 | **Stamplit** | 🌍 | ⬜ To visit | Straight wallet stamp cards. |
 | **7Stamp** | 🌍 | ⬜ To visit | No-app stamp cards + loyalty campaigns. Listed on Capterra/GetApp, so real reviews exist. |
 | **Stampit** | 🌍 | ⬜ To visit | Stamp cards **and coupons** in both wallets. |
@@ -214,8 +214,45 @@ repo, and it took one session.
    they think is valuable
 6. Anything labelled referral, tiers, levels, or automations
 
-**Next step for Tap2:** take the free trial. Everything above is from marketing pages, and
-the one competitor we know properly is the one we got a sandbox account for.
+### 🚫 Tap2 trial: blocked, 2026-10-18
+
+**Sign-up requires payment up front — there is no card-free trial.** Dropped rather than
+paid for. Recorded so nobody retries it.
+
+What that leaves: everything in this section is from marketing pages and should be read
+as marketing. Their *claims* (automations, referrals, tracked print) are still worth
+having on the backlog — a competitor advertising a feature is evidence of demand whether
+or not the feature is any good — but we have no idea how well any of it works, and no
+screenshots of the trigger builder, which was the thing most worth seeing.
+
+Revisit only if they add a real trial, or if a Dutch café we are pitching already uses
+them and will show us.
+
+### ✅ Where to go instead — trials verified 2026-10-18
+
+Checked specifically for *card-free* access, since that is what just blocked Tap2:
+
+| Company | Trial | Card needed to look around? | Why this one |
+|---|---|---|---|
+| **Passtastic** | 14 days, €39/mo after | **No** — *"Build your loyalty card in 5 minutes. Pay nothing until you publish."* | 🏆 **Best target.** Hits four backlog items at once |
+| **Loopy Loyalty** | 15 days, $25/$69/$95 per month | **No** — card only required to move a draft project live | The category pioneer; most mature product on the list |
+| **LoyaltyPass** | 14 days, $99/mo | **No** (claims "no credit card required") | US/UK/AU/NZ/CA/UAE/DE |
+
+**Why Passtastic first.** Its marketing already shows four things sitting on our backlog:
+
+- **Levels/Tiers** — Silver/Gold/Platinum → **P14**
+- **Automated campaigns** — birthdays, win-back flows, geofenced reminders → **P9**, the
+  biggest gap, and the thing the Tap2 trial would have shown
+- **Customer groups: "ready to redeem", "inactive", "new"** — ⚠️ *"ready to redeem"* is
+  **our C1 "one stamp away" under a different name**. That is now a **third** competitor
+  with the idea, and it is the cheapest item on the C-list
+- **One-tap messaging** from the customer list → **C6**
+
+Four backlog items in one dashboard, free to look at. It is a better target than Tap2 was.
+
+Their pricing line is worth noting too: *"scales with locations, not customers. No revenue
+share. No per-card surprises."* Same philosophy as our flat €30 — useful phrasing if we
+ever rewrite the pricing page.
 
 ---
 
