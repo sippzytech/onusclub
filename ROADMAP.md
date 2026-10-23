@@ -653,6 +653,66 @@ would be demonstrable the day it ships, with no third-party account.
 ⚠️ Outbound HTTP from the api to merchant-controlled URLs is an SSRF surface — block
 private ranges and localhost, cap redirects, and time out hard.
 
+**C13. Per-location attribution and reports** — *~1–1.5 days.*
+⚠️ **Noted in three competitor write-ups and never actually added to this list** until
+now. iStampr runs separate programmes per shop or one with split metrics; Passtastic sells
+"per-location reports" on its middle tier — i.e. people pay for it.
+
+We have `locations` **for geofencing only**. Nothing records *which* shop a stamp happened
+at, so a two-site café cannot see which one is working. The scan path knows the staff user;
+it does not know the till. Needs a location on `card_events` (nullable — one-site cafés
+must not be forced to care) and a location filter on Analytics.
+
+💡 Also the natural home for C3's "Canal Side only" multiplier, so consider them together.
+
+**C14. POS integration — Lightspeed first** — *3–5 days, and a strategy call more than a
+build.*
+Passtastic integrates Square, Lightspeed and Holded; Loopy has Zapier/Make. 🚨 **Lightspeed
+is the one that matters for NL — it is what Piggy integrates with**, and it is how a Dutch
+café's till already works.
+
+⚠️ Think before building. Our whole pitch is "no hardware, no POS integration, works
+anywhere" — an integration is the *opposite* promise and a permanent maintenance liability
+per vendor. **C12 (webhooks) is the cheap hedge**: it answers "do you integrate?" without
+owning anyone's API. Do C12, see whether real cafés actually ask for Lightspeed, and only
+then decide.
+
+**C15. Delay the review ask** — *~0.5 day. Revisits a Day 27 decision.*
+iStampr asks for a Google review *"a couple of hours after a visit, never at the till"*.
+Ours shows on the card page for 14 days after a redemption, which requires the customer to
+open the card.
+
+Theirs catches people once they have left and are relaxed; ours waits to be found.
+⚠️ But Day 27 **deliberately rejected wallet push for this** — a review request arriving
+unprompted on a lock screen is pushier than one sitting in a card they chose to open, and
+it spends one of the limited daily wallet messages on something that is not about their
+balance. Changing it means reversing a reasoned decision, so decide the principle first.
+A middle path: keep the card-page prompt, add *one* delayed push only after a redemption,
+capped to once per customer per N months.
+
+#### 🆕 Marketing-site items from the sweep (separate repo)
+
+These live in `sippzytech/onusclubwebsite`, not here. Recorded so they are not lost.
+
+**M1. Say that we stop people gaming the card** — *~15 minutes.*
+Loopy Loyalty markets "built-in measures against customers gaming the system" as a
+headline feature. **We have that rule** — one stamp per day per card, in
+`cards/operations.ts` — and mention it **nowhere a merchant can see**. Free credibility
+for a feature already built and tested.
+
+**M2. Replace the removed testimonials** — *when there are real customers.*
+The section is commented out of `app/page.tsx` with the component left in the tree.
+Restoring it is one line, the day there are real quotes given with permission. See the
+2026-10-18 entry.
+
+**M3. Sourcing for the remaining stats** — *unresolved.*
+"60% more visits", "3× more spend", "25% higher retention" and the kept "5×" are all
+unsourced industry figures. Having just removed fabricated testimonials for being a
+misleading commercial practice, these sit in the same family. Either find real sources or
+soften the claims.
+
+---
+
 **Suggested bundle: C1 + C2 together**, about a day and a half, as one "prove the campaign
 worked" push. It closes the only real gap in our dashboard against both competitors.
 
