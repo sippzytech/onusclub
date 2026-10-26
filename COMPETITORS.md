@@ -430,6 +430,88 @@ customers who deleted the pass.
 
 ---
 
+## Final wave — Boomerangme, Stamp Me, 7Stamp, Stampioo, Wallet Loyalty, FaveCard (2026-10-26)
+
+**The sweep is complete.** Eleven companies looked at; the long tail of Tier 1 is not
+worth individually visiting — the last six produced six ideas between them and heavy
+repetition, which is itself the finding.
+
+### 🚨 Correction: one of them DOES charge per customer
+
+I wrote earlier that "none of them charges per customer or per card, and neither do we."
+**Wallet Loyalty does**: €19 per location per month including 500 customers, then **€5 per
+additional 500**. Growth-priced on the thing that grows. Noted because it was stated as a
+category fact and it is not one.
+
+### The best single idea found: AI onboarding
+
+**Boomerangme's "Richie"** takes a **Google Business Profile link** and builds the card,
+the rules and the first messages from it. Paste a link, get a working programme.
+
+Ours is a four-step checklist filled in by hand. The profile supplies name, category,
+address and photos — enough to pick a template, suggest a reward, set a stamp count and
+draft a welcome. **We already have the AI integration, the template gallery and Google
+link parsing.** → **C19**, and it is the feature that would justify turning
+`ANTHROPIC_API_KEY` on in production.
+
+### Wallet Loyalty — the closest competitor by shape
+
+Copenhagen, **€19 per location**, site and counter posters in **12 languages including
+Dutch**. Stamps, points, prepaid and membership cards.
+
+🚨 Their automation list is **exactly C9**: *welcome, reward ready, birthday, win-back,
+nearby*. Second independent confirmation of that precise set — C9 is not a guess.
+
+💡 **"Scheduled messages are sent in each customer's language."** We draft per *merchant*
+(NL or EN from `merchants.country`), so an Amsterdam café sends its English, Dutch and
+Spanish regulars the same language. → **C21**, nearly free given the Day 28 drafter
+already takes a language parameter.
+
+### Friction: we ask for more than anyone else
+
+- **7Stamp:** "registration isn't required", join in ~15 seconds
+- **Wallet Loyalty:** "customers never need to provide an email, phone number or name"
+- **Us:** name **plus** phone or email, required
+
+At a counter with a queue, every field costs sign-ups. The counter-argument is real — no
+contact details means no win-back, no birthday, no email — so → **C22** as a *merchant
+choice*, not a new default.
+
+### Monetisation shapes worth knowing
+
+| | Model |
+|---|---|
+| **7Stamp** | **Free Forever** (25 card ops/month), then **per staff login** ($17.50) |
+| **FaveCard** | Free tier gives a **browser card**; the **wallet pass is the paid upsell** |
+| **Wallet Loyalty** | €19/location + €5 per extra 500 customers; 20% off extra locations, 35% from the 6th |
+| **Passtastic** | Locations + scanners as separate add-ons |
+| **Loopy** | Card designs × locations × sub-users |
+| **Joyn** | Feature tiers, mid-tier sold on **VAT export** |
+| **Us** | One price, one boolean premium flag |
+
+Two free-tier strategies to consider: 7Stamp caps *operations*; FaveCard withholds the
+*wallet pass* itself, which is a neat way to make the free tier genuinely useful and the
+upgrade obvious.
+
+### Repeated ideas — the strongest prioritisation signal
+
+- **A "lapsed / haven't visited recently" view** appears in essentially every tool.
+- **A "ready to redeem / one stamp away" view** — Punchd, Passtastic, Stampioo, FaveCard.
+  **Four.** → **C1**, still the cheapest item on the list.
+- **Google review ask with no reward** — iStampr, FaveCard, and 7Stamp's feedback flows.
+  Third-party confirmation that Day 27 called it right.
+- **Kiosk mode** — 7Stamp and FaveCard. → **C23**
+- **Gamified rewards** — Stamp Me (scratch-and-win), 7Stamp (lottery). → **C24**
+
+### Not competitors, confirmed
+
+**Stamp Me** is app-based — customers join via the Stamp Me app, with the wallet holding
+only a Member Code. It also sells NFC hardware (StampPod, Stamp Tag), which is the
+opposite of our promise. **Boomerangme** is an agency/reseller platform (white-label, 50%
+partner commissions). Both still worth having read.
+
+---
+
 ### The running tally — who has what
 
 Counting the same feature across competitors is the clearest prioritisation signal there
@@ -460,6 +542,65 @@ same group "ready to redeem". It is also the cheapest item on either list, about
 day, running on data we already hold and never expose. *Cheap* plus *independently
 invented twice* is the strongest case on this page for doing something first.
 
+
+---
+
+## 📋 THE SHORTLIST — research complete, decide from here
+
+Eleven competitors read, **24 C-items + 8 P-items** on the backlog. Nothing is being built
+until this is shortlisted. Sorted by **votes × cheapness**, because the two strongest
+signals are "several competitors independently built it" and "we can ship it this week".
+
+### Tier A — cheap, validated, build first (~4.5 days for all five)
+
+| | Item | Effort | Votes | Why |
+|---|---|---|---|---|
+| **C1** | "One stamp away" segment | 0.5d | **4** | Data already held and never exposed. Highest-intent audience there is. |
+| **C9** | Welcome + reward-ready + 30/60/90 win-back | 1.5d | **2 exact** | Wallet Loyalty ships this precise set. Gets most of P9's value for a fifth of the cost. Shares C1's threshold math. |
+| **C16** | Per-merchant visit cycle | 1d | 1 | `classifyRfm()` already takes thresholds as a parameter. Without it every non-café is mislabelled. |
+| **C2** | Campaign attribution | 1d | 3 | Makes all of the above provable. The renewal argument. |
+| **M1** | "We stop people gaming the card" on the site | 15min | 1 | Rule already built and tested. Pure marketing gain. |
+
+### Tier B — strong, more work
+
+| | Item | Effort | Votes |
+|---|---|---|---|
+| **C19** | AI onboarding from a Google Business Profile link | 1.5d | 1 | *The best idea in the sweep.* Pieces already exist. |
+| **C4/P10** | Referral programme | 3–4d | **4** | The only acquisition feature anyone has. Deferred twice. |
+| **C5/P14** | Tiers | 2–3d | **4** | |
+| **C3** | Stamp multipliers | 1–2d | 1 | Easiest thing for a café to ask for. |
+| **C12** | Outbound webhooks | 1d | 2 | Answers "do you integrate?" once. n8n already runs on our VPS. |
+| **C13** | Per-location attribution | 1–1.5d | 3 | People pay for this on Passtastic. |
+| **C20** | Interim / milestone rewards | 1d | 2 | Keeps people mid-card, where they drift. |
+
+### Tier C — real, but decide the principle first
+
+**C22** zero-friction join (questions our own default) · **C15** delayed review ask
+(reverses a Day 27 decision) · **C8** event cards (different buyer) · **C14** POS /
+Lightspeed (contradicts "no integration needed") · **C23** kiosk & terminal modes (new
+form factor) · **C24** gamification (possible gambling rules) · **C17** email channel
+(needs Resend Pro first) · **C18** revenue export (must never be called a VAT document)
+
+### Tier D — parked with reasons
+
+**P9** rules engine *(do C9 first and let demand justify it)* · **P15** scanner PWA
+*(nobody has complained)* · **P16** feedback collection · **P17** merchant ROI · **C6**,
+**C7**, **C10**, **C11**, **C21** · stored value *(a payments product — pair with Stripe)*
+· free tier / pricing-ladder redesign *(a business decision, not a build)*
+
+### What the sweep says about where we already stand
+
+**Ahead of most of the field:** points cards with FIFO expiry, the card design system,
+RFM segmentation, per-card delivery audit with retry, email delivery visibility, the
+no-reward Google reviews loop, Google sign-in on both sides, and a published competitor
+map. Loopy Loyalty — the 15-year category pioneer — advertises no points, no segmentation
+and no geofencing.
+
+**Genuinely behind on three things**, each with four votes: **referral**, **tiers**,
+**automations**. Automations are addressed cheaply by C9.
+
+**The honest summary:** the product is not behind. It is missing a handful of specific,
+mostly cheap features, and it under-sells what it already has.
 
 ---
 

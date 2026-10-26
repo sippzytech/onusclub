@@ -731,6 +731,58 @@ a small one. Labelled "VAT export" it would be wrong in a way that gets someone 
 with the Belastingdienst. Label it **"loyalty-attributed revenue"**, say plainly that it
 excludes non-loyalty sales, and it is useful and honest.
 
+**C19. AI onboarding from a Google Business Profile link** — *~1.5 days. The best idea in
+the whole sweep.*
+Boomerangme's "Richie" takes a Google Business Profile link and **builds the card, the
+rules and the first messages from it**. Paste a link, get a working loyalty programme.
+
+Our onboarding is a four-step checklist the owner fills in by hand. This replaces most of
+it: the profile gives business name, category, address and photos — enough to pick a
+template, suggest a reward ("free coffee" for a café, "free blow-dry" for a salon), set a
+sensible stamp count, and draft the welcome message.
+
+💡 **We already have the Anthropic integration** (Day 28) and the 24-template gallery and
+`parseReviewLink` for Google URLs. This is assembly, not new machinery.
+⚠️ Needs `ANTHROPIC_API_KEY`, which is deliberately unset in production — so this is the
+feature that would justify turning it on.
+
+**C20. Interim / milestone rewards** — *~1 day.*
+Stamp Me offers "interim rewards"; 7Stamp has "Smart Vouchers" that unlock partway. A
+10-stamp card that gives something small at 5 keeps people in the middle of the card, which
+is exactly where they drift. We have one reward at one threshold.
+Fits `config_json` as a list of `{ at: n, reward: text }` — no DDL.
+
+**C21. Per-customer language** — *~1 day.*
+Wallet Loyalty sends "scheduled messages in each customer's language". We draft per
+**merchant** (NL or EN, from `merchants.country`) — so an Amsterdam café with English,
+Dutch and Spanish-speaking regulars sends all three the same language.
+The enrol page can capture the browser's `Accept-Language`; store it on `customers` and
+let broadcasts group by it. ⚠️ With AI drafts (Day 28) this is nearly free — the drafter
+already takes a language parameter.
+
+**C22. Zero-friction join** — *~0.5 day. Question our own default.*
+7Stamp: *"registration isn't required."* Wallet Loyalty: *"customers never need to provide
+an email, phone number or name."* **We require a name plus a phone or email.**
+
+At a counter with a queue, every field costs sign-ups. The counter-argument is real —
+without contact details there is no win-back, no birthday, no email — so this is a
+*merchant choice*, not a new default: a per-program toggle for "ask for details" vs "just
+give them the card", with the trade spelled out in the UI.
+
+**C23. Kiosk and terminal modes** — *~2 days.*
+Two ideas, both reducing what staff must do:
+- **Kiosk mode** (7Stamp, FaveCard): a tablet on the counter where customers stamp
+  themselves. ⚠️ Needs anti-abuse — ours is one-stamp-per-day-per-card, which helps.
+- **Terminal mode** (7Stamp): runs on the café's **existing Android payment terminal**, so
+  there is no extra device at all. Clever, and very much our "no hardware" story — but it
+  means supporting a new form factor.
+
+**C24. Gamified rewards** — *~1.5 days. Lower priority.*
+Stamp Me has scratch-and-win; 7Stamp has lottery rewards on cycle completion. A chance of
+something bigger instead of a certainty of something small. Two competitors, so real — but
+it is a novelty next to C1/C9, and in some jurisdictions prize draws attract gambling
+rules. Check before building.
+
 #### 🕐 Deferred — gift cards / store credit
 
 Three competitors sell stored value: Piggy (gift cards + prepaid), Passtastic (*"online
@@ -758,6 +810,12 @@ for a feature already built and tested.
 The section is commented out of `app/page.tsx` with the component left in the tree.
 Restoring it is one line, the day there are real quotes given with permission. See the
 2026-10-18 entry.
+
+**M4. Free standalone tools as an SEO funnel** — *a growth tactic, not a feature.*
+Stampioo publishes free tools — loyalty card maker, menu maker, reward calculator, Google
+review QR generator, Wi-Fi QR generator, counter kit — each a landing page that ranks and
+funnels to signup. Cheap to build, and several are things we already have the pieces for
+(we render cards, we parse Google review links, we make QR codes).
 
 **M3. Sourcing for the remaining stats** — *unresolved.*
 "60% more visits", "3× more spend", "25% higher retention" and the kept "5×" are all
