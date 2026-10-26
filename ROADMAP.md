@@ -690,6 +690,60 @@ balance. Changing it means reversing a reasoned decision, so decide the principl
 A middle path: keep the card-page prompt, add *one* delayed push only after a redemption,
 capped to once per customer per N months.
 
+**C16. Per-merchant visit cycle (configurable RFM thresholds)** — *~1 day. Architecture
+is already ready.*
+LoyaltyPass sells *"timing-based win-back for cycle-driven businesses"*, and it is a
+better idea than anything else found this week. **"Gone quiet" is not a fixed number of
+days — it depends on the trade.** A café's quiet is two weeks; a barber's is six; a
+dentist's is nine months. We apply **30 / 90 / 5 visits to everyone**, which silently
+mislabels every non-café as lost.
+
+💡 **`classifyRfm()` already takes thresholds as a parameter** —
+`packages/shared/src/contracts.ts` even says why: *"a barber or a gym would want different
+numbers, which is why these are a parameter and not constants buried in a query."* And
+`routes/analytics.ts` says the settings UI "belongs with the master dashboard". The
+thinking is done; only the form is missing.
+
+Ships as three numbers on `/dashboard/settings` (recent days, lapsed days, frequent
+visits), stored on the merchant, read by analytics, broadcasts and the inactivity sweep.
+⚠️ They must flow to **all three** or segments will disagree with who actually gets
+messaged.
+
+**C17. Email as a second campaign channel** — *~1.5 days.*
+Piggy automates email, SMS and social. We send transactional email and the weekly digest,
+but **campaigns are wallet-push only** — so a customer who deleted the pass is unreachable,
+and that is precisely the lapsed customer a win-back is aimed at.
+
+We already have `sendEmail`, `email_deliveries` and the audience filters. This is mostly
+wiring the broadcast composer to a second channel.
+⚠️ Resend's 100/day cap binds here hard — a single 200-person broadcast exceeds it. Resend
+Pro is a prerequisite, not a nice-to-have.
+
+**C18. Revenue export for the bookkeeper** — *~0.5 day, with one hard rule.*
+Joyn's middle tier is differentiated by *"automated VAT export for bookkeeping"* — not a
+loyalty feature at all, but admin relief, and the kind of thing a Dutch SMB owner's
+accountant asks for quarterly. We hold `card_events.amount_cents` and the merchant's
+currency; a CSV of captured revenue by period is nearly free.
+
+🚨 **It must never be presented as a tax document.** Our amounts are *optional* and
+captured only at loyalty scans, so they are a **subset** of the café's takings — possibly
+a small one. Labelled "VAT export" it would be wrong in a way that gets someone in trouble
+with the Belastingdienst. Label it **"loyalty-attributed revenue"**, say plainly that it
+excludes non-loyalty sales, and it is useful and honest.
+
+#### 🕐 Deferred — gift cards / store credit
+
+Three competitors sell stored value: Piggy (gift cards + prepaid), Passtastic (*"online
+sales of memberships, bundles and store credit at 0.99% + Stripe"*) and Punchd (prepaid
+wallet credit). It is a real pattern and a revenue line.
+
+**But it is a payments product**, not a loyalty feature: taking money for value redeemed
+later means balances that are customer funds, refunds, expiry law (gift-card expiry is
+regulated in the EU), and accounting. It belongs with Stripe billing and memberships, not
+before them. Recorded so the pattern is not forgotten.
+
+---
+
 #### 🆕 Marketing-site items from the sweep (separate repo)
 
 These live in `sippzytech/onusclubwebsite`, not here. Recorded so they are not lost.

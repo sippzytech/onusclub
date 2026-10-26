@@ -25,12 +25,13 @@ This file used to name only **Perkstar** (UK) and **Tap2** (NL). Two corrections
   our exact positioning, in Dutch, already. **"No app to download" is the price of entry
   here, not a differentiator.** Against Tap2 we differentiate on depth (points expiry,
   card design, RFM, deliverability) and the Google reviews loop.
-- **Piggy** (NL, 1.3M users, 1,600+ businesses, Lightspeed-integrated) **and Joyn** (BE,
-  2.2M cardholders, 1.1M app downloads) were missing entirely. **Both require a customer
-  app**, so by our own axis neither is a direct competitor — but they are who a Dutch café
-  actually compares us to, and their dashboards and pricing ladders are still worth
-  copying. Joyn runs three tiers (€17 / €51 / €68 per month) where we have one price and a
-  boolean premium gate.
+- **Piggy** (NL) **and Joyn** (BE) were missing entirely. **Both require a customer app**,
+  so neither is a direct competitor by the axis below. And **Piggy is not competing for
+  our customer at all**: $79–$849/month, "for brands getting started with loyalty", with a
+  suite spanning CRM, email, SMS, gift cards, vouchers and employee loyalty. Joyn is
+  €17/€51/€68 and app-based. At €30/month wallet-native we sit between Joyn's Lite and
+  Connect and well under Piggy — a defensible spot for a single café. **Tap2 is the one to
+  worry about, not Piggy.**
 
 **The classification axis** (and the reason the list is sorted this way): **if the
 customer must download an app, it is not a direct competitor** — our whole promise is that

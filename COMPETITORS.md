@@ -58,7 +58,7 @@ could actually be choosing between.
 | **Tap2** (Tap2Loyal, `tap2.ai`) | 🇳🇱 **Maastricht** | 🟡 Marketing pages only — **🚫 trial requires payment, dropped** | Real, trading, Dutch, wallet-native, no customer app. Advertises **automations, referrals and tracked print materials**. No way to verify without paying. |
 | **iStampr** | 🇵🇱 PL | 🟡 Homepage reviewed 2026-10-18 | Referral programme, campaign multipliers (2× stamps, Fri–Sun, one location), per-location programmes, native cashier app. 99 zł/mo. Reaches the same no-reward conclusion on Google reviews that Day 27 did. |
 | **Loopy Loyalty** | 🌍 Global | 🟡 **Public pages reviewed 2026-10-18** | Category pioneer, but **thinner than us** — no points, no segmentation, no geofencing advertised. Has Zapier + Make. |
-| **LoyaltyPass** | 🇪🇸/🇬🇧/🇫🇷/Nordics | ⬜ **To visit — claims card-free trial** | $99/mo, 14 days. Also runs a large comparison-blog operation — useful intel on how the category positions itself. |
+| ~~**LoyaltyPass**~~ | — | ⛔ **Moved to Tier 5 — not SMB self-serve.** From **$9,500 one-time build**, scoped after discovery. The "$99/mo" figure came from their own comparison blog, not their pricing page. |
 | **Passtastic** | 🌍 30+ countries | 🟡 **Public pages reviewed 2026-10-18** | 3,000+ shops. €39/mo after 14 days, *"pay nothing until you publish"*. **Tiers, automations, "ready to redeem" groups and one-tap messaging** — four backlog items in one dashboard. |
 | **Stamplit** | 🌍 | ⬜ To visit | Straight wallet stamp cards. |
 | **7Stamp** | 🌍 | ⬜ To visit | No-app stamp cards + loyalty campaigns. Listed on Capterra/GetApp, so real reviews exist. |
@@ -86,8 +86,8 @@ base.
 
 | Company | Country | Scale | Customer app? | Status |
 |---|---|---|---|---|
-| **Piggy** | 🇳🇱 NL | **1.3M users, 1,600+ businesses.** Founded 2012. Integrated with Lightspeed POS. "The Netherlands' largest digital savings program for local shops." | **Yes** — app, physical card, or phone number | ⬜ To visit |
-| **Joyn** | 🇧🇪 BE (+NL/FR) | **2.2M cardholders, 1.1M app downloads.** Tiers at **€16.96 / €50.96 / €67.96 per month** (annual) | **Yes** — "1.1M App downloads" on their own homepage | ⬜ To visit |
+| **Piggy** | 🇳🇱 NL | **1.3M users, 1,600+ businesses.** Founded 2012. Lightspeed-integrated. **$79 / $299 / $849 per month** — aimed at "brands", not single cafés. Broad suite: CRM, email, SMS, gift cards, vouchers, employee loyalty. | **Yes** | 🟡 **Reviewed 2026-10-26** |
+| **Joyn** | 🇧🇪 BE (+NL/FR) | **2.2M cardholders, 3,000+ merchants, 1.2M txns/mo.** €16.96 / €50.96 / €67.96 | **Yes — confirmed.** *"Customers earn points in the Joyn app."* No wallet support mentioned at all | 🟡 **Reviewed 2026-10-26** |
 
 **So why are they still on the list, and marked 🚨?**
 
@@ -363,6 +363,70 @@ Tiers scale on **card designs (1/3/10) × locations (1/3/10) × sub-users (3/10/
 Passtastic scales on locations + scanners; Joyn on feature tiers. All three grow with the
 customer. **None of them charges per customer or per card** — and neither do we, which is
 worth keeping.
+
+---
+
+## Piggy, Joyn, LoyaltyPass — 2026-10-26
+
+### 🚨 Piggy is not competing for our customer
+
+The assumption was that Piggy, with 1,600 Dutch businesses, was the incumbent squeezing
+us. **Their pricing says otherwise: $79 / $299 / $849 per month**, and the Starter tier is
+described as *"for brands getting started with loyalty."* Brands, not cafés.
+
+And the product is far broader than a loyalty card — Rewards, **Rules and tiers**, **Gift
+cards and Prepaid**, **Vouchers**, **CRM**, **Automations**, **Email marketing**,
+**Touchpoints**, **Forms**, and even **employee loyalty** (rewarding staff for hours
+worked, reviews, referrals). That is a marketing suite. A single café would find it heavy
+and expensive.
+
+**So the Dutch picture is better than feared:**
+
+| | Price | Shape |
+|---|---|---|
+| **Piggy** | $79–$849/mo | Broad marketing suite, aimed at brands |
+| **Joyn** | €17 / €51 / €68 | App-based network, 3,000 merchants |
+| **Tap2** | unknown | Wallet-native, Maastricht — **the real direct competitor** |
+| **Us** | €30/mo | Wallet-native, single cafés |
+
+We sit between Joyn's Lite and Connect, and well under Piggy. For a single café that is a
+defensible spot. **Tap2 remains the one to worry about**, not Piggy.
+
+### Joyn — confirmed app-based, and one idea worth taking
+
+*"Customers earn points on each purchase in the Joyn app."* No mention of Apple or Google
+Wallet anywhere. 2.2M cardholders, 3,000+ merchants, 1.2M transactions/month.
+
+💡 Their **middle tier's differentiator is "automated VAT export for bookkeeping"** — not
+a loyalty feature at all, but admin relief, and apparently what makes a merchant upgrade.
+A reminder that for an SMB owner the adjacent chore can sell better than the core product.
+→ **C18**, with a hard rule attached: our amounts are optional and loyalty-only, so it can
+never be labelled a tax document.
+
+### ⚠️ LoyaltyPass — reclassified, I had this wrong
+
+Listed in Tier 1 on the strength of a search result saying *"$99/month, 14-day free trial,
+no credit card required."* **Their own site says solutions start at $9,500 as a one-time
+build**, scoped after discovery, with an ongoing partnership and no trial described.
+
+That is an **agency / custom-build model**, not SMB self-serve. Different buyer, different
+price by two orders of magnitude. Moved out of Tier 1.
+
+The lesson for the rest of this list: **the $99 figure came from LoyaltyPass's own
+comparison blog**, which also ranks LoyaltyPass first in every article. Competitor
+comparison content is marketing. Price a competitor from its own pricing page or not
+at all.
+
+💡 **One good idea from them anyway:** *"timing-based win-back for cycle-driven
+businesses."* Gone-quiet is not a fixed number of days — a café's quiet is two weeks, a
+dentist's nine months. We apply 30/90/5 to everyone. → **C16**, and `classifyRfm()`
+already takes thresholds as a parameter, so the thinking is done and only the form is
+missing.
+
+They also claim **~90% open rates for wallet push against ~20% for email**. Unsourced, so
+do not repeat it — but the direction supports the wallet-first choice, and it is the
+argument *for* C17 keeping push as the primary channel with email as the fallback for
+customers who deleted the pass.
 
 ---
 
