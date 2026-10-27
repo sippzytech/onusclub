@@ -544,6 +544,36 @@ Gated separately on the first real customer: **1** (EU hosting), **4** (Resend P
 
 ### P1 — next builds
 
+#### 🔴 B1. iPhone customers hit a dead end at sign-up — FOUND 2026-10-27
+
+**A defect, not a feature.** Found while reading PassKit's "device-aware landing pages".
+
+`/m/[slug]` — the QR flow at the counter, the highest-friction moment in the product —
+offers **only "Add to Google Wallet"** on its success screen
+(`apps/web/src/app/m/[slug]/enrol-form.tsx`). An iPhone customer who has just scanned the
+QR, typed their details and pressed the button is shown a **Google Wallet** link.
+
+Apple Wallet has worked since **Day 11–12**, and `/c/[qrToken]` offers both buttons
+correctly. The public enrol screen never got the second one.
+
+**Why it is stuck:** `PublicEnrolResult` returns only `{ walletSaveUrl, existing }`. There
+is no `qrToken`, so the success screen *cannot* link to
+`GET /v1/public/c/:qrToken/apple-pass` even though that endpoint exists and works.
+
+**Fix (~0.5 day):** add `qrToken` to `PublicEnrolResult`, render both buttons, and
+optionally order them by `navigator.userAgent`. Prefer showing **both** over guessing —
+`/c/[qrToken]` already shows both and a wrong guess hides the only working option.
+
+⚠️ Roughly half of Dutch phones are iPhones. If this is as it reads, **every iOS customer
+has been failing to get a card at the counter since the public enrol flow shipped.** It
+was invisible because the card page — which is what gets tested — is correct, and because
+every merchant in production is test data.
+
+**Unverified:** nobody has watched an iPhone go through `/m/[slug]`. Confirm on a real
+device before assuming the worst; the code is unambiguous but the behaviour is not tested.
+
+---
+
 #### 🆕 From the competitor sweep, 2026-10-18
 
 Six ideas from Punchd and iStampr, ranked. Full reasoning and the list of who still needs

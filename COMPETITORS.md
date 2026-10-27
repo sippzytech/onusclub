@@ -61,14 +61,14 @@ could actually be choosing between.
 | ~~**LoyaltyPass**~~ | — | ⛔ **Moved to Tier 5 — not SMB self-serve.** From **$9,500 one-time build**, scoped after discovery. The "$99/mo" figure came from their own comparison blog, not their pricing page. |
 | **Passtastic** | 🌍 30+ countries | 🟡 **Public pages reviewed 2026-10-18** | 3,000+ shops. €39/mo after 14 days, *"pay nothing until you publish"*. **Tiers, automations, "ready to redeem" groups and one-tap messaging** — four backlog items in one dashboard. |
 | **Stamplit** | 🌍 | ⬜ To visit | Straight wallet stamp cards. |
-| **7Stamp** | 🌍 | ⬜ To visit | No-app stamp cards + loyalty campaigns. Listed on Capterra/GetApp, so real reviews exist. |
+| **7Stamp** | 🌍 | 🟡 **Reviewed 2026-10-26** — Free Forever tier (25 ops/mo), then **per staff login** $17.50. Kiosk, Autopilot and **Terminal mode on existing Android payment terminals**. Lottery rewards. No registration needed to join. |
 | **Stampit** | 🌍 | ⬜ To visit | Stamp cards **and coupons** in both wallets. |
-| **Stampioo** | 🌍 | ⬜ To visit | $29/mo starter — the cheapest credible entry found. Worth understanding what they cut. |
-| **Wallet Loyalty** | 🇪🇺 | ⬜ To visit | €19/location/month, **12 languages incl. Dutch**. Closest pricing competitor to our €30. |
+| **Stampioo** | 🌍 | 🟡 **Reviewed 2026-10-26** — 30-day trial, no card. Thin product. Notable for its **free SEO tools** funnel (card maker, menu maker, review QR) → M4. |
+| **Wallet Loyalty** | 🇪🇺 | 🟡 **Reviewed 2026-10-26** — Copenhagen. €19/location + €5 per extra 500 customers. **12 languages incl. Dutch.** Automations are **exactly C9**. Per-**customer** language → C21. |
 | **Stamperly** | 🌍 | ⬜ To visit | |
 | **Stampi** | 🌍 | ⬜ To visit | |
 | **stmpr.io** | 🌍 | ⬜ To visit | |
-| **FaveCard** | 🌍 | ⬜ To visit | Has a free tier — check where the wall sits. |
+| **FaveCard** | 🌍 | 🟡 **Reviewed 2026-10-26** — Free tier gives a *browser* card; the **wallet pass is the paid upsell**. Kiosk mode. Printable QR signs in 3 sizes. No-reward Google review ask. |
 | **Loyaltymaster** | 🌍 | ⬜ To visit | |
 | **SuperCards** | 🇳🇱? | ⬜ To visit | Publishes Dutch-language competitor guides (`guides.supercardsapp.com/nl/`), so likely targeting NL. |
 | **Magic Stamp** | 🌍 | ⬜ To visit | Referenced as a category player in comparison articles. |
@@ -116,10 +116,10 @@ already installed, which beats better.
 
 | Company | Note | Status |
 |---|---|---|
-| **Square Loyalty** | Bundled with Square POS | ⬜ |
-| **Toast Loyalty** | US restaurants | ⬜ |
+| **Square Loyalty** | Bundled with Square POS | 🟡 **Reviewed 2026-10-27** — Apple Wallet passes, phone-number ID at the till, VIP tiers at 1.5×/2×/3×, loyalty-vs-non-loyalty spend comparison |
+| **Toast Loyalty** | US restaurants | ⛔ 403 to fetching; US-only, lowest relevance |
 | **Clover Rewards** | | ⬜ |
-| **Lightspeed** | Relevant to NL, and **integrates Piggy** rather than competing | ⬜ |
+| **Lightspeed** | Relevant to NL, and **integrates Piggy** rather than competing | 🟡 **Confirmed 2026-10-27** — official Piggy integration for Restaurant K-Series. Site 403s to fetching. |
 | **Zettle (PayPal)** | | ⬜ |
 
 ## Tier 4 — Wallet-pass infrastructure and white-label
@@ -129,8 +129,8 @@ the best source of ideas for *what a wallet pass can technically do*.
 
 | Company | Note | Status |
 |---|---|---|
-| **Boomerangme** | Agency/reseller platform: white-label, unlimited sub-accounts, reseller billing, RFM, **6 card types** (stamps, cashback, coupons, subscriptions…). The closest thing to a feature superset. | ⬜ |
-| **PassKit** | Pass infrastructure API | ⬜ |
+| **Boomerangme** | Agency/reseller platform: white-label, unlimited sub-accounts, reseller billing, RFM, **6 card types** (stamps, cashback, coupons, subscriptions…). The closest thing to a feature superset. | 🟡 **Reviewed 2026-10-26** — 8 card types, RFM, push/SMS/email, white-label + 50% reseller commission. **"Richie" AI builds a card from a Google Business Profile link** → C19, the best idea in the sweep. |
+| **PassKit** | Pass infrastructure API | 🟡 **Reviewed 2026-10-27** — device-aware landing pages (→ B1), pass-event webhooks (→ C12) |
 | **Passcreator** | 🇩🇪 DE | ⬜ |
 | **Passworks** | 🇵🇹 PT | ⬜ |
 | **Airship Wallet** (ex-Urban Airship) | Enterprise wallet messaging | ⬜ |
@@ -545,11 +545,93 @@ invented twice* is the strongest case on this page for doing something first.
 
 ---
 
+## Tier 3 & 4 — the ones never visited (2026-10-27)
+
+### 🔴 The sweep's single most valuable output was a bug in our own product
+
+PassKit sells **"device-aware landing pages"** — detect the device, serve the right pass.
+Checking whether we do that found that **`/m/[slug]` offers only "Add to Google Wallet"**
+on its success screen. Apple Wallet has worked since Day 11–12, and `/c/[qrToken]` offers
+both buttons. The public enrol flow never got the second one. → **B1**, now top of the
+backlog.
+
+### Square Loyalty — closer to us than expected
+
+**Apple Wallet passes are supported** (no Google Wallet mentioned). Customers identify with
+a **phone number at the till**. **Tiered VIP Bronze/Silver/Gold at 1.5× / 2× / 3×** — that
+is C5 and C3 in one. Email and text campaigns via Square Marketing. 30-day trial.
+
+🚨 **One dashboard metric we structurally cannot copy:** *"average spend of loyalty versus
+non-loyalty customers."* Square is the till, so it sees every transaction. We only see
+loyalty scans, and only when staff type an amount. Worth knowing: a POS-attached
+competitor can always out-measure us on program ROI, which is an argument for C2
+(campaign attribution, which we *can* do) over chasing program-level ROI we cannot.
+
+**Toast** and **Lightspeed** both returned 403 to automated fetching. Not retried.
+
+### Lightspeed + Piggy, and a correction
+
+Lightspeed officially lists **Piggy** for Restaurant K-Series (points, vouchers, tiers,
+gift cards at the POS, no coding). And ⚠️ **Piggy is bigger than recorded**: press and job
+listings say **10,000+ businesses including Vapiano, SPAR and Yoghurt Barn**, not the
+1,600 first found. Based in Maarssen.
+
+That reinforces rather than changes the conclusion — Vapiano and SPAR are chains. Piggy is
+after brands; we are after the single café.
+
+### 💡 Competitive ammunition: what Dutch consumers say about Piggy
+
+**SuperCards** turned out not to be a competitor at all — it is a free consumer app that
+stores other people's loyalty cards, with a Dutch "Spaargidsen" SEO content operation.
+Their Piggy guide is unusually useful, because it is written for *consumers*:
+
+- Login errors and **disappearing points** through 2024–2025; they advise keeping a
+  physical card as backup
+- Returns of only ~1–3%
+- Points are **store-locked** — not combinable, transferable or cashable
+- 🚨 **"If a shop leaves Piggy, its points may become worthless"**
+- No retroactive points for missed scans; no rounding (€5.95 earns 5 points)
+
+That last-but-one point is the sharpest argument for our model that exists: **on a network,
+the customer's balance depends on the network; on our cards it belongs to the café.** Not a
+feature to copy — copy for the *marketing site*.
+
+### PassKit — infrastructure, and a checklist of pass capabilities
+
+B2B pass infrastructure (APIs, SDKs, webhooks), not an end-user product. Useful as a
+catalogue of what a wallet pass can do:
+
+- **Device-aware landing pages** → found B1
+- **Webhooks on pass events** (install, scan, redemption) → confirms **C12**
+- Email distribution of passes, unique pass URLs, CSV batch issuance
+- A **usage-based pricing calculator** on the marketing site
+
+**Passcreator, Passworks, Airship, Vibes** — same category, not individually visited. The
+category's ideas are represented by PassKit.
+
+### The Tier 1 long tail — deliberately not visited individually
+
+Stamplit · Stampit · Stamperly · Stampi · stmpr.io · Loyaltymaster · Magic Stamp · Snapss ·
+WalletThat · oappso
+
+⚠️ **This is a judgment call, stated plainly so it can be overruled.** The last six Tier 1
+visits produced six ideas and heavy repetition; these are smaller tools in the same
+category. **If any one of them is worth a look it is `WalletThat`**, which positions at
+brands and loyalty vendors rather than cafés and may therefore be shaped differently.
+
+---
+
 ## 📋 THE SHORTLIST — research complete, decide from here
 
 Eleven competitors read, **24 C-items + 8 P-items** on the backlog. Nothing is being built
 until this is shortlisted. Sorted by **votes × cheapness**, because the two strongest
 signals are "several competitors independently built it" and "we can ship it this week".
+
+### 🔴 Before Tier A — fix the bug
+
+| | Item | Effort | Why |
+|---|---|---|---|
+| **B1** | iPhone customers get only a Google Wallet button at sign-up | 0.5d | Apple Wallet has worked since Day 11–12; the public enrol screen never got the button. Roughly half of Dutch phones. Nothing else on this page matters as much. |
 
 ### Tier A — cheap, validated, build first (~4.5 days for all five)
 
