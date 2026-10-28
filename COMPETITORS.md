@@ -694,6 +694,64 @@ time it is recorded as a choice, not as completion.
 
 ---
 
+## The final eight — sweep closed (2026-10-28)
+
+All eight attempted. **Three are dead ends and two were never competitors at all**, which
+is worth knowing: the Tier 1 list was built from search results, and search results
+included things that merely *look* like competitors.
+
+| | Outcome |
+|---|---|
+| **Magic Stamp** | ❌ **Not a competitor.** A free *consumer* app (Park Technology) that stores other businesses' stamp cards — same category as SuperCards. Mixed reviews; users report stamps not recording. |
+| **Stamplit** | ❌ **Domain does not resolve.** Apparently defunct. |
+| **Vibes** | ❌ 404 |
+| **Clover** | ❌ Page returned nothing usable; US POS, lowest relevance |
+| **Zettle** | 🟡 **No real loyalty product.** A payments/POS tool; G2 lists "Loyalty Membership" with no detail. 💡 Notably, the way people connect Zettle to loyalty is a **third-party workflow connector to Loopy Loyalty** — not a native build. |
+| **Stampi** | 🟡 Weak. Uses **its own "Stampi Wallet" app on Android** instead of Google Wallet — a step backwards. Offers a free 20–30 min strategy consultation as an onboarding tactic. |
+| **Passworks** | 🟡 Portuguese pass infrastructure. **Beacons for in-store micro-location**, finer than geofencing but hardware-dependent. REST API + SDKs. Retail/events/travel buyers. |
+| **Airship** | 🟡 Enterprise. **"Adaptive links send the right pass to the right device, pre-loaded with custom offers."** |
+
+### Two conclusions worth keeping
+
+**① C25 is confirmed three times over.** WalletThat's "universal smart link", PassKit's
+"device-aware landing pages" and Airship's "adaptive links" are the same idea from three
+independent vendors, two of them enterprise infrastructure companies. **This is how the
+industry solves the problem B1 exposed** — not two buttons, one link that resolves per
+device. Build both anyway: detection fails on desktop and in in-app browsers.
+
+**② The Zettle finding argues for C12 over C14.** The actual way a small loyalty tool
+reaches a POS is a **third-party workflow connector**, not a native integration — Loopy
+reaches Zettle through `workload.co`, not through code Loopy wrote. That is the whole case
+for **outbound webhooks (C12)** instead of building Lightspeed/Square integrations (C14).
+One week of work answers "do you integrate with X" for every X, permanently.
+
+---
+
+## ✅ SWEEP CLOSED
+
+**~35 companies, all tiers, nothing left unopened.** Of those: one deep tear-down
+(Perkstar, from a paid sandbox), roughly twenty marketing-page reviews, three dead
+domains, two that turned out to be consumer apps rather than competitors, and one
+(Tap2) paywalled before the trial.
+
+**What it produced:** 28 C-items, 8 P-items, 4 marketing items, and — the most valuable
+output — **two real defects in our own product** (B1, B2), both found by reading what
+competitors sell rather than by reading our own code.
+
+**What it settled:**
+
+- We are **ahead of most of the field** on points expiry, card design, RFM, delivery audit,
+  email visibility and the no-reward reviews loop.
+- We are **genuinely behind on three things**, each with 3–5 independent votes: **referral**,
+  **composable automations**, **tiers**.
+- **Tap2 is the direct competitor**, not Piggy. Same country, same model, same promise.
+- Day 27's no-reward position on Google reviews is the **minority** one — and correct.
+  Snapss actively offers rewards for reviews, which risks its own customers' listings.
+
+**Nothing further to research.** The next step is choosing from the shortlist.
+
+---
+
 ## 📋 THE SHORTLIST — research complete, decide from here
 
 Eleven competitors read, **24 C-items + 8 P-items** on the backlog. Nothing is being built

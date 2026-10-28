@@ -862,6 +862,32 @@ Instagram bio, on Google Business, or on a flyer. We already hold business name,
 brand colour, programs, rewards and locations — the content exists; only the page is
 missing. Pairs with **C7/P11** (every share of it is a tracked source) and **C10**.
 
+**C27. Nearest-location wayfinding on the pass** — *~0.5 day.*
+Stampit's pass "directs customers to the nearest location". We store up to **10 locations
+per café** (Day 24) and use them only to trigger a geofence — never to tell the customer
+*where to go*. Both wallets support a location/address field on the pass. A two-site café
+gets this free from data already held.
+
+**C28. Samsung Wallet** — *~2 days. Low priority, recorded for completeness.*
+Passcreator issues Apple, Google **and Samsung** Wallet passes from one editor. Samsung
+Wallet is preinstalled on Samsung phones, which are a meaningful share of Android in
+Europe — though Samsung devices also carry Google Wallet, so the gap is smaller than the
+device share suggests. Park until a merchant actually asks.
+
+#### 🕐 Deferred — a free tier
+
+**Every competitor found has a $0 door; we do not.** 7Stamp caps *operations* (25/month),
+FaveCard withholds the *wallet pass* itself and gives a browser card, stmpr.io caps
+*guests* at 15. Paid entry across the field clusters at **€10–25**; ours is a flat **€30**
+with no way in.
+
+FaveCard's shape is the cleverest — the free tier is genuinely useful and the upgrade is
+obvious, because the wallet pass *is* the product.
+
+⚠️ **A pricing decision, not a build.** It interacts with the premium gate, Stripe billing
+and the trial, and it is the kind of change that is hard to reverse once merchants are on
+it. Listed so it is decided deliberately rather than by default.
+
 #### 🕐 Deferred — gift cards / store credit
 
 Three competitors sell stored value: Piggy (gift cards + prepaid), Passtastic (*"online
