@@ -544,6 +544,69 @@ Gated separately on the first real customer: **1** (EU hosting), **4** (Resend P
 
 ### P1 — next builds
 
+### ✅ DECIDED 2026-10-28 — the shortlist, and why it is ordered this way
+
+47 items came out of the competitor sweep. **Most of them are premature, and the reason is
+one fact: there are zero real customers.** Every merchant in production is test data.
+
+So the retention backlog — "one stamp away", referral, tiers, attribution — is building
+machinery for people who do not exist yet. The ordering below is therefore **broken things
+→ get the first café → make that café succeed**, not "highest vote count first".
+
+| Phase | What | Days |
+|---|---|---|
+| **0** | Things that are broken or free | ~1 |
+| **1** | Get the first café (marketing + funnel) | ~5.5 |
+| **2** | Make that café's customers come back | ~3.5 |
+| **3** | Everything else, once there is data to justify it | — |
+
+#### Phase 0 — broken or free (~1 day)
+
+1. **B1 + C25** — iPhone customers get only a Google Wallet button at sign-up. *0.5d.*
+   Nothing else matters if half the country cannot get a card.
+2. **M10** — trademark attribution in the footer. *10 min.*
+3. **M1** — "we stop people gaming the card" on the site. *15 min.* The rule is already
+   built, tested and unmentioned.
+
+#### Phase 1 — get the first café (~5.5 days)
+
+4. **M5 + M6** — the interactive card designer with the +1 stamp button. *2d.*
+   Replaces ten static PNGs that *claim* customisation. Renderer via a public
+   `card-preview.svg` endpoint (**option A, decided**) so there is one renderer and we can
+   truthfully say the preview is drawn by the same code as a real wallet pass.
+5. **M7** — the designed card carries into signup. *1d.* **Do not ship M5 without M7.**
+   Without it the designer is a toy; with it the funnel inverts — they build a card, and
+   signing up is how they keep it.
+6. **M9** — "the paper card, without the paper problems". *0.5d.* Compares against what a
+   café uses *today*.
+7. **M8** — a Dutch version of the site. *2d.* "Netherlands-first" is the stated
+   differentiator and the shop window is English-only.
+
+#### Phase 2 — make that café's customers come back (~3.5 days)
+
+8. **C1 + C9** — "one stamp away" + welcome / reward-ready / 30-60-90 win-back. *2d.*
+   Shared threshold maths. Four competitors have C1; two ship C9's exact set.
+9. **C16** — per-merchant visit cycle. *1d.* Otherwise every non-café is mislabelled.
+10. **B2** — record which staff member stamped or redeemed. *0.5d.* Demoted from "bug" to
+    here: real, but it needs real staff and real redemptions to matter.
+
+#### Phase 3 — only once there is data
+
+**C2** attribution · **C4/P10** referral (5 votes) · **C5/P14** tiers (4 votes) ·
+**C19** AI onboarding · **C12** webhooks · **C3** multipliers · **C13** per-location ·
+everything else.
+
+#### 🚨 The dependency nobody has connected
+
+**Phase 1 is designed to produce a real café. The moment it does, the Mumbai hosting stops
+being theoretical.** P0 of this backlog says migrate *before the first real merchant* and
+names "a pilot café just to test" as the case that will catch you out.
+
+**So the EU VPS migration is not after Phase 1 — it is part of it.** Either schedule it
+alongside, or do not point Phase 1 at real cafés until it is done.
+
+---
+
 #### 🔴 B1. iPhone customers hit a dead end at sign-up — FOUND 2026-10-27
 
 **A defect, not a feature.** Found while reading PassKit's "device-aware landing pages".
