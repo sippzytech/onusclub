@@ -674,8 +674,30 @@ async function main(): Promise<void> {
   // important assertion is that the DB row was created. We verify by re-
   // enrolling with the same phone and expecting existing=true.
 
+  // Day 31. The enrol response MUST carry a qrToken, or the success screen
+  // cannot offer the Apple pass and every iPhone customer is stuck with a
+  // Google Wallet button. That is what shipped, unnoticed, because the card
+  // page is what gets tested and it was always correct.
+  console.log("→ enrol returns a qrToken, so the Apple pass is reachable");
+  const pubEnrolFull = pubEnrol as unknown as { qrToken?: string };
+  assert(
+    typeof pubEnrolFull.qrToken === "string" && /^[0-9a-f]{64}$/i.test(pubEnrolFull.qrToken),
+    `enrol must return a 64-hex qrToken, got ${pubEnrolFull.qrToken}`
+  );
+
+  console.log("→ that token really does serve an Apple pass endpoint");
+  // 200 with a .pkpass, or 503 when Apple Wallet is not configured locally.
+  // A 404 would mean the token is wrong — which is the failure that matters.
+  const applePassRes = await fetch(
+    `${BASE}/v1/public/c/${pubEnrolFull.qrToken}/apple-pass`
+  );
+  assert(
+    applePassRes.status !== 404,
+    `the enrol qrToken did not resolve to a card (got 404 from apple-pass)`
+  );
+
   console.log("→ public POST enrol again with same phone → existing=true");
-  const pubEnrol2 = await call<{ existing: boolean }>(
+  const pubEnrol2 = await call<{ existing: boolean; qrToken?: string }>(
     "POST",
     `/v1/public/m/${pwSignup.publicSlug}/enrol`,
     {
@@ -685,6 +707,14 @@ async function main(): Promise<void> {
     }
   );
   assert(pubEnrol2.existing === true, "second enrol with same phone should match");
+
+  // The RETURNING-customer path too. It selected only `id` before Day 31, so
+  // even after the new-card path was fixed a "welcome back" would still have
+  // had no token — the same dead end for anyone enrolling twice.
+  assert(
+    typeof pubEnrol2.qrToken === "string" && /^[0-9a-f]{64}$/i.test(pubEnrol2.qrToken),
+    `the welcome-back path must return a qrToken too, got ${pubEnrol2.qrToken}`
+  );
 
   console.log("→ public POST enrol with no phone AND no email → 400");
   let noContact400 = false;

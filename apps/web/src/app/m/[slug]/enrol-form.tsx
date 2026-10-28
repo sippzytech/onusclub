@@ -6,6 +6,8 @@ import { GoogleButton } from "@/components/google-button";
 
 interface SuccessState {
   walletSaveUrl: string | null;
+  /** Needed for the Apple pass link. See PublicEnrolResult.qrToken. */
+  qrToken: string | null;
   existing: boolean;
 }
 
@@ -13,11 +15,21 @@ export function PublicEnrolForm({
   slug,
   programs,
   googleClientId,
+  apiBase,
 }: {
   slug: string;
   programs: PublicProgram[];
   /** "" when the deployment has no client id — then no button renders. */
   googleClientId: string;
+  /**
+   * Browser-facing API origin, for the Apple pass download.
+   *
+   * 🚨 Passed as a PROP, never read from `process.env` here. This is a client
+   * component, and Next inlines NEXT_PUBLIC_* at BUILD time while compose
+   * supplies env at RUNTIME — it would be "" in production. Same rule, and
+   * the same CI guard, as the Google client id. See lib/google.ts.
+   */
+  apiBase: string;
 }): JSX.Element {
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
@@ -61,7 +73,11 @@ export function PublicEnrolForm({
       return;
     }
     const data = (await res.json()) as PublicEnrolResult;
-    setSuccess({ walletSaveUrl: data.walletSaveUrl, existing: data.existing });
+    setSuccess({
+      walletSaveUrl: data.walletSaveUrl,
+      qrToken: data.qrToken ?? null,
+      existing: data.existing,
+    });
   }
 
   async function onSubmit(e: FormEvent<HTMLFormElement>): Promise<void> {
@@ -84,18 +100,55 @@ export function PublicEnrolForm({
             ? "We already have a card for you. Add it to your wallet:"
             : "Tap below to save your loyalty card to your phone."}
         </p>
-        {success.walletSaveUrl ? (
-          <a
-            href={success.walletSaveUrl}
-            className="inline-block rounded-full bg-brand-green px-6 py-3 text-sm font-medium text-white hover:bg-brand-green-deep transition-colors"
-          >
-            Add to Google Wallet
-          </a>
+        {/*
+          BOTH wallets, deliberately — Day 31.
+
+          This screen offered only "Add to Google Wallet" from the day the
+          public enrol flow shipped, while Apple Wallet had worked since
+          Day 11-12 and /c/[qrToken] showed both buttons correctly. Every
+          iPhone customer standing at a counter hit a dead end here.
+
+          Both are shown rather than sniffing the user agent: detection fails
+          in in-app browsers and on desktop, and a wrong guess hides the only
+          button that would have worked. The customer knows which phone they
+          are holding.
+        */}
+        {success.walletSaveUrl || success.qrToken ? (
+          <div className="flex flex-col sm:flex-row gap-2 justify-center">
+            {success.walletSaveUrl ? (
+              <a
+                href={success.walletSaveUrl}
+                className="inline-block rounded-full bg-brand-green px-6 py-3 text-sm font-medium text-white hover:bg-brand-green-deep transition-colors"
+              >
+                Add to Google Wallet
+              </a>
+            ) : null}
+            {success.qrToken ? (
+              <a
+                href={`${apiBase}/v1/public/c/${success.qrToken}/apple-pass`}
+                className="inline-block rounded-full border border-brand-green/25 px-6 py-3 text-sm font-medium text-brand-green hover:bg-brand-cream transition-colors"
+              >
+                Add to Apple Wallet
+              </a>
+            ) : null}
+          </div>
         ) : (
           <p className="text-sm text-brand-olive">
             Wallet save link is not available yet. Please ask the café for assistance.
           </p>
         )}
+        {success.qrToken ? (
+          <p className="text-xs text-brand-olive">
+            Or{" "}
+            <a
+              href={`/c/${success.qrToken}`}
+              className="underline underline-offset-4 hover:text-brand-green"
+            >
+              open your card in the browser
+            </a>{" "}
+            — it works on any phone.
+          </p>
+        ) : null}
         <p className="text-xs text-brand-olive">
           After saving, show the pass on your next visit and the staff will stamp it.
         </p>

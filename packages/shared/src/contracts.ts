@@ -515,6 +515,23 @@ export type PublicEnrolInput = z.infer<typeof PublicEnrolInput>;
 
 export const PublicEnrolResult = z.object({
   walletSaveUrl: z.string().url().nullable(),
+  /**
+   * The new (or existing) card's QR token — Day 31.
+   *
+   * 🚨 Added because this object previously carried only `walletSaveUrl`, and
+   * `walletSaveUrl` is **Google Wallet only**. With no token, the enrolment
+   * success screen had no way to reach
+   * `GET /v1/public/c/:qrToken/apple-pass`, so it offered a Google Wallet
+   * button and nothing else — to everyone, including iPhone users, at the
+   * counter, immediately after signing up.
+   *
+   * Apple Wallet has worked since Day 11-12 and `/c/[qrToken]` showed both
+   * buttons correctly the whole time, which is why nobody noticed: the page
+   * that gets tested was fine, and every merchant in production is test data.
+   *
+   * Optional only so an older client that ignores it still parses.
+   */
+  qrToken: z.string().optional(),
   // true if we matched an existing customer by email/phone and returned that
   // card instead of creating a new one. UI uses this to show "Welcome back".
   existing: z.boolean(),

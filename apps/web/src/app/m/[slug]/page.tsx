@@ -54,6 +54,14 @@ export default async function PublicMerchantPage({
                 slug={merchant.publicSlug}
                 programs={merchant.programs}
                 googleClientId={googleClientId()}
+                // Read HERE, in a server component, and passed down — the same
+                // rule as the Google client id. A client component reading
+                // NEXT_PUBLIC_* gets the build-time value, which is empty in
+                // production. See lib/google.ts.
+                apiBase={
+                  process.env.NEXT_PUBLIC_API_BASE?.replace(/\/$/, "") ??
+                  "http://localhost:4000"
+                }
               />
             </div>
           )}

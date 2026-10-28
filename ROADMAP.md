@@ -560,13 +560,17 @@ machinery for people who do not exist yet. The ordering below is therefore **bro
 | **2** | Make that café's customers come back | ~3.5 |
 | **3** | Everything else, once there is data to justify it | — |
 
-#### Phase 0 — broken or free (~1 day)
+#### ✅ Phase 0 — DONE 2026-10-28
 
-1. **B1 + C25** — iPhone customers get only a Google Wallet button at sign-up. *0.5d.*
-   Nothing else matters if half the country cannot get a card.
-2. **M10** — trademark attribution in the footer. *10 min.*
-3. **M1** — "we stop people gaming the card" on the site. *15 min.* The rule is already
-   built, tested and unmentioned.
+1. ✅ **B1** — both wallet buttons on the enrol success screen, plus a browser-card
+   fallback. Smoke guards it. **C25** deliberately *not* folded in: both-buttons is the
+   robust fix, and a device-sniffing redirect is a separate shareable-URL feature that
+   still needs a decision about the desktop case.
+2. ✅ **M10** — trademark attribution, live.
+3. ✅ **M1** — "Nobody can game the card", live. ⚠️ Broke the marketing build first
+   attempt: `ICONS` in `Features.tsx` is a **positional** array paired with `FEATURES` by
+   index, so a tenth feature with no tenth icon renders `undefined` — it compiles and dies
+   at prerender. Caught before pushing because that repo auto-deploys.
 
 #### Phase 1 — get the first café (~5.5 days)
 
@@ -607,7 +611,7 @@ alongside, or do not point Phase 1 at real cafés until it is done.
 
 ---
 
-#### 🔴 B1. iPhone customers hit a dead end at sign-up — FOUND 2026-10-27
+#### ✅ B1. iPhone customers hit a dead end at sign-up — FIXED 2026-10-28
 
 **A defect, not a feature.** Found while reading PassKit's "device-aware landing pages".
 
@@ -632,8 +636,24 @@ has been failing to get a card at the counter since the public enrol flow shippe
 was invisible because the card page — which is what gets tested — is correct, and because
 every merchant in production is test data.
 
-**Unverified:** nobody has watched an iPhone go through `/m/[slug]`. Confirm on a real
-device before assuming the worst; the code is unambiguous but the behaviour is not tested.
+**✅ FIXED 2026-10-28.** `qrToken` added to `PublicEnrolResult` and returned from **both**
+paths — the new-card path and the "welcome back" path, which selected only `id` and would
+otherwise have stayed broken for anyone enrolling twice. The success screen now renders
+**both** wallet buttons plus a browser-card fallback.
+
+Both buttons rather than user-agent sniffing: detection fails in in-app browsers and on
+desktop, and a wrong guess hides the only button that would have worked.
+
+⚠️ `apiBase` is passed from the server page as a **prop** — `enrol-form.tsx` is a client
+component, so reading `NEXT_PUBLIC_API_BASE` there would have been the Day 29 trap again
+and CI would have failed it.
+
+Smoke asserts the token is 64-hex, resolves at `/apple-pass` rather than 404ing, and is
+returned by the welcome-back path too. Both button strings verified in the production
+bundle.
+
+**Still unverified on hardware** — nobody has watched a real iPhone go through
+`/m/[slug]`.
 
 ---
 

@@ -62,6 +62,13 @@ interface CustomerRow extends RowDataPacket {
 
 interface CardLookupRow extends RowDataPacket {
   id: string;
+  /**
+   * Needed so the enrol response can hand back a token for the Apple pass.
+   * Before Day 31 this SELECT fetched only `id`, so the "welcome back" path
+   * had no token to return and the success screen could only ever offer
+   * Google Wallet. See the comment on PublicEnrolResult.qrToken.
+   */
+  qr_token: string;
 }
 
 function parseJson<T>(value: unknown): T {
@@ -210,19 +217,24 @@ publicRouter.post(
       // If they already have an active card for this program, return it (no
       // duplicate enrolment).
       const [existingCards] = await conn.execute<CardLookupRow[]>(
-        `SELECT id FROM loyalty_cards
+        `SELECT id, qr_token FROM loyalty_cards
           WHERE customer_id = ? AND program_id = ? AND status = 'active'
           LIMIT 1`,
         [customerId, input.programId]
       );
 
       let cardId: string;
+      // Declared out here, not inside the else, because BOTH paths need it:
+      // a returning customer gets the Apple button too.
+      let cardQrToken: string;
       if (existingCards.length > 0) {
         cardId = existingCards[0].id;
+        cardQrToken = existingCards[0].qr_token;
         await conn.commit();
       } else {
         cardId = randomUUID();
         const qrToken = randomBytes(32).toString("hex");
+        cardQrToken = qrToken;
         const initialState =
           programs[0].program_type === "points"
             ? {
@@ -267,6 +279,10 @@ publicRouter.post(
 
       return res.status(isExistingCustomer ? 200 : 201).json({
         walletSaveUrl,
+        // Day 31. Without this the success screen cannot link to the Apple
+        // pass, which is why iPhone customers saw a Google Wallet button and
+        // nothing else from the day this flow shipped.
+        qrToken: cardQrToken,
         existing: existingCards.length > 0,
       });
     } catch (err) {
