@@ -56,7 +56,7 @@ could actually be choosing between.
 |---|---|---|---|
 | **Perkstar** | 🇬🇧 UK | ✅ **Torn down 2026-06-29** | [PERKSTAR_ANALYSIS.md](./PERKSTAR_ANALYSIS.md). Named in CLAUDE.md as a primary competitor. The COPY list is fully shipped; items 9, 10, 11, 14, 15 remain. |
 | **Tap2** (Tap2Loyal, `tap2.ai`) | 🇳🇱 **Maastricht** | 🟡 Marketing pages only — **🚫 trial requires payment, dropped** | Real, trading, Dutch, wallet-native, no customer app. Advertises **automations, referrals and tracked print materials**. No way to verify without paying. |
-| **iStampr** | 🇵🇱 PL | 🟡 Homepage reviewed 2026-10-18 | Referral programme, campaign multipliers (2× stamps, Fri–Sun, one location), per-location programmes, native cashier app. 99 zł/mo. Reaches the same no-reward conclusion on Google reviews that Day 27 did. |
+| **iStampr** | 🇵🇱 PL | 🟢 **Homepage + card designer reviewed 2026-10-18 / 10-28** | Referral programme, campaign multipliers (2× stamps, Fri–Sun, one location), per-location programmes, native cashier app. 99 zł/mo. Reaches the same no-reward conclusion on Google reviews that Day 27 did. |
 | **Loopy Loyalty** | 🌍 Global | 🟡 **Public pages reviewed 2026-10-18** | Category pioneer, but **thinner than us** — no points, no segmentation, no geofencing advertised. Has Zapier + Make. |
 | ~~**LoyaltyPass**~~ | — | ⛔ **Moved to Tier 5 — not SMB self-serve.** From **$9,500 one-time build**, scoped after discovery. The "$99/mo" figure came from their own comparison blog, not their pricing page. |
 | **Passtastic** | 🌍 30+ countries | 🟡 **Public pages reviewed 2026-10-18** | 3,000+ shops. €39/mo after 14 days, *"pay nothing until you publish"*. **Tiers, automations, "ready to redeem" groups and one-tap messaging** — four backlog items in one dashboard. |
@@ -749,6 +749,60 @@ competitors sell rather than by reading our own code.
   Snapss actively offers rewards for reviews, which risks its own customers' listings.
 
 **Nothing further to research.** The next step is choosing from the shortlist.
+
+---
+
+## iStampr's card designer — the page worth stealing (2026-10-28)
+
+Sanchit sent screenshots of `istampr.com`. Their **"Design your loyalty card"** page is the
+best single page found in this whole sweep, and the mechanic underneath it is better than
+the UI.
+
+### What it does
+
+Pick a trade (Cafe / Restaurant / Bakery / Salon / Barber / Shop / Something else), type a
+shop name and a reward, set stamps-to-reward with ± buttons, pick from 11 colours (plus
+custom) and 8 stamp icons — with an **iPhone mockup updating live** beside it.
+
+Their own line under the heading: *"The stamps in the preview are drawn by the same
+renderer as a real wallet pass."*
+
+🚨 **We can say that truthfully and they may not be able to.** `card-art.ts` genuinely is
+the one renderer behind the customer page, the Apple strip, the Google hero and the
+dashboard editor — its header says so, and `pnpm check:wallet` guards it.
+
+### The part that actually converts
+
+Under the designer: *"Give your card a shop name and a reward, and **it is sent with your
+email**."* With an **Edit** link back to the designer.
+
+**The visitor does not sign up and then build a card. They build a card, and signing up is
+how they keep it.** That inverts the funnel, and it is why the designer is not decoration.
+→ **M7**
+
+### What we have on this page today
+
+A section headed *"Customize your card for your business"* containing **ten static PNGs in
+a circular carousel**. We claim customisation and show pictures of it. → **M5**, **M6**
+
+### Everything else on their homepage worth noting
+
+- **"The paper card, without the paper problems"** — a side-by-side against the thing a
+  café uses *today*, not against other software. → **M9**
+- **EN | PL | FR** in the nav. 🚨 They are Polish and ship three languages; **we are
+  "Netherlands-first" and ship English only.** → **M8**
+- **"Already used by"** with logos and counts (250+ / 300+). We removed ours on 2026-10-18
+  for being fabricated; theirs may be real. Restore only with real customers.
+- **Pricing by locations: €25 / €38 / €53.** Fourth pricing ladder recorded, and the
+  closest to ours in level — we are €30 flat for one location.
+- **Footer:** *"Apple Wallet is a trademark of Apple Inc. Google Wallet is a trademark of
+  Google LLC."* We have none. → **M10**
+- **Deliberately human onboarding:** *"No card needed… we reply within one working day and
+  set this card up with you. Your 14 days start once it is live."* The trial clock starts
+  when the card is live, not at signup. A choice, not an oversight — and a different bet
+  from our fully self-serve flow.
+- *"No marketing list, no newsletter. We use it to reply to you and nothing else."* Plain
+  and disarming next to an email field.
 
 ---
 

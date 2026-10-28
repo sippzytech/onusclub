@@ -916,6 +916,65 @@ The section is commented out of `app/page.tsx` with the component left in the tr
 Restoring it is one line, the day there are real quotes given with permission. See the
 2026-10-18 entry.
 
+**M5. 🏆 Interactive card designer on the marketing site** — *~2 days. Sanchit's pick,
+2026-10-28.*
+iStampr's `/design-your-card` is the best page either of us has seen in this category.
+Pick a trade (Cafe / Restaurant / Bakery / Salon / Barber / Shop), type a shop name and a
+reward, set stamps-to-reward with ± buttons, choose a colour and a stamp icon — and an
+**iPhone mockup beside it updates live**, showing the actual wallet card.
+
+**We already have the hard part.** `packages/shared/src/card-art.ts` is the single renderer
+behind the customer page, the Apple strip, the Google hero and the dashboard editor, and
+its own header says: *"Pure functions, zero dependencies, no DOM — so it runs identically
+in the browser and in Node."* Plus 24 templates and 10 tintable icons.
+
+⚠️ **What the site has today is worse than nothing**: a section headed *"Customize your
+card for your business"* that is **ten static PNGs in a carousel**. We claim
+customisation and show stock pictures, while a competitor lets you do it.
+
+🔑 **The one technical decision — the renderer lives in the other repo.**
+Recommended: a public `GET /v1/public/card-preview.svg?trade=&name=&reward=&stamps=&color=&icon=`
+on the api — pure function of its query string, no auth, no DB, cacheable. One renderer,
+zero duplication, and it makes iStampr's own claim literally true for us: *"the stamps in
+the preview are drawn by the same renderer as a real wallet pass."*
+Debounce text inputs ~120ms; colour and icon clicks fire immediately.
+*Alternative if it ever feels laggy:* copy `card-art.ts` into the marketing repo and have
+its build fail when the copy drifts from the raw file on GitHub. Only if needed — a copied
+renderer is exactly the drift this codebase keeps getting bitten by.
+
+**M6. "+1 stamp" on the preview** — *~2 hours, part of M5.*
+Sanchit's second pick. A button that adds a stamp and shows the grid fill in the phone
+mockup. It answers *"what will my customer actually see?"* in one tap, and it is the moment
+the page stops being a brochure. Trivial on top of M5 — the renderer already takes a stamp
+count; this is a `useState` and a button.
+
+**M7. 🚨 The designer's output becomes the signup** — *~1 day. The part that converts.*
+Under iStampr's designer: *"Give your card a shop name and a reward, and **it is sent with
+your email**."* They carry the configured card into the trial request, with an **Edit**
+link back.
+
+So the visitor does not sign up and *then* build a card — they build a card and signing up
+is how they keep it. That is a materially better funnel than ours, and we are well placed:
+`POST /v1/public/leads` already exists, and `PasswordSignupInput` already takes a business
+name. Pass the design through to signup and pre-fill the first program.
+
+**M8. A Dutch version of the site** — *~2 days.*
+🚨 **"Netherlands-first" is our stated core differentiator in `CLAUDE.md`, and the
+marketing site is English-only.** iStampr is Polish and ships **EN / PL / FR**. Wallet
+Loyalty ships twelve languages including Dutch. The product already drafts campaign copy
+in Dutch (Day 28) and the dashboard speaks to Dutch cafés — the shop window does not.
+
+**M9. "The paper card, without the paper problems"** — *~0.5 day.*
+iStampr runs a side-by-side: paper stamp card (lost in a wallet, forgotten, no idea who
+your regulars are, easy to forge) against the wallet card (always on the phone, updates
+itself, you can see the numbers). A concrete comparison against the thing a café is
+*actually using today* beats a feature list, and every claim on our side is true.
+
+**M10. Trademark attribution in the footer** — *~10 minutes.*
+iStampr's footer: *"Apple Wallet is a trademark of Apple Inc. Google Wallet is a trademark
+of Google LLC."* Ours has none, and we name both throughout. Apple's and Google's brand
+guidelines both ask for it.
+
 **M4. Free standalone tools as an SEO funnel** — *a growth tactic, not a feature.*
 Stampioo publishes free tools — loyalty card maker, menu maker, reward calculator, Google
 review QR generator, Wi-Fi QR generator, counter kit — each a landing page that ranks and
