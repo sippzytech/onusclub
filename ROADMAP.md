@@ -574,6 +574,38 @@ device before assuming the worst; the code is unambiguous but the behaviour is n
 
 ---
 
+#### 🔴 B2. Nobody knows which staff member gave away the free coffee — FOUND 2026-10-28
+
+`card_events.staff_user_id` has existed since migration **001**. **Nothing writes it except
+the admin balance-adjustment path** (`applyManualAdjust`). Every ordinary stamp, redeem and
+points_add inserts without it:
+
+```sql
+INSERT INTO card_events (merchant_id, card_id, event_type, delta_json, amount_cents, note)
+```
+
+So a café with three staff cannot answer *"who redeemed these 40 free coffees?"* — and
+redemption is the one event with a real cost attached.
+
+🚨 **Two competitors sell exactly this.** Loyaltymaster markets *"each punch is logged with
+date, time, and staff ID"* under **fraud logging**. WalletThat goes further — a redemption
+PIN per employee, a full Redemption History, and the ability to **restrict redemption to
+set days, set hours, or within a distance of a location**.
+
+**Fix (~0.5 day):** the scan and manual routes already authenticate the staff user —
+`authContext(req).userId` is right there. Pass it into `applyStamp` / `applyRedeem` /
+`applyPointsAdd` and add it to the four INSERTs. Then show it on the card timeline and the
+activity feed, both of which already render `card_events`.
+
+⚠️ This is an *unread column*, the same shape as `google_place_id` before Day 27 and
+`merchants.logo_url` before Day 30 — schema that implies a feature nobody built. Worth a
+grep for others.
+
+💡 The restriction rules (hours, distance, PIN) are a separate, larger feature. The
+**logging** is the cheap half and is what makes the rest possible later.
+
+---
+
 #### 🆕 From the competitor sweep, 2026-10-18
 
 Six ideas from Punchd and iStampr, ranked. Full reasoning and the list of who still needs
@@ -812,6 +844,23 @@ Stamp Me has scratch-and-win; 7Stamp has lottery rewards on cycle completion. A 
 something bigger instead of a certainty of something small. Two competitors, so real — but
 it is a novelty next to C1/C9, and in some jurisdictions prize draws attract gambling
 rules. Check before building.
+
+**C25. Universal smart link** — *folds into B1, ~0 extra.*
+WalletThat ships "a single link that detects the device and installs the card in Apple or
+Google Wallet". That is a more elegant fix for **B1** than two buttons — one URL that works
+on a poster, in an email, in a text.
+⚠️ Build it *alongside* both buttons, not instead: user-agent detection fails on desktop,
+in-app browsers and unusual devices, and a wrong guess hides the only working option.
+
+**C26. A real public page for the café, not just a form** — *~1.5 days. Four votes.*
+Stampit gives each business `yourname.stampit.app` with programs, news and locations.
+Stamperly and FaveCard both ship a free "link-in-bio" page. stmpr.io has a "public business
+webpage". **Four competitors.**
+
+Our `/m/[slug]` is an enrolment form and nothing else. A café has no page to put in an
+Instagram bio, on Google Business, or on a flyer. We already hold business name, logo,
+brand colour, programs, rewards and locations — the content exists; only the page is
+missing. Pairs with **C7/P11** (every share of it is a tracked source) and **C10**.
 
 #### 🕐 Deferred — gift cards / store credit
 

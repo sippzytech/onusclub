@@ -621,6 +621,79 @@ brands and loyalty vendors rather than cafés and may therefore be shaped differ
 
 ---
 
+## The long tail, actually visited (2026-10-28)
+
+I twice judged this tail not worth opening and twice said so as if the sweep were
+finished. Overruled, correctly. **It produced a second bug in our own product and four
+more items.**
+
+### 🔴 B2 — WalletThat and Loyaltymaster both sell something we record and then ignore
+
+- **Loyaltymaster**, under the heading *fraud logging*: *"each punch is logged with date,
+  time, and staff ID."*
+- **WalletThat**: a **redemption PIN per employee**, a full **Redemption History** (who,
+  when, where, which offer), and the ability to **restrict redemption to set days, set
+  hours, or within a distance of a location**.
+
+`card_events.staff_user_id` has existed since migration 001 and **only the admin
+adjustment path writes it**. Ordinary stamps and redeems do not. → **B2**
+
+### More votes for things already on the list
+
+| Idea | Now at | Items |
+|---|---|---|
+| **Referral** | **5+** — Loyaltymaster (WhatsApp/email/SMS/QR), oappso, Perkstar, Tap2, iStampr | C4 / P10 |
+| **A public page for the business** | **4** — Stampit (`name.stampit.app`), Stamperly, FaveCard, stmpr.io | → **C26** |
+| **Kiosk / self-serve stamping** | **4** — 7Stamp, FaveCard, stmpr.io (with daily + waiting-time limits), Snapss | C23 |
+| **Gamification** | **3** — Stamp Me (scratch-and-win), 7Stamp (lottery), Snapss (prize wheel) | C24 |
+| **Free tier** | **5** — 7Stamp, FaveCard, Stamperly, stmpr.io (15 guests), Passcreator | pricing decision |
+
+### New and genuinely different
+
+- **WalletThat — universal smart link.** One URL that detects the device and installs the
+  right wallet pass. A better fix for **B1** than two buttons. → **C25**
+- **Snapss — AI receipt scanning.** The customer photographs a receipt and points are
+  credited, with no staff involvement at all. The most novel mechanic found anywhere.
+- **Snapss — AI segmentation** that auto-groups customers (loyal, dormant, new) *and
+  suggests the campaign*. That is our RFM plus Day 28's drafter, joined up.
+- **Stamperly — geofence your competitor's shop.** Wallet pings when a customer is near
+  *a competitor's* location. Technically trivial with what we already have; whether it is
+  something we want to enable is a different question.
+- **Passcreator — Samsung Wallet**, alongside Apple and Google. Also **EU hosting and ISO
+  27001 sold as features** — worth remembering given production currently sits in Mumbai.
+- **Stampit — the pass points to the nearest location.** We store up to 10 locations for
+  geofencing and never use them for wayfinding.
+
+### 🚨 A competitor is doing the thing Google bans
+
+**Snapss offers "rewards for Google reviews or Instagram follows."** That is precisely what
+Day 27 established is prohibited — and the penalty lands on *their customers'* listings,
+not theirs.
+
+Two consequences. It confirms the Day 27 reading was the minority position but the correct
+one. And it is a **marketing differentiator**: we can say we deliberately do not do this,
+and why. Our own site advertised the same thing until 2026-10-18, so this is a mistake we
+have already made and fixed.
+
+### Pricing, now with enough data to generalise
+
+Free tiers are near-universal at the bottom (7Stamp caps *operations*; FaveCard withholds
+the *wallet pass*; stmpr.io caps *guests* at 15). Paid entry clusters at **€10–25**
+(stmpr.io €10.99, oappso £14, Wallet Loyalty €19, stmpr.io Bronze €24.99) with a second
+band at **€40–99** (Loyaltymaster $40–99, LoyaltyPass-style agency pricing far above).
+
+**Our €30 flat with no free tier sits above the entry band and offers no way in.** Not
+wrong — but every competitor found has a $0 door and we do not.
+
+### Still not individually opened
+
+**Stampi · Stamplit** (404s) **· Magic Stamp · Clover · Zettle · Passworks · Airship ·
+Vibes** — eight, all either generic wallet-card tools whose category is now represented
+several times over, or US-centric POS loyalty. Say the word and they get opened too; this
+time it is recorded as a choice, not as completion.
+
+---
+
 ## 📋 THE SHORTLIST — research complete, decide from here
 
 Eleven competitors read, **24 C-items + 8 P-items** on the backlog. Nothing is being built
@@ -631,7 +704,8 @@ signals are "several competitors independently built it" and "we can ship it thi
 
 | | Item | Effort | Why |
 |---|---|---|---|
-| **B1** | iPhone customers get only a Google Wallet button at sign-up | 0.5d | Apple Wallet has worked since Day 11–12; the public enrol screen never got the button. Roughly half of Dutch phones. Nothing else on this page matters as much. |
+| **B1** | iPhone customers get only a Google Wallet button at sign-up | 0.5d | Apple Wallet has worked since Day 11–12; the public enrol screen never got the button. Roughly half of Dutch phones. Nothing else on this page matters as much. Fold **C25** (universal smart link) into the same change. |
+| **B2** | Ordinary stamps and redeems don't record which staff member | 0.5d | `staff_user_id` has existed since migration 001 and only the admin path writes it. Two competitors sell this as *fraud logging*. The café cannot tell who gave away 40 free coffees. |
 
 ### Tier A — cheap, validated, build first (~4.5 days for all five)
 
