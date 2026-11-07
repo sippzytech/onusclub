@@ -322,44 +322,23 @@ are required and the obvious ones are both wrong:
 
 ## ⏳ OPEN — waiting on a human
 
-### 1. 🚨 Marketing site: fabricated testimonials
+### 1. ✅ RESOLVED — marketing site claims and testimonials
 
-The review-rewards claim is **FIXED and live** (2026-10-18, `onusclubwebsite@866cdbe`):
-both `components/StatsBar.tsx` and `components/Retention.tsx` said *"Automated review
-rewards get you 5× more Google reviews"* — a thing Google bans, with the penalty landing
-on the café's own listing, and a thing this product deliberately does not do. Verified
-gone from the served HTML and the JS chunks.
+Both halves are **fixed and live**, kept here only as the record:
 
-**What was found alongside it and NOT changed**, because it is a content decision rather
-than a bug fix:
+- **Review-rewards claim** (2026-10-18, `onusclubwebsite@866cdbe`). `StatsBar.tsx` and
+  `Retention.tsx` both said *"Automated review rewards get you 5× more Google reviews"* —
+  banned by Google, with the penalty on the café's listing, and false about a product that
+  deliberately does not do it.
+- **Six fabricated testimonials** (2026-10-18, `7472863`). Named people with Unsplash
+  photographs of real strangers, invented businesses and invented results, under a heading
+  reading *"Real results from real businesses."* Removed; the component is left in the tree
+  so restoring it is one line **the day there are real quotes given with permission**
+  (tracked as **M2**).
 
-`components/Reviews.tsx` carries **six named testimonials with photographs** — Sophie van
-den Berg of Bloom Coffee, Daan Visser of Visser Barbers, Amara Osei of Glow Salon, Lars
-Hendriks of IronHouse Gym, Dr. Noor Khalil of Khalil Dental, Marco de Wit of Verde Juice
-Bar — complete with specific claims like *"a 40% jump in repeat visits within the first
-month."*
-
-**There are no real cafés.** Every merchant in production is test data. So these are
-invented people, invented businesses and invented results, illustrated with Unsplash
-photographs of real, identifiable strangers.
-
-Three separate problems:
-
-- **EU/NL consumer law.** Fabricated testimonials are a misleading commercial practice
-  under the Unfair Commercial Practices Directive, and the Netherlands enforces it. The
-  invented statistics make it worse than invented praise.
-- **Google APIs Terms of Service** — the very thing consent-screen brand verification
-  keeps failing on. Removing the review-rewards line may not be enough while this stands.
-- **The photographs are of real people** who never endorsed anything, attributed to names
-  that are not theirs.
-
-**Options:** remove the section until there are real customers; relabel it unmistakably
-as illustrative (weak — the photos still imply real endorsement); or replace it with
-product screenshots and honest feature copy. The last is the only one that is both safe
-and still sells.
-
-Also unverified: the remaining stats (60% more visits, 3× more spend, 25% higher
-retention, and the 5× that was kept). They read as industry figures but carry no source.
+⚠️ Still open from the same review: **M3**, the remaining unsourced stats — "60% more
+visits", "3× more spend", "25% higher retention" and the kept "5×". Same family of problem
+as the testimonials. Either source them or soften them.
 
 ### 2. 🚨 Proximity notifications are built but UNTESTED ON HARDWARE
 
