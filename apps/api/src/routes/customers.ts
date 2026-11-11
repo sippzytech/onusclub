@@ -2,9 +2,11 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { Router, type Request, type Response } from "express";
 import type { ResultSetHeader, RowDataPacket } from "mysql2";
 import {
+  CustomerBlockInput,
   CustomerCreateInput,
   CustomerImportInput,
   type Customer,
+  type CustomerBlock,
   type CustomerImportResult,
   type CustomerImportRowError,
 } from "@onusclub/shared";
@@ -12,8 +14,50 @@ import { pool } from "../db/pool.js";
 import { authContext, requireAuth } from "../auth/middleware.js";
 import { ApiError } from "../errors.js";
 import { normaliseDate, parseCsv, pickField, toCsv } from "../customers/csv.js";
+import { recordBlock } from "../customers/blocks.js";
+import { writeAuditLog, writeAuditLogPooled } from "../admin/audit.js";
 
 export const customersRouter: Router = Router();
+
+interface BlockRow extends RowDataPacket {
+  id: number;
+  merchant_id: string | null;
+  display_hint: string;
+  reason: string;
+  actor_email: string;
+  created_at: Date;
+}
+
+function rowToBlock(r: BlockRow): CustomerBlock {
+  return {
+    id: Number(r.id),
+    merchantId: r.merchant_id,
+    displayHint: r.display_hint,
+    reason: r.reason,
+    actorEmail: r.actor_email,
+    createdAt: new Date(r.created_at).toISOString(),
+  };
+}
+
+interface ActorEmailRow extends RowDataPacket {
+  email: string;
+}
+
+/**
+ * The acting staff user's email, for the audit row.
+ *
+ * `admin_audit_log` denormalises the email on purpose — there is no FK to
+ * staff_users, so the log must capture it at write time or stop naming anyone
+ * the day an account is deleted. The JWT carries only the id, so this is one
+ * indexed read per write. Audit writes are rare; correctness beats saving it.
+ */
+async function actorEmail(userId: string): Promise<string> {
+  const [rows] = await pool.execute<ActorEmailRow[]>(
+    "SELECT email FROM staff_users WHERE id = ? LIMIT 1",
+    [userId]
+  );
+  return rows[0]?.email ?? "(unknown)";
+}
 
 interface CustomerRow extends RowDataPacket {
   id: string;
@@ -285,5 +329,179 @@ customersRouter.post(
       duplicates,
       skipped,
     });
+  }
+);
+
+// ---------------------------------------------------------------------------
+// Removing and blocking customers (Day 32)
+//
+// The café-owner half. The admin half lives in routes/admin/customers.ts and
+// adds the platform-wide scope.
+//
+// Every handler here is merchant-scoped by the WHERE clause, so a café can
+// only ever reach its own rows — the cross-tenant suite in smoke.ts asserts it.
+// ---------------------------------------------------------------------------
+
+/**
+ * DELETE /v1/customers/:id — remove a customer from this café.
+ *
+ * The FK cascade from `customers` clears their cards, events and points
+ * batches. They can enrol again afterwards and start from zero, which is the
+ * difference between this and a block: removing is a reset, not a punishment.
+ */
+customersRouter.delete(
+  "/:id",
+  requireAuth,
+  async (req: Request, res: Response<{ removed: true }>) => {
+    const ctx = authContext(req);
+
+    const [rows] = await pool.execute<CustomerRow[]>(
+      "SELECT id, name, email, phone FROM customers WHERE id = ? AND merchant_id = ? LIMIT 1",
+      [req.params.id, ctx.merchantId]
+    );
+    if (rows.length === 0) throw ApiError.notFound("customer not found");
+
+    await writeAuditLogPooled({
+      actor: { userId: ctx.userId, email: await actorEmail(ctx.userId), merchantId: ctx.merchantId },
+      action: "customer.remove",
+      merchantId: ctx.merchantId,
+      targetType: "customer",
+      targetId: req.params.id,
+      reason: "removed by the café",
+      before: { name: rows[0].name, hasEmail: Boolean(rows[0].email), hasPhone: Boolean(rows[0].phone) },
+    });
+
+    await pool.execute("DELETE FROM customers WHERE id = ? AND merchant_id = ?", [
+      req.params.id,
+      ctx.merchantId,
+    ]);
+    return res.json({ removed: true });
+  }
+);
+
+/**
+ * POST /v1/customers/:id/block — block a customer from THIS café.
+ *
+ * Two writes in one transaction, because either alone is half a feature:
+ * the card status stops the pass working now, the block row stops them
+ * enrolling again later.
+ *
+ * ⚠️ A café owner cannot reach the platform scope. `scope` is accepted in the
+ * contract so one shape serves both surfaces, and rejected here.
+ */
+customersRouter.post(
+  "/:id/block",
+  requireAuth,
+  async (req: Request, res: Response<{ blocked: true }>) => {
+    const ctx = authContext(req);
+    const input = CustomerBlockInput.parse(req.body);
+    if (input.scope === "platform") {
+      // 403 rather than 400: the request is well-formed, the caller is not
+      // allowed to make it.
+      throw new ApiError(
+        403,
+        "forbidden",
+        "only a platform admin can block a customer from every café"
+      );
+    }
+
+    const [rows] = await pool.execute<CustomerRow[]>(
+      "SELECT id, name, email, phone FROM customers WHERE id = ? AND merchant_id = ? LIMIT 1",
+      [req.params.id, ctx.merchantId]
+    );
+    if (rows.length === 0) throw ApiError.notFound("customer not found");
+    const c = rows[0];
+    if (!c.email && !c.phone) {
+      // Nothing to match on at the next enrolment, so the block would be
+      // decorative. Say so rather than pretending it worked.
+      throw ApiError.badRequest(
+        "this customer has no email or phone, so there is nothing to block them by — remove them instead"
+      );
+    }
+
+    const email = await actorEmail(ctx.userId);
+    const conn = await pool.getConnection();
+    try {
+      await conn.beginTransaction();
+      await conn.execute(
+        "UPDATE loyalty_cards SET status = 'blocked' WHERE customer_id = ? AND merchant_id = ?",
+        [c.id, ctx.merchantId]
+      );
+      await recordBlock(conn, {
+        merchantId: ctx.merchantId,
+        email: c.email,
+        phone: c.phone,
+        reason: input.reason,
+        actorUserId: ctx.userId,
+        actorEmail: email,
+      });
+      await writeAuditLog(conn, {
+        actor: { userId: ctx.userId, email, merchantId: ctx.merchantId },
+        action: "customer.block",
+        merchantId: ctx.merchantId,
+        targetType: "customer",
+        targetId: c.id,
+        reason: input.reason,
+      });
+      await conn.commit();
+    } catch (err) {
+      await conn.rollback();
+      throw err;
+    } finally {
+      conn.release();
+    }
+    return res.json({ blocked: true });
+  }
+);
+
+/** GET /v1/customer-blocks — this café's own blocks, newest first. */
+customersRouter.get(
+  "/blocks/list",
+  requireAuth,
+  async (req: Request, res: Response<{ blocks: CustomerBlock[] }>) => {
+    const ctx = authContext(req);
+    const [rows] = await pool.execute<BlockRow[]>(
+      `SELECT id, merchant_id, display_hint, reason, actor_email, created_at
+         FROM customer_blocks
+        WHERE merchant_id = ?
+        ORDER BY id DESC
+        LIMIT 200`,
+      [ctx.merchantId]
+    );
+    return res.json({ blocks: rows.map(rowToBlock) });
+  }
+);
+
+/**
+ * DELETE /v1/customers/blocks/:blockId — lift one of this café's blocks.
+ *
+ * ⚠️ Scoped to `merchant_id` so a café cannot lift a PLATFORM block, which has
+ * `merchant_id IS NULL` and therefore never matches. That is the point: a
+ * platform ban is not something the banned café can undo.
+ *
+ * Lifting does not un-block their existing cards. Those were blocked as a
+ * separate act and are un-blocked separately — a café lifting a ban to let
+ * someone start again usually wants them to start again.
+ */
+customersRouter.delete(
+  "/blocks/:blockId",
+  requireAuth,
+  async (req: Request, res: Response<{ lifted: true }>) => {
+    const ctx = authContext(req);
+    const [result] = await pool.execute<ResultSetHeader>(
+      "DELETE FROM customer_blocks WHERE id = ? AND merchant_id = ?",
+      [req.params.blockId, ctx.merchantId]
+    );
+    if (result.affectedRows === 0) throw ApiError.notFound("block not found");
+
+    await writeAuditLogPooled({
+      actor: { userId: ctx.userId, email: await actorEmail(ctx.userId), merchantId: ctx.merchantId },
+      action: "customer.unblock",
+      merchantId: ctx.merchantId,
+      targetType: "customer_block",
+      targetId: req.params.blockId,
+      reason: "lifted by the café",
+    });
+    return res.json({ lifted: true });
   }
 );

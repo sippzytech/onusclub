@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import type { Customer } from "@onusclub/shared";
 
 // Stable per-name avatar colour. Same palette as the Overview activity feed.
@@ -33,7 +34,76 @@ function formatJoined(iso: string): string {
 }
 
 export function CustomersList({ customers }: { customers: Customer[] }): JSX.Element {
+  const router = useRouter();
   const [query, setQuery] = useState("");
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  /**
+   * Remove: deletes the customer and cascades their cards and history. They
+   * can sign up again from zero — that is the difference from a block, and
+   * the confirm says so, because the two are easy to muddle at a till.
+   */
+  async function remove(c: Customer): Promise<void> {
+    const name = c.name ?? "this customer";
+    if (
+      !window.confirm(
+        `Remove ${name}?\n\nTheir card, stamps and history are deleted. ` +
+          `They can sign up again from scratch.`
+      )
+    ) {
+      return;
+    }
+    setError(null);
+    setBusyId(c.id);
+    const res = await fetch(`/api/customers/${c.id}`, { method: "DELETE" });
+    setBusyId(null);
+    if (!res.ok) {
+      const b = (await res.json().catch(() => ({}))) as { error?: string };
+      setError(b.error ?? "could not remove this customer");
+      return;
+    }
+    router.refresh();
+  }
+
+  /**
+   * Block: stops them signing up again AND blocks the card they hold.
+   *
+   * The reason is required by the API, so it is prompted for rather than
+   * optional — a block nobody can review later is one nobody can safely lift.
+   */
+  async function block(c: Customer): Promise<void> {
+    const name = c.name ?? "this customer";
+    if (!c.email && !c.phone) {
+      setError(
+        `${name} has no email or phone, so there is nothing to block them by. Remove them instead.`
+      );
+      return;
+    }
+    const reason = window.prompt(
+      `Block ${name}?\n\nTheir card stops working and they cannot sign up here again.\n\n` +
+        `Why are you blocking them? (recorded, and shown if you lift it later)`
+    );
+    if (reason === null) return;
+    if (reason.trim().length < 3) {
+      setError("Please give a reason of at least a few words.");
+      return;
+    }
+    setError(null);
+    setBusyId(c.id);
+    const res = await fetch(`/api/customers/${c.id}/block`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ reason: reason.trim() }),
+    });
+    setBusyId(null);
+    if (!res.ok) {
+      const b = (await res.json().catch(() => ({}))) as { error?: string };
+      setError(b.error ?? "could not block this customer");
+      return;
+    }
+    router.refresh();
+  }
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -55,6 +125,11 @@ export function CustomersList({ customers }: { customers: Customer[] }): JSX.Ele
 
   return (
     <div className="space-y-3">
+      {error ? (
+        <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+          {error}
+        </div>
+      ) : null}
       <input
         value={query}
         onChange={(e) => setQuery(e.target.value)}
@@ -71,6 +146,7 @@ export function CustomersList({ customers }: { customers: Customer[] }): JSX.Ele
                 <th className="px-2 py-2 font-medium">Member</th>
                 <th className="px-2 py-2 font-medium">Joined</th>
                 <th className="px-2 py-2 font-medium">Contact</th>
+                <th className="px-2 py-2 font-medium text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-brand-green/10">
@@ -104,6 +180,24 @@ export function CustomersList({ customers }: { customers: Customer[] }): JSX.Ele
                       {c.birthday ? (
                         <span className="ml-2 text-brand-gold">🎂 {c.birthday.slice(5)}</span>
                       ) : null}
+                    </td>
+                    <td className="px-2 py-3 text-right whitespace-nowrap">
+                      <button
+                        type="button"
+                        disabled={busyId === c.id}
+                        onClick={() => void remove(c)}
+                        className="text-xs text-brand-olive hover:text-brand-green underline-offset-4 hover:underline disabled:opacity-50"
+                      >
+                        Remove
+                      </button>
+                      <button
+                        type="button"
+                        disabled={busyId === c.id}
+                        onClick={() => void block(c)}
+                        className="ml-3 text-xs text-red-700 hover:text-red-900 underline-offset-4 hover:underline disabled:opacity-50"
+                      >
+                        Block
+                      </button>
                     </td>
                   </tr>
                 );

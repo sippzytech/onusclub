@@ -6,7 +6,8 @@
 // nobody has.
 
 import { Router, type Request, type Response } from "express";
-import type { RowDataPacket } from "mysql2";
+import { CustomerBlockInput, type BlockScope } from "@onusclub/shared";
+import type { ResultSetHeader, RowDataPacket } from "mysql2";
 import type {
   AdminCustomerCard,
   AdminCustomerDetail,
@@ -15,6 +16,9 @@ import type {
 } from "@onusclub/shared";
 import { pool } from "../../db/pool.js";
 import { ApiError } from "../../errors.js";
+import { adminContext } from "../../admin/authorize.js";
+import { writeAuditLog, writeAuditLogPooled } from "../../admin/audit.js";
+import { recordBlock } from "../../customers/blocks.js";
 
 export const adminCustomersRouter: Router = Router();
 
@@ -292,3 +296,186 @@ adminCustomersRouter.get("/:id", async (req: Request, res: Response<AdminCustome
     })),
   });
 });
+
+// ---------------------------------------------------------------------------
+// Removing and blocking, from the platform side (Day 32)
+//
+// Same two actions a café owner has in routes/customers.ts, plus the one it
+// cannot use: `scope: "platform"`, which blocks the person at every café.
+//
+// ⚠️ Cross-tenant by design, which is why this lives under routes/admin/.
+// Authorization is applied once to the /v1/admin mount in index.ts.
+// ---------------------------------------------------------------------------
+
+interface AdminCustomerRow extends RowDataPacket {
+  id: string;
+  merchant_id: string;
+  name: string | null;
+  email: string | null;
+  phone: string | null;
+}
+
+async function loadCustomerAnywhere(customerId: string): Promise<AdminCustomerRow> {
+  const [rows] = await pool.execute<AdminCustomerRow[]>(
+    "SELECT id, merchant_id, name, email, phone FROM customers WHERE id = ? LIMIT 1",
+    [customerId]
+  );
+  if (rows.length === 0) throw ApiError.notFound("customer not found");
+  return rows[0];
+}
+
+/** DELETE /v1/admin/customers/:id — remove, from any café. */
+adminCustomersRouter.delete(
+  "/:id",
+  async (req: Request, res: Response<{ removed: true }>) => {
+    const actor = adminContext(req);
+    const c = await loadCustomerAnywhere(req.params.id);
+
+    await writeAuditLogPooled({
+      actor,
+      action: "customer.remove",
+      merchantId: c.merchant_id,
+      targetType: "customer",
+      targetId: c.id,
+      reason: "removed by a platform admin",
+      before: { name: c.name, hasEmail: Boolean(c.email), hasPhone: Boolean(c.phone) },
+    });
+    await pool.execute("DELETE FROM customers WHERE id = ?", [c.id]);
+    return res.json({ removed: true });
+  }
+);
+
+/**
+ * POST /v1/admin/customers/:id/block — block at one café, or everywhere.
+ *
+ * `scope: "platform"` writes `merchant_id = NULL`, which `findBlock` matches
+ * for every merchant. Only this route can produce that row.
+ *
+ * ⚠️ A platform block still only blocks the cards at the café the customer
+ * row belongs to — we cannot block cards we cannot see from one row. The
+ * block list is what stops them at every other café, on their next enrolment.
+ * Worth knowing: a platform-blocked person with an existing card elsewhere
+ * keeps that card working until someone blocks it too.
+ */
+adminCustomersRouter.post(
+  "/:id/block",
+  async (req: Request, res: Response<{ blocked: true; scope: BlockScope }>) => {
+    const actor = adminContext(req);
+    const input = CustomerBlockInput.parse(req.body);
+    const scope: BlockScope = input.scope ?? "merchant";
+    const c = await loadCustomerAnywhere(req.params.id);
+
+    if (!c.email && !c.phone) {
+      throw ApiError.badRequest(
+        "this customer has no email or phone, so there is nothing to block them by — remove them instead"
+      );
+    }
+
+    const conn = await pool.getConnection();
+    try {
+      await conn.beginTransaction();
+      await conn.execute(
+        "UPDATE loyalty_cards SET status = 'blocked' WHERE customer_id = ?",
+        [c.id]
+      );
+      await recordBlock(conn, {
+        merchantId: scope === "platform" ? null : c.merchant_id,
+        email: c.email,
+        phone: c.phone,
+        reason: input.reason,
+        actorUserId: actor.userId,
+        actorEmail: actor.email,
+      });
+      await writeAuditLog(conn, {
+        actor,
+        action: "customer.block",
+        merchantId: scope === "platform" ? null : c.merchant_id,
+        targetType: "customer",
+        targetId: c.id,
+        reason: input.reason,
+        after: { scope },
+      });
+      await conn.commit();
+    } catch (err) {
+      await conn.rollback();
+      throw err;
+    } finally {
+      conn.release();
+    }
+    return res.json({ blocked: true, scope });
+  }
+);
+
+/** GET /v1/admin/customers/blocks/all — every block, any café, newest first. */
+adminCustomersRouter.get(
+  "/blocks/all",
+  async (_req: Request, res: Response<{ blocks: AdminBlockRow[] }>) => {
+    const [rows] = await pool.query<AdminBlockListRow[]>(
+      `SELECT b.id, b.merchant_id, b.display_hint, b.reason, b.actor_email, b.created_at,
+              m.business_name
+         FROM customer_blocks b
+         LEFT JOIN merchants m ON m.id = b.merchant_id
+        ORDER BY b.id DESC
+        LIMIT 500`
+    );
+    return res.json({
+      blocks: rows.map((r) => ({
+        id: Number(r.id),
+        merchantId: r.merchant_id,
+        // Null merchant_id is a platform block; a non-null one whose merchant
+        // has been deleted shows as discontinued rather than vanishing.
+        merchantName:
+          r.merchant_id === null ? null : r.business_name ?? "(café discontinued)",
+        displayHint: r.display_hint,
+        reason: r.reason,
+        actorEmail: r.actor_email,
+        createdAt: new Date(r.created_at).toISOString(),
+      })),
+    });
+  }
+);
+
+/** DELETE /v1/admin/customers/blocks/:blockId — lift any block, including platform. */
+adminCustomersRouter.delete(
+  "/blocks/:blockId",
+  async (req: Request, res: Response<{ lifted: true }>) => {
+    const actor = adminContext(req);
+    const [result] = await pool.execute<ResultSetHeader>(
+      "DELETE FROM customer_blocks WHERE id = ?",
+      [req.params.blockId]
+    );
+    if (result.affectedRows === 0) throw ApiError.notFound("block not found");
+
+    await writeAuditLogPooled({
+      actor,
+      action: "customer.unblock",
+      targetType: "customer_block",
+      targetId: req.params.blockId,
+      reason: "lifted by a platform admin",
+    });
+    return res.json({ lifted: true });
+  }
+);
+
+/** Row shape for the cross-tenant block list. */
+interface AdminBlockListRow extends RowDataPacket {
+  id: number;
+  merchant_id: string | null;
+  display_hint: string;
+  reason: string;
+  actor_email: string;
+  created_at: Date;
+  business_name: string | null;
+}
+
+/** What /blocks/all returns. Defined here rather than in shared: admin-only. */
+interface AdminBlockRow {
+  id: number;
+  merchantId: string | null;
+  /** Null for a platform block; "(café discontinued)" if the café is gone. */
+  merchantName: string | null;
+  displayHint: string;
+  reason: string;
+  actorEmail: string;
+  createdAt: string;
+}

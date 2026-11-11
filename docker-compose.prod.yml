@@ -78,6 +78,9 @@ services:
       # an ID token — without that check a token minted for any other site
       # would be accepted. Empty → the Google endpoints answer 503.
       GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID:-}
+      # Keys the customer block list hashes. 🚨 Changing it silently unblocks
+      # everyone — no stored hash matches again and nothing errors.
+      BLOCKLIST_PEPPER: ${BLOCKLIST_PEPPER:-}
       # Lead capture from the marketing site. This block lists every variable
       # explicitly — adding one to .env alone does nothing, and the symptom is
       # the endpoint answering 503 as though it were never configured.

@@ -28,7 +28,13 @@ export type Executor = Pool | PoolConnection;
 export type AdminAction =
   | "card.adjust"
   | "merchant.update"
-  | "merchant.password_reset";
+  | "merchant.password_reset"
+  // Day 32. Written by café owners as well as platform admins — the table has
+  // always been general enough (no FKs, free-string action, actor captured by
+  // email at write time); only the name says "admin".
+  | "customer.remove"
+  | "customer.block"
+  | "customer.unblock";
 
 export interface AuditEntry {
   actor: AdminActor;

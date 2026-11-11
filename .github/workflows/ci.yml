@@ -61,6 +61,16 @@ jobs:
       - name: Check Google auth contracts
         run: pnpm --filter @onusclub/api run check:google
 
+      # Block-list normalisation and masking. Both fail SILENTLY when wrong: a
+      # normalisation bug means a café blocks someone who walks back in under
+      # the same address spelled differently and the enrolment just succeeds;
+      # a masking bug leaks a contact detail into the one list that exists so
+      # we are not holding contact details.
+      #
+      # Needs no env — block-hash.ts deliberately imports nothing.
+      - name: Check customer block hashing and masking
+        run: pnpm --filter @onusclub/api run check:blocks
+
       # 🚨 merchants.logo_url was DROPPED in migration 017. It stored a URL
       # built from BASE_URL_API at upload time and frozen forever, so any
       # domain change orphaned every existing logo — silently, because Google

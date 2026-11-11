@@ -46,6 +46,16 @@ const EnvSchema = z.object({
   // Where "new lead" notifications go. A lead nobody sees is the same as the
   // lead being discarded, which is the bug this feature exists to fix.
   LEADS_NOTIFY_EMAIL: z.string().default("onusclub.official@gmail.com"),
+  // Keys the HMAC for the customer block list (migration 018).
+  //
+  // Empty is allowed and the feature still works, but the hash degrades to a
+  // plain SHA-256 of an email — unreadable at a glance, yet cheap to confirm
+  // for an address someone already suspects. Set it in production.
+  //
+  // 🚨 Changing it SILENTLY UNBLOCKS EVERYONE: no stored hash matches again,
+  // nothing errors, and the first sign is a blocked customer walking back in.
+  // Generate once with: openssl rand -base64 48
+  BLOCKLIST_PEPPER: z.string().optional().default(""),
   // Sign in with Google (Day 29). Empty → every Google endpoint answers 503
   // and no button renders anywhere; the api still boots.
   //

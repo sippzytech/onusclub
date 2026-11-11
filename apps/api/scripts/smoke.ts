@@ -563,14 +563,35 @@ async function main(): Promise<void> {
     );
   }
 
-  console.log("→ inactivity sweep with no eligible cards should scan 0");
-  const inactRun = await call<{ scanned: number }>(
+  console.log("→ a freshly stamped card is never swept as inactive");
+  // ⚠️ This asserted `scanned === 0` until 2026-11-12, which is only true on a
+  // FRESH database. `runInactivitySweep` is global — no merchant filter — so
+  // the count includes every café on the box. CI gets a new MySQL each run and
+  // never noticed; a developer's machine accumulates test cards until one
+  // crosses the 30-day line, and then this fails forever for a reason that has
+  // nothing to do with the change being tested.
+  //
+  // What the test actually means is "a card we just touched is not considered
+  // inactive". That is a DELTA, so measure it as one: sweep, create activity,
+  // sweep again, and assert the eligible set did not grow.
+  const inactBefore = await call<{ scanned: number }>(
     "POST",
     "/v1/sweeps/run/inactivity",
     undefined,
     jwt
   );
-  assert(inactRun.scanned === 0, `inactivity sweep with fresh cards should be 0`);
+  await call("POST", `/v1/cards/${card.id}/stamp`, {}, jwt);
+  const inactAfter = await call<{ scanned: number }>(
+    "POST",
+    "/v1/sweeps/run/inactivity",
+    undefined,
+    jwt
+  );
+  assert(
+    inactAfter.scanned <= inactBefore.scanned,
+    `stamping a card made it eligible for the inactivity sweep ` +
+      `(${inactBefore.scanned} → ${inactAfter.scanned})`
+  );
 
   // ---------- Day 8: password auth + public QR signup ----------
 
@@ -871,6 +892,157 @@ async function main(): Promise<void> {
   assert(
     afterCustomers.customers.length === beforeCustomers.customers.length,
     `a rejected Google enrolment created a customer (${beforeCustomers.customers.length} → ${afterCustomers.customers.length})`
+  );
+
+  // ---------- Day 32: removing and blocking customers ----------
+  //
+  // The whole point of a block is that it survives the person simply enrolling
+  // again, so the assertions that matter are about what happens on the SECOND
+  // enrolment, not the first.
+
+  const blockEmail = `blockme-${Date.now()}@example.com`;
+
+  console.log("→ a customer enrols normally first");
+  await call("POST", `/v1/public/m/${pwSignup.publicSlug}/enrol`, {
+    name: "Block Me",
+    email: blockEmail,
+    programId: pwProg.id,
+  });
+  const beforeBlockList = await call<{ customers: Array<{ id: string; email: string | null }> }>(
+    "GET",
+    "/v1/customers",
+    undefined,
+    pwLogin.jwt
+  );
+  const victim = beforeBlockList.customers.find((c) => c.email === blockEmail);
+  assert(victim, "the customer we just enrolled is not in the café's list");
+
+  console.log("→ blocking requires a reason");
+  let blockNoReason = false;
+  try {
+    await call("POST", `/v1/customers/${victim!.id}/block`, {}, pwLogin.jwt);
+  } catch (err) {
+    blockNoReason = String(err).includes("400");
+  }
+  assert(blockNoReason, "a block with no reason should 400");
+
+  console.log("→ a café owner cannot block across every café");
+  let scopeRefused = false;
+  try {
+    await call(
+      "POST",
+      `/v1/customers/${victim!.id}/block`,
+      { reason: "trying the platform scope", scope: "platform" },
+      pwLogin.jwt
+    );
+  } catch (err) {
+    scopeRefused = String(err).includes("403");
+  }
+  assert(scopeRefused, "a café owner was allowed to write a platform-wide block");
+
+  console.log("→ block the customer at this café");
+  await call(
+    "POST",
+    `/v1/customers/${victim!.id}/block`,
+    { reason: "smoke test: gaming the card" },
+    pwLogin.jwt
+  );
+
+  console.log("→ 🚨 they cannot enrol again, and NO customer row is created");
+  // The assertion that matters. A block that only sets the card status would
+  // let them start a fresh card in seconds.
+  const countBefore = (
+    await call<{ customers: unknown[] }>("GET", "/v1/customers", undefined, pwLogin.jwt)
+  ).customers.length;
+  let reEnrolRefused = false;
+  try {
+    await call("POST", `/v1/public/m/${pwSignup.publicSlug}/enrol`, {
+      name: "Block Me Again",
+      email: blockEmail,
+      programId: pwProg.id,
+    });
+  } catch (err) {
+    reEnrolRefused = String(err).includes("400");
+  }
+  assert(reEnrolRefused, "a blocked customer was allowed to enrol again");
+  const countAfter = (
+    await call<{ customers: unknown[] }>("GET", "/v1/customers", undefined, pwLogin.jwt)
+  ).customers.length;
+  assert(
+    countAfter === countBefore,
+    `a refused enrolment still created a customer (${countBefore} → ${countAfter})`
+  );
+
+  console.log("→ the block matches regardless of case and spacing");
+  // The silent failure: blocked as "a@b.com", walks back in as "A@B.com".
+  let caseVariantRefused = false;
+  try {
+    await call("POST", `/v1/public/m/${pwSignup.publicSlug}/enrol`, {
+      name: "Case Variant",
+      email: `  ${blockEmail.toUpperCase()}  `,
+      programId: pwProg.id,
+    });
+  } catch (err) {
+    caseVariantRefused = String(err).includes("400");
+  }
+  assert(caseVariantRefused, "a case-variant of a blocked email got through");
+
+  console.log("→ the block appears in the café's own list, masked");
+  const blockList = await call<{ blocks: Array<{ id: number; displayHint: string; reason: string }> }>(
+    "GET",
+    "/v1/customers/blocks/list",
+    undefined,
+    pwLogin.jwt
+  );
+  const theBlock = blockList.blocks.find((b) => b.reason.includes("gaming the card"));
+  assert(theBlock, "the block is not in the café's list");
+  assert(
+    theBlock!.displayHint.includes("•") && !theBlock!.displayHint.includes("blockme-"),
+    `the display hint leaked the address: ${theBlock!.displayHint}`
+  );
+
+  // Scope and cross-tenant cases for blocks live in the isolation section
+  // below, where the second merchant exists — per the CLAUDE.md rule that
+  // every new id-taking endpoint gets a case there.
+
+  console.log("→ lifting the block lets them enrol again");
+  await call("DELETE", `/v1/customers/blocks/${theBlock!.id}`, undefined, pwLogin.jwt);
+  const afterLift = await call<{ qrToken?: string }>(
+    "POST",
+    `/v1/public/m/${pwSignup.publicSlug}/enrol`,
+    { name: "Block Me", email: blockEmail, programId: pwProg.id }
+  );
+  assert(afterLift.qrToken, "lifting the block did not let them back in");
+
+  console.log("→ removing a customer deletes them, and they can start fresh");
+  const toRemove = (
+    await call<{ customers: Array<{ id: string; email: string | null }> }>(
+      "GET",
+      "/v1/customers",
+      undefined,
+      pwLogin.jwt
+    )
+  ).customers.find((c) => c.email === blockEmail);
+  await call("DELETE", `/v1/customers/${toRemove!.id}`, undefined, pwLogin.jwt);
+  const goneList = await call<{ customers: Array<{ email: string | null }> }>(
+    "GET",
+    "/v1/customers",
+    undefined,
+    pwLogin.jwt
+  );
+  assert(
+    !goneList.customers.some((c) => c.email === blockEmail),
+    "the removed customer is still in the list"
+  );
+  const fresh = await call<{ qrToken?: string; existing: boolean }>(
+    "POST",
+    `/v1/public/m/${pwSignup.publicSlug}/enrol`,
+    { name: "Block Me", email: blockEmail, programId: pwProg.id }
+  );
+  assert(fresh.qrToken, "a removed customer could not enrol again");
+  assert(
+    fresh.existing === false,
+    "a removed customer was treated as returning — the delete did not cascade"
   );
 
   console.log("→ enrol with neither a token nor contact details still 400s");
@@ -2429,6 +2601,48 @@ async function main(): Promise<void> {
     programId: otherProgram.id,
     dryRun: true,
   });
+  console.log("→ isolation: another merchant's customer cannot be blocked or removed");
+  // Day 32. Both new endpoints take a customer :id, so per the CLAUDE.md rule
+  // they need a case here. The leak would be a café silencing or deleting a
+  // rival's customer.
+  await denied("block their customer", "POST", `/v1/customers/${otherCustomer.id}/block`, {
+    reason: "attempting a cross-tenant block",
+  });
+  await denied("remove their customer", "DELETE", `/v1/customers/${otherCustomer.id}`);
+
+  console.log("→ isolation: a block at one café does NOT reach another");
+  // The scope assertion. A café-scoped block writes merchant_id, and findBlock
+  // matches on `merchant_id = :this OR merchant_id IS NULL` — if that ever
+  // became an unscoped lookup, one café could lock someone out of every café
+  // on the platform and nothing would error.
+  const scopeEmail = `scope-${Date.now()}@example.com`;
+  await call("POST", `/v1/customers`, { name: "Scope Test", email: scopeEmail }, jwt);
+  const ourList = await call<{ customers: Array<{ id: string; email: string | null }> }>(
+    "GET",
+    "/v1/customers",
+    undefined,
+    jwt
+  );
+  const scopeVictim = ourList.customers.find((c) => c.email === scopeEmail);
+  await call(
+    "POST",
+    `/v1/customers/${scopeVictim!.id}/block`,
+    { reason: "scope check" },
+    jwt
+  );
+  // Blocked at OUR café; the other merchant's enrolment must still work.
+  const otherSlug = (
+    await call<{ publicSlug: string }>("GET", "/v1/me", undefined, otherJwt)
+  ).publicSlug;
+  const elsewhere = await call<{ qrToken?: string }>(
+    "POST",
+    `/v1/public/m/${otherSlug}/enrol`,
+    { name: "Scope Test", email: scopeEmail, programId: otherProgram.id }
+  );
+  assert(
+    elsewhere.qrToken,
+    "CROSS-TENANT LEAK — a block at one café stopped an enrolment at another"
+  );
   // Day 28. The draft endpoint takes a programId in its body, which makes it a
   // tenant-crossable id even though the path has no :id — so it needs a case
   // here per the CLAUDE.md rule. The leak it would be: another café's reward

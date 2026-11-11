@@ -768,6 +768,49 @@ export const MessageFeedItem = z.object({
 });
 export type MessageFeedItem = z.infer<typeof MessageFeedItem>;
 
+// ---------- Removing and blocking customers (Day 32) ----------
+//
+// Two different things, deliberately separated:
+//
+//   Remove  deletes the customer and cascades their cards and history. They
+//           can enrol again from zero — a fresh start is the point.
+//   Block   stops them enrolling again at all, and blocks the cards they hold.
+//
+// A block is keyed on a one-way hash of email/phone, so it survives the café
+// being deleted. See apps/api/src/db/migrations/018_customer_blocks.sql.
+
+export const BlockScope = z.enum([
+  // This café only. The only scope a café owner may use.
+  "merchant",
+  // Every café. Platform admin only.
+  "platform",
+]);
+export type BlockScope = z.infer<typeof BlockScope>;
+
+export const CustomerBlockInput = z.object({
+  /**
+   * Required, and min 3 so it cannot be a keystroke. A block nobody can
+   * review later is one nobody can safely lift — same rule as the admin
+   * balance adjustments.
+   */
+  reason: z.string().min(3).max(500),
+  /** Omitted means "merchant". Only an admin may send "platform". */
+  scope: BlockScope.optional(),
+});
+export type CustomerBlockInput = z.infer<typeof CustomerBlockInput>;
+
+export const CustomerBlock = z.object({
+  id: z.number(),
+  /** Null means platform-wide. */
+  merchantId: z.string().nullable(),
+  /** Masked — "ja•••@gmail.com". Never a usable contact detail. */
+  displayHint: z.string(),
+  reason: z.string(),
+  actorEmail: z.string(),
+  createdAt: z.string(),
+});
+export type CustomerBlock = z.infer<typeof CustomerBlock>;
+
 // ---------- Analytics (Day 15) ----------
 
 // One row of the Overview page's activity feed. Reads straight from

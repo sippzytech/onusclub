@@ -37,6 +37,7 @@ import { loadMerchantLocations } from "../merchants/locations.js";
 import { publicEnrolLimiter } from "../http/rate-limit.js";
 import { verifyGoogleIdToken } from "../auth/google.js";
 import { loadLogoUrl } from "../merchants/logo.js";
+import { findBlock } from "../customers/blocks.js";
 
 export const publicRouter: Router = Router();
 
@@ -164,6 +165,31 @@ publicRouter.post(
     const m = merchants[0];
     if (m.status === "suspended") throw ApiError.notFound("merchant not found");
     const merchantId = m.id;
+
+    // ---- Block list (Day 32) ------------------------------------------
+    //
+    // Before anything is created. A block is only real if it survives the
+    // person simply enrolling again, which is what this check is for — the
+    // card status alone would let them start a fresh card.
+    //
+    // 🚨 Hashes `email`, which on the Google path came from the VERIFIED
+    // token and not the request body. Checking the body's email here would be
+    // bypassed by sending a different one while presenting a valid token —
+    // the same trap Day 29 closed for identity.
+    const block = await findBlock(merchantId, email, phone);
+    if (block) {
+      // Deliberately vague, and deliberately not 403. Telling a stranger at a
+      // counter that this address is blocked discloses something about
+      // someone else's standing with the café; and a café owner who wants to
+      // explain can do it in person.
+      logger.info(
+        { merchantId, platformWide: block.blockedPlatformWide },
+        "enrolment refused: blocked customer"
+      );
+      throw ApiError.badRequest(
+        "We can't create a card for you here. Please ask a member of staff."
+      );
+    }
 
     // Verify the selected program belongs to this merchant.
     const [programs] = await pool.execute<ProgramRow[]>(
