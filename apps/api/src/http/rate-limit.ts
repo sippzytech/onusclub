@@ -214,6 +214,24 @@ export const publicEnrolLimiter = rateLimit({
 });
 
 /**
+ * Café-deletion code attempts. Keyed on the acting admin.
+ *
+ * The code is a short shared string, so without a limit a process that reached
+ * this endpoint could walk the whole space in seconds. Ten an hour is far more
+ * than a human deleting a café will ever need and far fewer than a script
+ * needs to be useful.
+ *
+ * ⚠️ Mount AFTER requirePlatformAdmin, or `req.auth` is undefined and every
+ * caller shares the "anonymous" bucket.
+ */
+export const deleteCodeLimiter = rateLimit({
+  name: "delete-code",
+  windowMs: 60 * 60_000,
+  max: 10,
+  keyOf: (req) => req.auth?.userId ?? "anonymous",
+});
+
+/**
  * AI campaign drafts. Keyed on the MERCHANT, not the address.
  *
  * Every other limiter here guards an unauthenticated endpoint, where the

@@ -34,7 +34,12 @@ export type AdminAction =
   // email at write time); only the name says "admin".
   | "customer.remove"
   | "customer.block"
-  | "customer.unblock";
+  | "customer.unblock"
+  // Stage 2. `merchant.delete` is the one action whose target no longer
+  // exists by the time anyone reads the row — which is exactly why this
+  // table has no foreign keys.
+  | "merchant.delete"
+  | "settings.delete_code";
 
 export interface AuditEntry {
   actor: AdminActor;

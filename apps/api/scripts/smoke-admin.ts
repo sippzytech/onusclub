@@ -13,6 +13,30 @@
 import mysql from "mysql2/promise";
 import type { RowDataPacket } from "mysql2";
 
+/**
+ * A fresh synthetic client address per request.
+ *
+ * ⚠️ Added 2026-11-12. This suite sent no X-Forwarded-For at all, so every
+ * request arrived from the web container's address and shared one rate-limit
+ * bucket — meaning the whole suite had a hard ceiling of five signups an hour
+ * and would start 429-ing partway through for reasons unrelated to any
+ * assertion. smoke.ts has done this since Day 26; smoke-admin.ts was simply
+ * never updated to match, and stayed under the limit by accident until Stage 2
+ * added two more signups.
+ */
+function syntheticIp(): string {
+  const n = () => Math.floor(Math.random() * 254) + 1;
+  return `198.51.100.${n()}`.replace("100.", `${n() % 2 === 0 ? 100 : 2}.`);
+}
+
+/** Row shapes for the direct SQL this suite runs (granting admin is SQL-only). */
+interface CountRow extends RowDataPacket {
+  n: number;
+}
+interface TombstoneRow extends RowDataPacket {
+  business_name: string;
+}
+
 // mysql2's `query<T>` constrains T to QueryResult, which means row shapes have
 // to extend RowDataPacket. Intersecting here rather than declaring a named
 // interface per query keeps the assertions readable — these are one-shot
@@ -32,7 +56,10 @@ async function call<T>(
   body?: unknown,
   jwt?: string
 ): Promise<T> {
-  const headers: Record<string, string> = { "content-type": "application/json" };
+  const headers: Record<string, string> = {
+    "content-type": "application/json",
+    "x-forwarded-for": syntheticIp(),
+  };
   if (jwt) headers["authorization"] = `Bearer ${jwt}`;
   const res = await fetch(`${BASE}${path}`, {
     method,
@@ -62,7 +89,10 @@ async function statusOf(
   jwt?: string,
   body?: unknown
 ): Promise<number> {
-  const headers: Record<string, string> = { "content-type": "application/json" };
+  const headers: Record<string, string> = {
+    "content-type": "application/json",
+    "x-forwarded-for": syntheticIp(),
+  };
   if (jwt) headers["authorization"] = `Bearer ${jwt}`;
   const res = await fetch(`${BASE}${path}`, {
     method,
@@ -900,18 +930,23 @@ async function main(): Promise<void> {
       "patching an unknown merchant should 404"
     );
 
-    console.log("→ there is no delete path for a café");
-    // The cascade from `merchants` reaches customers, cards, events and points
-    // batches and is irreversible; `status = 'suspended'` covers every real
-    // need. If this ever stops 404/405-ing, someone added one.
+    console.log("→ the delete path exists now, but refuses a bodyless request");
+    // Until Day 32 this asserted that DELETE did not exist at all — the
+    // cascade is irreversible and `suspended` covered every real need. That
+    // was overruled deliberately when cafés needed to actually go and their
+    // owner's email needed to become usable again.
+    //
+    // What is asserted instead is that the route cannot be triggered by
+    // accident: no code, no deletion. The refusals that matter (own café,
+    // a café holding a platform admin, wrong code) are asserted below.
     const deleteStatus = await statusOf(
       "DELETE",
       `/v1/admin/merchants/${signup.merchant.id}`,
       adminJwt
     );
     assert(
-      deleteStatus === 404 || deleteStatus === 405,
-      `DELETE /merchants/:id must not exist, got ${deleteStatus === 0 ? "success" : deleteStatus}`
+      deleteStatus === 400,
+      `DELETE with no code should 400, got ${deleteStatus === 0 ? "success" : deleteStatus}`
     );
 
     console.log("→ a password reset issues a usable link to the owner's own address");
@@ -986,6 +1021,134 @@ async function main(): Promise<void> {
       onlyResets.entries.length > 0 &&
         onlyResets.entries.every((e) => e.action === "merchant.password_reset"),
       "the action filter did not narrow the log"
+    );
+
+    // ---------- Day 32 Stage 2: deleting a café ----------
+    //
+    // The one irreversible action in the product, so what is asserted here is
+    // mostly the refusals.
+
+    console.log("→ deleting a café needs the code, and a wrong one is refused");
+    const victimEmail = `doomed-${Date.now()}@example.com`;
+    const victim = await call<{ merchant: { id: string } }>("POST", "/v1/auth/signup", {
+      businessName: "Doomed Café",
+      ownerEmail: victimEmail,
+      password: "doomed-password-123",
+    });
+    const victimId = victim.merchant.id;
+
+    let wrongCode = 0;
+    try {
+      await call("DELETE", `/v1/admin/merchants/${victimId}`, { code: "9999", reason: "smoke" }, adminJwt);
+    } catch (err) {
+      wrongCode = /401/.test(String(err)) ? 401 : -1;
+    }
+    assert(wrongCode === 401, `a wrong deletion code should 401, got ${wrongCode}`);
+
+    console.log("→ ...and the café is still there");
+    const survived = await call<{ merchants: Array<{ id: string }> }>(
+      "GET",
+      "/v1/admin/merchants",
+      undefined,
+      adminJwt
+    );
+    assert(
+      survived.merchants.some((m: { id: string }) => m.id === victimId),
+      "a refused deletion removed the café anyway"
+    );
+
+    console.log("→ 🚨 an admin cannot delete their OWN café (it would revoke their access)");
+    // platform_admins cascades from staff_users, which cascades from
+    // merchants. Without this refusal the deleter silently loses /admin and
+    // granting it back needs direct database access.
+    let ownCafe = 0;
+    try {
+      await call(
+        "DELETE",
+        `/v1/admin/merchants/${signup.merchant.id}`,
+        { code: "1234", reason: "smoke: should be refused" },
+        adminJwt
+      );
+    } catch (err) {
+      ownCafe = /400/.test(String(err)) ? 400 : -1;
+    }
+    assert(ownCafe === 400, `deleting your own café should 400, got ${ownCafe}`);
+
+    console.log("→ a café holding ANY platform admin is refused too");
+    await db.execute(
+      "INSERT IGNORE INTO platform_admins (staff_user_id) SELECT id FROM staff_users WHERE merchant_id = ? LIMIT 1",
+      [victimId]
+    );
+    let holdsAdmin = 0;
+    try {
+      await call("DELETE", `/v1/admin/merchants/${victimId}`, { code: "1234", reason: "smoke" }, adminJwt);
+    } catch (err) {
+      holdsAdmin = /400/.test(String(err)) ? 400 : -1;
+    }
+    assert(holdsAdmin === 400, `a café holding a platform admin should 400, got ${holdsAdmin}`);
+    await db.execute(
+      "DELETE FROM platform_admins WHERE staff_user_id IN (SELECT id FROM staff_users WHERE merchant_id = ?)",
+      [victimId]
+    );
+
+    console.log("→ a platform block survives the café being deleted");
+    // 🚨 The assertion that matters most here. customer_blocks has no FK to
+    // merchants precisely so the cascade cannot reach it — if that ever
+    // changed, deleting a café would quietly lift every block it held, and
+    // nothing would error.
+    const [beforeBlocks] = await db.execute<CountRow[]>(
+      "SELECT COUNT(*) AS n FROM customer_blocks"
+    );
+    const blocksBefore = Number(beforeBlocks[0].n);
+
+    console.log("→ the café is deleted with the right code");
+    const gone = await call<{ deleted: true; businessName: string }>(
+      "DELETE",
+      `/v1/admin/merchants/${victimId}`,
+      { code: "1234", reason: "smoke test: deleting a disposable café" },
+      adminJwt
+    );
+    assert(gone.deleted === true, "deletion did not report success");
+    assert(gone.businessName === "Doomed Café", "the tombstone kept the wrong name");
+
+    const [afterBlocks] = await db.execute<CountRow[]>(
+      "SELECT COUNT(*) AS n FROM customer_blocks"
+    );
+    assert(
+      Number(afterBlocks[0].n) === blocksBefore,
+      "deleting a café removed block rows — the cascade has reached customer_blocks"
+    );
+
+    console.log("→ the tombstone records it");
+    const [tomb] = await db.execute<TombstoneRow[]>(
+      "SELECT business_name FROM deleted_merchants WHERE id = ?",
+      [victimId]
+    );
+    assert(tomb.length === 1, "no tombstone was written");
+
+    console.log("→ 🚨 the owner's email is free again, so they can sign up");
+    // The whole reason this is a hard delete rather than status='deleted':
+    // merchants.owner_email is UNIQUE.
+    const reborn = await call<{ merchant: { id: string } }>("POST", "/v1/auth/signup", {
+      businessName: "Reborn Café",
+      ownerEmail: victimEmail,
+      password: "reborn-password-123",
+    });
+    assert(
+      reborn.merchant.id !== victimId,
+      "signing up again reused the deleted café's id"
+    );
+
+    console.log("→ the audit log still names the deletion, after the café is gone");
+    const delLog = await call<{ entries: Array<{ action: string; targetId: string }> }>(
+      "GET",
+      "/v1/admin/audit?action=merchant.delete",
+      undefined,
+      adminJwt
+    );
+    assert(
+      delLog.entries.some((e) => e.targetId === victimId),
+      "the deletion is not in the audit log — the record of a deletion was deleted"
     );
 
     // ⚠️ The property the entire design exists for. Platform admin is a

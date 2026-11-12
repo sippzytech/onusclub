@@ -12,6 +12,8 @@ import {
   ADMIN_HEALTH_THRESHOLDS,
   AdminMerchantPatch,
   AdminPasswordResetInput,
+  DeleteCodeInput,
+  MerchantDeleteInput,
   DEFAULT_RFM_THRESHOLDS,
   classifyRfm,
   primaryHealthFlag,
@@ -30,6 +32,8 @@ import { ApiError } from "../../errors.js";
 import { env } from "../../config.js";
 import { logger } from "../../logger.js";
 import { adminContext } from "../../admin/authorize.js";
+import { deleteCodeMatches, setDeleteCode } from "../../admin/settings.js";
+import { deleteCodeLimiter } from "../../http/rate-limit.js";
 import { writeAuditLog, writeAuditLogPooled } from "../../admin/audit.js";
 import { issueMagicLink } from "../../auth/magic-link.js";
 import { sendEmail } from "../../email/client.js";
@@ -517,3 +521,148 @@ adminMerchantsRouter.get("/:id", async (req: Request, res: Response<AdminMerchan
     })),
   });
 });
+
+// ---------------------------------------------------------------------------
+// DELETE /v1/admin/merchants/:id — Day 32, Stage 2
+//
+// This overrules the "deliberately no DELETE" note above. The reasoning there
+// was that a bare cascade is irreversible and `suspended` covers every real
+// need. Both halves were true; what changed is that a café sometimes has to
+// actually go, and the owner's email has to become usable again — which a soft
+// delete cannot do, because `merchants.owner_email` is UNIQUE.
+//
+// So the cascade stays irreversible and is wrapped in three things it did not
+// have: a tombstone, an audit row, and two refusals.
+// ---------------------------------------------------------------------------
+
+interface PlatformAdminInMerchantRow extends RowDataPacket {
+  n: number;
+}
+
+interface DeleteTargetRow extends RowDataPacket {
+  id: string;
+  business_name: string;
+}
+
+adminMerchantsRouter.delete(
+  "/:id",
+  deleteCodeLimiter,
+  async (req: Request, res: Response<{ deleted: true; businessName: string }>) => {
+    const actor = adminContext(req);
+    const input = MerchantDeleteInput.parse(req.body);
+    const merchantId = req.params.id;
+
+    // 🚨 Refusal 1: never delete your own café. `platform_admins` cascades
+    // from `staff_users`, which cascades from `merchants` — so this would
+    // revoke the deleter's own admin access, and granting it back is SQL-only.
+    if (merchantId === actor.merchantId) {
+      throw ApiError.badRequest(
+        "that is your own café — deleting it would remove your platform-admin access, " +
+          "and granting it back is only possible with direct database access"
+      );
+    }
+
+    const [rows] = await pool.execute<DeleteTargetRow[]>(
+      "SELECT id, business_name FROM merchants WHERE id = ? LIMIT 1",
+      [merchantId]
+    );
+    if (rows.length === 0) throw ApiError.notFound("café not found");
+    const businessName = rows[0].business_name;
+
+    // 🚨 Refusal 2: the same cascade would silently strip admin from ANY
+    // platform admin whose staff account lives in this café, not just the
+    // caller. Nothing would error; they would simply start getting 404s from
+    // /v1/admin and have no way back in through the product.
+    const [admins] = await pool.execute<PlatformAdminInMerchantRow[]>(
+      `SELECT COUNT(*) AS n
+         FROM platform_admins pa
+         JOIN staff_users su ON su.id = pa.staff_user_id
+        WHERE su.merchant_id = ?`,
+      [merchantId]
+    );
+    if (admins[0].n > 0) {
+      throw ApiError.badRequest(
+        "a platform admin's account lives in this café — deleting it would revoke their " +
+          "access with no way to restore it from the product. Move or revoke them first."
+      );
+    }
+
+    // Checked last of the three so a wrong code cannot be used to probe which
+    // café ids exist, and so the rate limiter is not spent on requests that
+    // were going to be refused anyway.
+    if (!(await deleteCodeMatches(input.code))) {
+      throw ApiError.unauthorized("that deletion code is not correct");
+    }
+
+    const conn = await pool.getConnection();
+    try {
+      await conn.beginTransaction();
+
+      // Tombstone and audit row BEFORE the delete. Both are FK-free on
+      // purpose — `admin_audit_log`'s own comment says "a cascade here would
+      // delete the record of a deletion" — but writing them first means a
+      // failure at any point leaves either nothing or a complete record,
+      // never a café that vanished silently.
+      await conn.execute(
+        `INSERT INTO deleted_merchants (id, business_name, actor_email, reason)
+         VALUES (?, ?, ?, ?)`,
+        [merchantId, businessName, actor.email, input.reason]
+      );
+      await writeAuditLog(conn, {
+        actor,
+        action: "merchant.delete",
+        merchantId,
+        targetType: "merchant",
+        targetId: merchantId,
+        reason: input.reason,
+        before: { businessName },
+      });
+
+      // Everything with a FK to merchants goes with it: locations, programs,
+      // customers, cards, events, broadcasts, assets — and through cards,
+      // points batches, message deliveries and apple registrations.
+      //
+      // What survives, on purpose: admin_audit_log, customer_blocks,
+      // email_deliveries and ai_drafts. The block list surviving is the point
+      // — a platform block must outlive every café that ever knew the person.
+      await conn.execute("DELETE FROM merchants WHERE id = ?", [merchantId]);
+
+      await conn.commit();
+    } catch (err) {
+      await conn.rollback();
+      throw err;
+    } finally {
+      conn.release();
+    }
+
+    logger.warn(
+      { merchantId, businessName, actor: actor.email },
+      "café deleted by a platform admin"
+    );
+    return res.json({ deleted: true, businessName });
+  }
+);
+
+/**
+ * PUT /v1/admin/settings/delete-code — change the confirmation code.
+ *
+ * Rate-limited with the same bucket as the deletions themselves: both are
+ * about how many times an admin may exercise this code in an hour.
+ */
+adminMerchantsRouter.put(
+  "/settings/delete-code",
+  deleteCodeLimiter,
+  async (req: Request, res: Response<{ updated: true }>) => {
+    const actor = adminContext(req);
+    const input = DeleteCodeInput.parse(req.body);
+    await setDeleteCode(input.code);
+    await writeAuditLogPooled({
+      actor,
+      action: "settings.delete_code",
+      targetType: "platform_setting",
+      targetId: "delete_confirmation_code",
+      reason: "deletion code changed",
+    });
+    return res.json({ updated: true });
+  }
+);

@@ -811,6 +811,27 @@ export const CustomerBlock = z.object({
 });
 export type CustomerBlock = z.infer<typeof CustomerBlock>;
 
+// ---------- Deleting a café (Day 32, Stage 2) ----------
+
+export const MerchantDeleteInput = z.object({
+  /**
+   * The platform deletion code. Gates a cascade that cannot be undone, so it
+   * is required rather than optional — see 019_merchant_deletion.sql for what
+   * it does and does not protect against.
+   */
+  code: z.string().min(1).max(200),
+  /** Recorded on the tombstone and the audit row. */
+  reason: z.string().min(3).max(500),
+});
+export type MerchantDeleteInput = z.infer<typeof MerchantDeleteInput>;
+
+export const DeleteCodeInput = z.object({
+  // Four characters minimum: the seeded value is '1234', and a one-character
+  // code would make the confirm step decorative.
+  code: z.string().min(4).max(100),
+});
+export type DeleteCodeInput = z.infer<typeof DeleteCodeInput>;
+
 // ---------- Analytics (Day 15) ----------
 
 // One row of the Overview page's activity feed. Reads straight from
