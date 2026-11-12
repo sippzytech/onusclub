@@ -211,6 +211,36 @@ export function safeZone(tz: string | null): string {
   }
 }
 
+/**
+ * Every local calendar date in a window, oldest first, inclusive of today.
+ * Always exactly `windowDays + 1` distinct dates.
+ *
+ * ⚠️ Walks CALENDAR dates rather than adding 86_400_000ms per step.
+ *
+ * The fixed-step version anchored each probe at midday so a clock change
+ * could not push it onto the wrong date — which kept every date correct but
+ * not the COUNT. A fall-back day is 25 hours long, so the series drifts an
+ * hour earlier across it and two probes land inside the same local date; the
+ * Map that de-duplicates them then silently drops a day from the chart.
+ *
+ * Found 2026-11-12, when a 30-day window still spanned the 25 October
+ * fall-back and produced 30 buckets instead of 31, in BOTH this route and the
+ * admin merchant detail. Hence one helper rather than two fixes.
+ *
+ * Date-only arithmetic in UTC has no DST to drift against.
+ */
+export function localDaySeries(windowDays: number, timeZone: string): string[] {
+  const today = localDayHour(new Date(), timeZone).date;
+  const cursor = new Date(`${today}T00:00:00Z`);
+  cursor.setUTCDate(cursor.getUTCDate() - windowDays);
+  const dates: string[] = [];
+  for (let i = 0; i <= windowDays; i += 1) {
+    dates.push(cursor.toISOString().slice(0, 10));
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+  return dates;
+}
+
 export function localDayHour(instant: Date, timeZone: string): { date: string; hour: number } {
   const parts = formatterFor(timeZone).formatToParts(instant);
   const get = (type: string): string =>
@@ -280,12 +310,8 @@ analyticsRouter.get(
     // Pre-seed every local day in the window so a quiet Tuesday renders as a
     // zero rather than vanishing and compressing the x-axis.
     const dayMap = new Map<string, AnalyticsDayBucket>();
-    for (let i = 0; i <= days; i += 1) {
-      // Anchor at midday so a DST transition cannot push the sample onto the
-      // wrong calendar date.
-      const probe = new Date(startMs + i * 86_400_000 + 43_200_000);
-      const { date } = localDayHour(probe, timeZone);
-      if (!dayMap.has(date)) dayMap.set(date, { date, visits: 0, revenueCents: 0 });
+    for (const date of localDaySeries(days, timeZone)) {
+      dayMap.set(date, { date, visits: 0, revenueCents: 0 });
     }
 
     const hourTotals = Array.from({ length: 24 }, (_, hour) => ({ hour, visits: 0 }));

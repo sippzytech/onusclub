@@ -12,11 +12,13 @@ import type { AdminMerchantSummary } from "@onusclub/shared";
  * the café, so "what am I about to change, and why" should be a single
  * decision rather than six silent ones.
  *
- * Deliberately absent: deleting the café (the cascade reaches customers,
- * cards, events and points batches, and is irreversible — suspend instead),
- * editing programs or card design (that would change the deal for customers
- * who already hold a card), and changing the owner email (globally unique
- * across two tables).
+ * Deletion lives at the bottom, behind a code, separated from everything
+ * else — it is the one action here that cannot be undone. Day 32 added it;
+ * before that this comment said deletion was deliberately absent.
+ *
+ * Still deliberately absent: editing programs or card design (that would
+ * change the deal for customers who already hold a card), and changing the
+ * owner email (globally unique across two tables).
  */
 export function MerchantControls({ merchant }: { merchant: AdminMerchantSummary }): JSX.Element {
   const router = useRouter();
@@ -34,6 +36,11 @@ export function MerchantControls({ merchant }: { merchant: AdminMerchantSummary 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+
+  const [deleteCode, setDeleteCode] = useState("");
+  const [deleteReason, setDeleteReason] = useState("");
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const [resetReason, setResetReason] = useState("");
   const [resetBusy, setResetBusy] = useState(false);
@@ -91,6 +98,42 @@ export function MerchantControls({ merchant }: { merchant: AdminMerchantSummary 
     } finally {
       setBusy(false);
     }
+  }
+
+  /**
+   * Delete the café. Irreversible, so the confirm names it and says what goes.
+   *
+   * The api refuses deleting your own café, or any café holding a platform
+   * admin — both would silently revoke admin access, which is SQL-only to
+   * restore. Those refusals are not duplicated here: they live where they are
+   * enforced, and the error text comes back to the user.
+   */
+  async function deleteCafe(): Promise<void> {
+    if (
+      !window.confirm(
+        `Delete ${merchant.businessName}?\n\n` +
+          `Every customer, card, stamp, event and message for this café is deleted. ` +
+          `This cannot be undone.\n\n` +
+          `The owner's email becomes free, so they can sign up again from scratch.`
+      )
+    ) {
+      return;
+    }
+    setDeleteError(null);
+    setDeleteBusy(true);
+    const res = await fetch(`/api/admin/merchants/${merchant.id}`, {
+      method: "DELETE",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ code: deleteCode, reason: deleteReason.trim() }),
+    });
+    setDeleteBusy(false);
+    if (!res.ok) {
+      const b = (await res.json().catch(() => ({}))) as { error?: string };
+      setDeleteError(b.error ?? "could not delete this café");
+      return;
+    }
+    // The café no longer exists, so this page cannot render — go to the list.
+    window.location.href = "/admin/merchants";
   }
 
   async function sendReset(): Promise<void> {
@@ -278,6 +321,61 @@ export function MerchantControls({ merchant }: { merchant: AdminMerchantSummary 
             {resetDone}
             {/* Resend is still in test mode and only delivers to one address,
                 so in development the link itself is returned. */}
+          </p>
+        )}
+      </div>
+
+      {/*
+        Deletion, last and visually separate. Everything above this line is
+        reversible; this is not.
+      */}
+      <div className="rounded-xl border border-red-300 bg-red-50/60 p-5">
+        <h2 className="text-sm font-medium text-red-900">Delete this café</h2>
+        <p className="text-xs text-red-800 mt-0.5 mb-3">
+          Deletes every customer, card, stamp, event and message belonging to{" "}
+          <strong>{merchant.businessName}</strong>. <strong>This cannot be undone.</strong>{" "}
+          The owner&apos;s email becomes free, so they can sign up again from scratch.
+          Blocks they made are kept.
+        </p>
+        <p className="text-xs text-red-800 mb-3">
+          Suspending is almost always the right action instead — it stops the café
+          working and can be reversed.
+        </p>
+        <div className="flex flex-wrap items-end gap-2">
+          <label className={`${label} flex-1 min-w-[14rem]`}>
+            <span className="block mb-1">Why</span>
+            <input
+              type="text"
+              value={deleteReason}
+              onChange={(e) => setDeleteReason(e.target.value)}
+              maxLength={500}
+              className={field}
+            />
+          </label>
+          <label className={label}>
+            <span className="block mb-1">Deletion code</span>
+            <input
+              // type=password so it is not read over a shoulder or captured
+              // in a screen share while an admin works through the panel.
+              type="password"
+              value={deleteCode}
+              onChange={(e) => setDeleteCode(e.target.value)}
+              autoComplete="off"
+              className={`${field} w-32`}
+            />
+          </label>
+          <button
+            type="button"
+            disabled={deleteBusy || deleteReason.trim().length < 3 || deleteCode.length === 0}
+            onClick={() => void deleteCafe()}
+            className="rounded-lg bg-red-700 px-4 py-2 text-sm font-medium text-white hover:bg-red-800 disabled:opacity-40"
+          >
+            {deleteBusy ? "Deleting…" : "Delete café"}
+          </button>
+        </div>
+        {deleteError && (
+          <p role="alert" className="text-sm text-red-800 mt-2">
+            {deleteError}
           </p>
         )}
       </div>

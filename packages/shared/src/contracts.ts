@@ -811,6 +811,48 @@ export const CustomerBlock = z.object({
 });
 export type CustomerBlock = z.infer<typeof CustomerBlock>;
 
+// ---------- The cross-café customer view (Day 32, Stage 2) ----------
+//
+// 💡 Derived, not stored. There is no master customer table and deliberately
+// so: `customers` already holds email and phone per merchant, so the same
+// person at three cafés is three rows differing only by merchant_id. Grouping
+// at query time cannot drift from its source; a second copy would have to be
+// kept correct on every enrol, edit, merge and delete.
+
+export const CustomerIdentityCafe = z.object({
+  customerId: z.string(),
+  merchantId: z.string(),
+  businessName: z.string(),
+  activeCards: z.number().int().nonnegative(),
+  /**
+   * From `customer_blocks`, not from card status.
+   *
+   * ⚠️ A customer with no cards can still be blocked, so counting blocked
+   * cards would show a blocked person as fine. Card status is a side effect
+   * of blocking; the block list is the authority.
+   */
+  blocked: z.boolean(),
+});
+export type CustomerIdentityCafe = z.infer<typeof CustomerIdentityCafe>;
+
+export const CustomerIdentity = z.object({
+  /**
+   * The first customer id in the group, used as a handle by the UI.
+   *
+   * ⚠️ NOT a stable identifier for the person. There is no master row, so
+   * this changes if that café deletes them. Do not store it anywhere.
+   */
+  key: z.string(),
+  /** A platform-wide block, which marks every café they appear at. */
+  blockedEverywhere: z.boolean(),
+  name: z.string().nullable(),
+  email: z.string().nullable(),
+  phone: z.string().nullable(),
+  /** Every live café they hold a card at. Deleted cafés are gone entirely. */
+  cafes: z.array(CustomerIdentityCafe),
+});
+export type CustomerIdentity = z.infer<typeof CustomerIdentity>;
+
 // ---------- Deleting a café (Day 32, Stage 2) ----------
 
 export const MerchantDeleteInput = z.object({

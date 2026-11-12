@@ -6,7 +6,7 @@
 // nobody has.
 
 import { Router, type Request, type Response } from "express";
-import { CustomerBlockInput, type BlockScope } from "@onusclub/shared";
+import { CustomerBlockInput, type BlockScope, type CustomerIdentity } from "@onusclub/shared";
 import type { ResultSetHeader, RowDataPacket } from "mysql2";
 import type {
   AdminCustomerCard,
@@ -18,7 +18,12 @@ import { pool } from "../../db/pool.js";
 import { ApiError } from "../../errors.js";
 import { adminContext } from "../../admin/authorize.js";
 import { writeAuditLog, writeAuditLogPooled } from "../../admin/audit.js";
-import { recordBlock } from "../../customers/blocks.js";
+import {
+  hashIdentifier,
+  normaliseEmail,
+  normalisePhone,
+  recordBlock,
+} from "../../customers/blocks.js";
 
 export const adminCustomersRouter: Router = Router();
 
@@ -479,3 +484,166 @@ interface AdminBlockRow {
   actorEmail: string;
   createdAt: string;
 }
+
+// ---------------------------------------------------------------------------
+// GET /v1/admin/customer-identities?q= — the cross-café view (Day 32, Stage 2)
+//
+// 💡 DERIVED, NOT STORED. The original ask was for a "master customer table".
+// There is no such table and there should not be one: `customers` already
+// holds email and phone per merchant, so the same person at three cafés is
+// three rows differing only by `merchant_id`. Grouping them at query time
+// gives the same answer with no second copy to keep in step — and this
+// codebase has been bitten four times by stored data drifting from its source
+// (logo_url, points_current, the RFM thresholds, staff_user_id).
+//
+// A GROUP BY cannot be out of date.
+//
+// ⚠️ Deleted cafés do NOT appear here. Deleting a café cascades its customers,
+// so there is no row left to show — which is the retention behaviour the
+// hashed-block-list split was chosen for. "(café discontinued)" shows up in
+// the BLOCK list, where the row deliberately outlives its café.
+// ---------------------------------------------------------------------------
+
+interface BlockScopeRow extends RowDataPacket {
+  merchant_id: string | null;
+  email_hash: string | null;
+  phone_hash: string | null;
+}
+
+interface IdentityRow extends RowDataPacket {
+  customer_id: string;
+  merchant_id: string;
+  business_name: string;
+  name: string | null;
+  email: string | null;
+  phone: string | null;
+  active_cards: number;
+  blocked_cards: number;
+}
+
+adminCustomersRouter.get(
+  "/identities/search",
+  async (req: Request, res: Response<{ identities: CustomerIdentity[]; capped: boolean }>) => {
+    const q = String(req.query.q ?? "").trim();
+    if (q.length < 2) return res.json({ identities: [], capped: false });
+
+    const like = `%${q}%`;
+    const [rows] = await pool.execute<IdentityRow[]>(
+      `SELECT cu.id AS customer_id, cu.merchant_id, cu.name, cu.email, cu.phone,
+              m.business_name,
+              SUM(c.status = 'active')  AS active_cards,
+              SUM(c.status = 'blocked') AS blocked_cards
+         FROM customers cu
+         JOIN merchants m ON m.id = cu.merchant_id
+         LEFT JOIN loyalty_cards c ON c.customer_id = cu.id
+        WHERE cu.name LIKE ? OR cu.email LIKE ? OR cu.phone LIKE ?
+        GROUP BY cu.id, cu.merchant_id, cu.name, cu.email, cu.phone, m.business_name
+        ORDER BY cu.created_at DESC
+        LIMIT 300`,
+      [like, like, like]
+    );
+
+    // Union-find over the result set: two rows are the same person if they
+    // share a normalised email OR a normalised phone.
+    //
+    // Transitive on purpose. A row with (email X, no phone) at café A and a
+    // row with (email X, phone Y) at café B link on the email; a third row
+    // with (phone Y, no email) at café C then joins them both. Matching on a
+    // single field would leave that person looking like two people.
+    const parent = new Map<string, string>();
+    const find = (k: string): string => {
+      let r = k;
+      while (parent.get(r) !== r) r = parent.get(r) ?? r;
+      return r;
+    };
+    const union = (a: string, b: string): void => {
+      parent.set(find(a), find(b));
+    };
+    const keyOf = (r: IdentityRow): string[] => {
+      const keys: string[] = [`row:${r.customer_id}`];
+      if (r.email) keys.push(`e:${normaliseEmail(r.email)}`);
+      if (r.phone) keys.push(`p:${normalisePhone(r.phone)}`);
+      return keys;
+    };
+    for (const r of rows) {
+      for (const k of keyOf(r)) if (!parent.has(k)) parent.set(k, k);
+      const [rowKey, ...ids] = keyOf(r);
+      for (const id of ids) union(rowKey, id);
+    }
+
+    const grouped = new Map<string, IdentityRow[]>();
+    for (const r of rows) {
+      const root = find(`row:${r.customer_id}`);
+      const list = grouped.get(root) ?? [];
+      list.push(r);
+      grouped.set(root, list);
+    }
+
+    // ⚠️ Blocked state comes from `customer_blocks`, NOT from card status.
+    //
+    // Counting blocked cards looked right and was wrong: a customer with no
+    // cards can still be blocked — blocking writes a block row and updates
+    // whatever cards exist, which may be none — and the panel would then show
+    // a blocked person as fine. Card status is a side effect of blocking; the
+    // block list is the authority.
+    const allHashes: string[] = [];
+    for (const group of grouped.values()) {
+      for (const r of group) {
+        if (r.email) allHashes.push(hashIdentifier(normaliseEmail(r.email)));
+        if (r.phone) allHashes.push(hashIdentifier(normalisePhone(r.phone)));
+      }
+    }
+    const blockedMerchants = new Set<string>();
+    let anyPlatformBlock = new Set<string>();
+    if (allHashes.length > 0) {
+      const ph = allHashes.map(() => "?").join(",");
+      const [blockRows] = await pool.execute<BlockScopeRow[]>(
+        `SELECT merchant_id, email_hash, phone_hash
+           FROM customer_blocks
+          WHERE email_hash IN (${ph}) OR phone_hash IN (${ph})`,
+        [...allHashes, ...allHashes]
+      );
+      for (const b of blockRows) {
+        if (b.merchant_id === null) {
+          // Platform-wide: keyed by hash so it can be matched per identity.
+          if (b.email_hash) anyPlatformBlock.add(b.email_hash);
+          if (b.phone_hash) anyPlatformBlock.add(b.phone_hash);
+        } else {
+          blockedMerchants.add(b.merchant_id);
+        }
+      }
+    }
+
+    const identities: CustomerIdentity[] = [];
+    for (const group of grouped.values()) {
+      const first = group[0];
+      const groupHashes = group.flatMap((r) => [
+        ...(r.email ? [hashIdentifier(normaliseEmail(r.email))] : []),
+        ...(r.phone ? [hashIdentifier(normalisePhone(r.phone))] : []),
+      ]);
+      const blockedEverywhere = groupHashes.some((h) => anyPlatformBlock.has(h));
+      identities.push({
+        blockedEverywhere,
+        // No stable cross-café id exists — there is no master row — so the
+        // first customer id doubles as the group's handle for the UI.
+        key: first.customer_id,
+        name: group.find((g) => g.name)?.name ?? null,
+        email: group.find((g) => g.email)?.email ?? null,
+        phone: group.find((g) => g.phone)?.phone ?? null,
+        cafes: group.map((g) => ({
+          customerId: g.customer_id,
+          merchantId: g.merchant_id,
+          businessName: g.business_name,
+          activeCards: Number(g.active_cards ?? 0),
+          /** From the block list, so it is true even with no cards. */
+          blocked: blockedMerchants.has(g.merchant_id) || blockedEverywhere,
+        })),
+      });
+    }
+    // Most-connected first: someone holding cards at four cafés is the
+    // interesting row, and the reason this view exists.
+    identities.sort((a, b) => b.cafes.length - a.cafes.length);
+
+    return res.json({ identities, capped: rows.length === 300 });
+  }
+);

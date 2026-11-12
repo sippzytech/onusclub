@@ -1023,6 +1023,73 @@ async function main(): Promise<void> {
       "the action filter did not narrow the log"
     );
 
+    console.log("→ the cross-café view groups one person across two cafés");
+    // 💡 Derived, not stored: there is no master customer table. This asserts
+    // the GROUP BY actually links the same email at two different tenants —
+    // if it ever stopped, the panel would silently show each person twice and
+    // look like it was working.
+    const sharedEmail = `shared-${Date.now()}@example.com`;
+    const cafeA = await call<{ jwt: string }>("POST", "/v1/auth/signup", {
+      businessName: "Shared Café A",
+      ownerEmail: `a-${Date.now()}@example.com`,
+      password: "shared-password-123",
+    });
+    const cafeB = await call<{ jwt: string }>("POST", "/v1/auth/signup", {
+      businessName: "Shared Café B",
+      ownerEmail: `b-${Date.now()}@example.com`,
+      password: "shared-password-123",
+    });
+    await call("POST", "/v1/customers", { name: "Shared Person", email: sharedEmail }, cafeA.jwt);
+    await call("POST", "/v1/customers", { name: "Shared Person", email: sharedEmail }, cafeB.jwt);
+
+    const ident = await call<{ identities: Array<{ cafes: Array<{ businessName: string }> }> }>(
+      "GET",
+      `/v1/admin/customers/identities/search?q=${encodeURIComponent(sharedEmail)}`,
+      undefined,
+      adminJwt
+    );
+    const linked = ident.identities.find((i) => i.cafes.length > 1);
+    assert(
+      linked,
+      `the same email at two cafés was not grouped into one person ` +
+        `(got ${ident.identities.length} identities)`
+    );
+    assert(
+      linked!.cafes.length === 2,
+      `expected 2 cafés for this person, got ${linked!.cafes.length}`
+    );
+
+    console.log("→ ...and a block at one café shows against that café only");
+    const aList = await call<{ customers: Array<{ id: string; email: string | null }> }>(
+      "GET",
+      "/v1/customers",
+      undefined,
+      cafeA.jwt
+    );
+    const atA = aList.customers.find((c) => c.email === sharedEmail);
+    await call(
+      "POST",
+      `/v1/customers/${atA!.id}/block`,
+      { reason: "smoke: identity view blocked flag" },
+      cafeA.jwt
+    );
+    const ident2 = await call<{
+      identities: Array<{ cafes: Array<{ businessName: string; blocked: boolean }> }>;
+    }>(
+      "GET",
+      `/v1/admin/customers/identities/search?q=${encodeURIComponent(sharedEmail)}`,
+      undefined,
+      adminJwt
+    );
+    const linked2 = ident2.identities.find((i) => i.cafes.length > 1);
+    const blockedSide = linked2!.cafes.filter((c) => c.blocked);
+    assert(
+      blockedSide.length === 1 && blockedSide[0].businessName === "Shared Café A",
+      `expected exactly Café A to show blocked, got ${JSON.stringify(
+        linked2!.cafes.map((c) => [c.businessName, c.blocked])
+      )}`
+    );
+
     // ---------- Day 32 Stage 2: deleting a café ----------
     //
     // The one irreversible action in the product, so what is asserted here is

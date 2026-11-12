@@ -38,7 +38,7 @@ import { writeAuditLog, writeAuditLogPooled } from "../../admin/audit.js";
 import { issueMagicLink } from "../../auth/magic-link.js";
 import { sendEmail } from "../../email/client.js";
 import { loadMerchantSummaries, SUMMARY_THRESHOLDS } from "../../admin/overview.js";
-import { safeZone, localDayHour } from "../analytics.js";
+import { safeZone, localDayHour, localDaySeries } from "../analytics.js";
 
 export const adminMerchantsRouter: Router = Router();
 
@@ -456,13 +456,10 @@ adminMerchantsRouter.get("/:id", async (req: Request, res: Response<AdminMerchan
     [merchantId, startSql]
   );
 
+  // Gap-filled so a café with no activity renders a flat line, not an empty
+  // chart. See localDaySeries for why this is not a millisecond loop.
   const daily = new Map<string, number>();
-  for (let i = 0; i <= windowDays; i += 1) {
-    // Anchored at midday so a DST transition cannot land the probe on the
-    // wrong calendar date.
-    const { date } = localDayHour(new Date(startMs + i * 86_400_000 + 43_200_000), timeZone);
-    if (!daily.has(date)) daily.set(date, 0);
-  }
+  for (const date of localDaySeries(windowDays, timeZone)) daily.set(date, 0);
   for (const row of dayRows) {
     const { date } = localDayHour(new Date(row.utc_day), timeZone);
     daily.set(date, (daily.get(date) ?? 0) + Number(row.events));
