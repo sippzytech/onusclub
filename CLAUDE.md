@@ -130,8 +130,15 @@ Switching issuers is an env-var change, never a code change — `GOOGLE_WALLET_I
 
 ## Schema
 
-See `apps/api/src/db/migrations/` — the numbered SQL files are the single source of truth, `001_initial.sql` through `017_drop_stale_logo_url.sql`. Core tables: `merchants`, `locations`, `loyalty_programs`, `customers`, `loyalty_cards`, `card_events`, `staff_users`, `auth_tokens`; later migrations add `broadcasts`, `sweep_runs`, `message_deliveries`, `apple_pass_registrations`, `points_batches`, `leads`, `merchant_assets`, `platform_admins`, `admin_audit_log`,
-`email_deliveries`, `ai_drafts`.
+See `apps/api/src/db/migrations/` — the numbered SQL files are the single source of truth, `001_initial.sql` through `019_merchant_deletion.sql`. Core tables: `merchants`, `locations`, `loyalty_programs`, `customers`, `loyalty_cards`, `card_events`, `staff_users`, `auth_tokens`; later migrations add `broadcasts`, `sweep_runs`, `message_deliveries`, `apple_pass_registrations`, `points_batches`, `leads`, `merchant_assets`, `platform_admins`, `admin_audit_log`,
+`email_deliveries`, `ai_drafts`, `customer_blocks`, `deleted_merchants`, `platform_settings`.
+
+🚨 **Four tables deliberately have NO foreign key to `merchants`**, and the cascade must
+never be allowed to reach them: `admin_audit_log` (a cascade here would delete the record
+of a deletion), `customer_blocks` (a block must outlive every café that knew the person),
+`email_deliveries` ("did my customer get their card?" outlives the account) and
+`ai_drafts` (a bill does not disappear because the café did). Adding a FK to any of them
+would, on the next café deletion, **silently lift every block that café held**.
 
 ⚠️ **Append new `card_events.event_type` values at the END of the ENUM.** MySQL 8 does an
 in-place ALTER for an appended value and a full table rebuild for one inserted mid-list —
@@ -180,13 +187,18 @@ When adding a new `program_type`, define its config + state shapes in `packages/
   Authorization is applied once, to the `/v1/admin` mount in `index.ts`, not per route —
   see `docs/admin/README.md`.
 
-## Status — Day 30 (current)
+## Status — Day 31 (current)
 
 **Deployed live at `api.onusclub.com` + `app.onusclub.com`**, from branch **`main`**.
 
-✅ **Production is up to date.** Deployed and verified 2026-10-18: all **17** migrations
-applied, `verify-deploy.sh` **22/22**, no errors in the api log after the restart. A
-pre-deploy `mysqldump` is at `/docker/stampdeck/backups/pre-day30-*.sql` because `017`
+✅ **Production is up to date.** Deployed and verified 2026-11-12: all **19** migrations
+applied (`migrate.js` reported `applied: 0` on a second run), `verify-deploy.sh`
+**24/24**, no errors in the api log after the restart, and the three new admin routes
+answer 401 rather than 404 so they are mounted and gated. Pre-deploy `mysqldump`s are at
+`/docker/stampdeck/backups/pre-stage1-*.sql` and `pre-day31-*.sql`.
+
+✅ Verified 2026-10-18 after Day 30: all 17 migrations applied, `verify-deploy.sh` 22/22.
+A pre-deploy `mysqldump` is at `/docker/stampdeck/backups/pre-day30-*.sql` because `017`
 drops a column.
 
 ✅ Last verified 2026-10-17 after deploying Day 28: all 15 migrations applied at that
@@ -241,18 +253,22 @@ What works end-to-end:
 - ✅ Per-card delivery audit (broadcasts + sweeps) with manual retry
 - ✅ Premium feature gate (fake unlock for now) + crons-enabled kill-switch
 - ✅ Staff/team accounts (`/dashboard/team`, owner-only CRUD)
-- ✅ Six test layers, all gated in CI on every PR: `pnpm smoke` (API black-box, includes
+- ✅ Seven test layers, all gated in CI on every PR: `pnpm smoke` (API black-box, includes
   the cross-tenant isolation section), `pnpm smoke:admin` (needs `DATABASE_URL`, because
   granting platform admin is SQL-only), `pnpm e2e` (Playwright, in `e2e/`, browser flows
-  only — it deliberately does not re-test the API), plus three pure-assertion scripts for
-  integrations that **cannot be exercised for free**: `pnpm check:wallet` (the Google
-  Wallet class payload — classes are permanent and undeletable), `pnpm check:drafts` (the
-  AI draft prompt + response validation — every call costs money) and `pnpm check:google`
-  (the Google auth contracts — a real ID token needs a browser signing in). ⚠️
+  only — it deliberately does not re-test the API; **`tests/admin.spec.ts` also needs
+  `DATABASE_URL`** for the same reason, and three tests fail without it), plus four
+  pure-assertion scripts for integrations that **cannot be exercised for free**:
+  `pnpm check:wallet` (the Google Wallet class payload — classes are permanent and
+  undeletable), `pnpm check:drafts` (the AI draft prompt + response validation — every
+  call costs money), `pnpm check:google` (the Google auth contracts — a real ID token
+  needs a browser signing in) and `pnpm check:blocks` (identifier normalisation and
+  hashing — a wrong hash cannot be un-widened once a block is written). ⚠️
   `check:wallet` imports `config.ts` so it needs the api's env and runs in the smoke job;
-  the other two need nothing and run in the typecheck job. ⚠️ The QR scanner is **not**
-  covered: it is camera-only with no manual-entry fallback, so a test would really be
-  testing `html5-qrcode`. See `playwright.config.ts`.
+  the other three need nothing and run in the typecheck job — which is why the pure halves
+  live in their own files (`ai/prompt.ts`, `customers/block-hash.ts`). ⚠️ The QR scanner
+  is **not** covered: it is camera-only with no manual-entry fallback, so a test would
+  really be testing `html5-qrcode`. See `playwright.config.ts`.
 - ✅ **Card design system** (Day 16): shared SVG renderer, per-program design editor in
   `/dashboard/card-builder`, Apple Wallet `strip.png` artwork. See `docs/card-design/README.md`.
   Deployed and **verified on a physical iPhone 2026-09-18**.
@@ -360,6 +376,43 @@ What works end-to-end:
   - Google gives a person, not a business, so owner signup is two calls with the same
     token: `needs_business_name`, then the name. Owners created this way have
     `password_hash NULL`, which `/login` already handles.
+- ✅ **Remove and block customers** (Day 31, Stage 1): a café can delete a customer
+  (fresh start, cards and history cascade) or block them (cards go `'blocked'` **and** a
+  `customer_blocks` row stops them re-enrolling). An admin can block for one café or
+  platform-wide. Four things to know:
+  - **Most of the enforcement already existed.** `loyalty_cards.status = 'blocked'` has
+    been in the enum since `001` and every write path already refused a non-active card.
+    Nothing ever wrote it — the fourth piece of dead schema in three weeks.
+  - **The block list holds HMACs, never addresses.** The row must outlive every café that
+    knew the person, and a table of contact details for people whose café no longer
+    exists is a profile we have no business holding. `display_hint` is masked.
+  - ⚠️ **Rotating `BLOCKLIST_PEPPER` silently unblocks everyone** — no stored hash
+    matches again and nothing errors. Empty pepper degrades to plain SHA-256.
+  - 🚨 **The enrolment check hashes the email from the VERIFIED Google token**, never the
+    body — the Day 29 trap, applied to blocks.
+  - Normalisation deliberately stops at trim/lowercase (email) and digits-only (phone).
+    Stripping Gmail dots or `+tags` would make a block broader than the café asked for,
+    and a hash cannot be un-widened. `pnpm check:blocks` guards both directions.
+- ✅ **Delete a café, and the derived cross-café customer view** (Day 31, Stage 2). This
+  **overrules** the Day 23 note that said there deliberately was no `DELETE`. Four things
+  to know:
+  - 🚨 **Deleting a café silently revokes platform admin** from anyone whose staff
+    account lives in it, because `platform_admins` cascades from `staff_users` cascades
+    from `merchants`. Granting admin is SQL-only, so they would lock themselves out of
+    `/admin` with nothing erroring. Hence two refusals rather than care: not your own
+    café, and not any café holding a platform admin. **Both asserted — do not remove.**
+  - The code is checked **last**, after both refusals, so a wrong code cannot probe which
+    café ids exist. Seeded `1234`, bcrypt-hashed, changeable from `/admin`, rate-limited
+    ten an hour per admin, and **fails closed** if the setting row is missing.
+  - Hard delete, not `status = 'deleted'`, because `owner_email` is `UNIQUE` and the
+    owner must be able to sign up again. The tombstone and audit row are written
+    **before** the delete in the same transaction.
+  - **There is no master customer table and there should not be one.** The cross-café
+    view groups `customers` on normalised email/phone at query time (union-find, since
+    two rows can match on either). A `GROUP BY` cannot drift the way `logo_url` and
+    `points_current` did. ⚠️ Blocked state is read from `customer_blocks`, **never from
+    card counts** — a removed-then-blocked customer has no cards and rendered as a normal
+    member in exactly the view used to decide whether a block exists.
 
 ### Naming: three different names, on purpose
 

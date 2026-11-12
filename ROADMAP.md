@@ -10,6 +10,170 @@ See also: [CLAUDE.md](./CLAUDE.md) for stack + conventions, [DEPLOY.md](./DEPLOY
 
 ---
 
+### Day 31 — Remove, block, and delete: customers and cafés
+
+Two gaps asked for together. A café had **no action at all** against a customer behaving
+badly, and an admin could not delete a café — `routes/admin/merchants.ts` had said since
+Day 23 that there deliberately was no DELETE, because the cascade is irreversible and
+`status = 'suspended'` covered every real need. That reasoning was right when a bare
+`DELETE` was the only alternative. It is overruled here and replaced with something
+narrower: a delete that leaves a record of itself, is gated behind a code, and cannot
+take the platform's own administrators down with it.
+
+Shipped in two stages. Both are live; migrations `018` and `019`.
+
+#### Stage 1 — remove and block a customer
+
+**Most of the enforcement already existed.** `loyalty_cards.status` has had a `'blocked'`
+value since migration `001`; `applyStamp`, `applyRedeem` and the scan path all refuse a
+non-active card, and `/c/[qrToken]` already renders *"This card is blocked."* **Nothing
+ever wrote it.** That is the **fourth** piece of dead schema found in three weeks, after
+`google_place_id`, `merchants.logo_url` and `card_events.staff_user_id`.
+
+The two actions mean different things, on purpose:
+
+| | What happens | Can they come back? |
+|---|---|---|
+| **Remove** | Deletes the `customers` row; the FK cascade clears their cards, events and points batches | **Yes** — fresh start, all history gone |
+| **Block** | Sets their cards to `'blocked'` **and** writes a `customer_blocks` row | **No** |
+
+Either write alone is half a feature: the card status stops the pass working today, the
+block row stops them simply enrolling again tomorrow. Smoke asserts the second half
+specifically — a blocked customer re-enrolling is refused **and no customer row is
+created**.
+
+**Why the block list holds hashes.** The row has to outlive every café that ever knew
+the person — that is what a block list is *for*, and why there is no FK to `merchants`.
+A table of names, emails and phone numbers belonging to people whose café no longer
+exists is a profile we would have no business holding once the relationship that
+justified collecting it is gone. So: an HMAC of the normalised identifier plus a masked
+`display_hint`, and nothing else.
+
+⚠️ **Normalisation deliberately stops at trim/lowercase for email and digits-only for
+phone.** Stripping Gmail dots or `+tags` would make a block *broader* than the café
+asked for, and it cannot be undone from a hash — a false positive refuses a stranger
+with no way for anyone to see why. `pnpm check:blocks` asserts both are left alone, and
+that case and spacing variants **do** collapse, which is the silent-failure direction.
+
+⚠️ **`BLOCKLIST_PEPPER` keys the HMAC.** Empty still works but degrades to a plain
+SHA-256, which is cheap to confirm for a suspected address. **Rotating it silently
+unblocks everyone** — no hash matches again and nothing errors. Written into the
+migration, the config comment, `.env.example` and an assertion.
+
+The pure functions live in `customers/block-hash.ts`, which imports only `node:crypto`,
+so `check:blocks` runs in the typecheck job with no env and no database — the same split
+as `ai/prompt.ts` against `ai/client.ts`. The first version imported `config.ts` and
+could not run without a full environment.
+
+🚨 **The enrolment check hashes the email the Google path took from the VERIFIED token**,
+never the request body. Checking the body would be bypassed by sending a different
+address while presenting a valid token — the trap Day 29 closed for identity.
+
+Refusal is a deliberately vague 400, not a 403 naming the block: telling a stranger at a
+counter that an address is blocked discloses something about someone else's standing
+with the café. Scope is real — a café owner sending `scope: "platform"` gets a 403, and
+`findBlock` matches `merchant_id = :this OR merchant_id IS NULL`, both asserted, the
+second in the isolation section.
+
+`admin_audit_log` needed **no migration**: no FKs by design, `action` is a free string,
+and the actor email is captured at write time, so it already recorded café-owner actions
+as well as admin ones. Only the name says "admin".
+
+#### Stage 2 — delete a café, and the cross-café customer view
+
+**Hard delete, not `status = 'deleted'`.** `merchants.owner_email` is `UNIQUE`, so a
+soft-deleted café keeps its row and the owner could never sign up again without extra
+release logic — and every query filtering on `status` would have to learn a new value or
+deleted cafés would leak into dashboards, metrics and sweeps. Hard delete frees the email
+for free and cannot leak anywhere.
+
+🚨 **The foot-gun this found.** `platform_admins.staff_user_id` cascades from
+`staff_users`, which cascades from `merchants`. So deleting a café **silently revokes
+platform admin** from anyone whose staff account lives in it — very plausibly the person
+doing the deleting. Granting admin is SQL-only, so they would lock themselves out of
+`/admin` with no route back through the product, and **nothing would error**.
+
+Hence three refusals rather than care, checked in this order:
+
+1. you cannot delete the café your own account belongs to,
+2. you cannot delete any café that holds a platform admin,
+3. the code.
+
+**The code is last on purpose** — a wrong code cannot be used to probe which café ids
+exist, and the rate limiter is not spent on requests that were going to be refused
+anyway. The three surface as their own messages: *"you cannot delete your own café"* is a
+very different thing to be told than *"wrong code"*, and an admin who gets the generic
+one will retype the code instead of realising they are about to revoke their own access.
+
+**The code** is seeded as `1234` (agreed starting point), bcrypt-hashed with the
+project's own password helpers, changeable from `/admin`, and rate-limited at ten
+attempts an hour keyed on the acting admin. **Fails closed**: a missing setting row
+refuses every deletion rather than allowing them. The hash in the migration was
+generated and verified against bcryptjs rather than typed from memory — a wrong literal
+there would mean the code never works and nobody could tell why.
+
+⚠️ A shared static code proves **intent, not identity**. It guards against a misclick,
+not against someone who already has platform-admin access — they are inside the gate by
+definition.
+
+**What survives, and why that is correct.** The tombstone and the audit row are written
+**before** the delete, in the same transaction, so a failure leaves either nothing or a
+complete record — never a café that vanished silently. `admin_audit_log`,
+`customer_blocks`, `email_deliveries` and `ai_drafts` have no FK to `merchants` on
+purpose and so outlive the café.
+
+🚨 **`customer_blocks` surviving is the assertion that matters most**: a platform block
+must outlive every café that ever knew the person. Smoke counts block rows either side of
+a deletion. If a FK to `merchants` were ever added there, deleting a café would quietly
+lift every block it held and nothing would error.
+
+#### 💡 No master customer table — it is derived
+
+The question was whether we maintain master customer data. We should not have to.
+`customers` already holds email and phone per merchant, so the same person at three cafés
+is three rows differing only by `merchant_id`. Grouping on the normalised identifier
+**at query time** gives the view with no new table, no sync code, and nothing that can
+drift out of step with `customers` — which is the failure this codebase keeps hitting
+(`logo_url`, `points_current`, the RFM thresholds). **A `GROUP BY` cannot be stale.** It
+also disappears on its own when the last café holding that person is deleted, which is
+the retention behaviour the GDPR split wants anyway.
+
+Grouping is **union-find, not a `GROUP BY` on one column**: two rows sharing a phone but
+not an email are the same person, and so are two rows sharing an email but not a phone.
+One pass of unions over both identifiers merges the chains.
+
+⚠️ **Blocked state comes from `customer_blocks`, never from card counts.** The first
+version inferred it from whether any of the person's cards at that café were `'blocked'`.
+A removed-then-blocked customer has **no cards at all**, so they rendered as a normal
+member — in the exact view an admin opens to decide whether a block is already in place.
+`blockedEverywhere` is kept separate from per-café, because that is the distinction an
+admin is actually looking for. Smoke asserts it on a customer with zero cards. Cafés that
+no longer exist resolve through `deleted_merchants` to *"(café discontinued)"* rather
+than a dangling id — the one thing the tombstone's `business_name` column exists for.
+
+#### A DST bug, in two places
+
+Found by a Stage 2 assertion and unrelated to deletion: a new café's 31-day chart came
+back with **30 buckets**. Both day-series builders stepped the cursor by a fixed
+`86_400_000` ms, which is not a day across a fall-back — `2026-10-25` was generated twice
+and the series silently came up one short. **Any merchant looking at a window spanning
+the October or March transition has been seeing a duplicated day since Day 17.**
+Extracted as `localDaySeries()`, which steps with `setUTCDate` on a UTC-midnight cursor
+and is therefore immune to the offset it is formatting into. Both callers use it; the
+admin smoke assertion counts the buckets.
+
+#### Two test bugs fixed on the way
+
+- The suite asserted **"DELETE /merchants/:id must not exist"** — the old decision
+  encoded as a test. It caught this change immediately, which is the system working.
+  Replaced with an assertion that the route cannot fire by accident: no code, no deletion.
+- **`smoke-admin.ts` sent no `X-Forwarded-For` at all**, so every request shared one
+  rate-limit bucket and the suite had a hard ceiling of five signups an hour. `smoke.ts`
+  has sent a synthetic address per request since Day 26; this file was never updated to
+  match and stayed under the limit by accident until Stage 2 added two more signups.
+
+---
+
 ### Day 30 — Logo URLs are derived, not frozen
 
 `merchants.logo_url` stored the finished absolute URL, built from `BASE_URL_API` at
