@@ -10,6 +10,91 @@ See also: [CLAUDE.md](./CLAUDE.md) for stack + conventions, [DEPLOY.md](./DEPLOY
 
 ---
 
+### Day 32 — A real café owner used it, and found thirteen things
+
+**The first time anyone outside the project set the product up.** A café owner
+(`Third Wave Coffee`, 2026-11-16) signed up, created a card, enrolled customers and
+reported back. Thirteen items. They collapsed into six causes, and **one of them had a
+completely different cause than the one reported.**
+
+#### 🚨 The stamps were cropped — and not for the reason anyone thought
+
+Reported as a layout problem: *"if stamps are 6 then show 3 on one line and 3 on next,
+coz the stamp ui is getting cut"*. But the wrapping already worked — `balancedColumns`
+picks the rows and the block is centred, so five badges should have sat comfortably
+inside the band.
+
+The cause was the **canvas aspect ratio**. We rendered the Apple strip at **375×123**
+while the store-card slot is **375×144**. Wallet scales the strip to **fill** its slot
+and crops the overflow — it never letterboxes — so our proportionally-wider image lost
+~8% off each side, straight through the first and last badge.
+
+Nothing was wrong server-side; the PNG was always complete. **The crop happens on the
+device**, which is why only a physical phone could find it. Day 16 *was* verified on an
+iPhone — but with a 10-stamp card laid out 5×2, where the badges are smaller and the end
+ones stop short of the crop line.
+
+⚠️ The 144 figure comes from secondary sources (Apple's own docs were unreachable), so
+the fix does not rest on it: `renderCardStrip` also keeps a **9% horizontal safe zone**,
+which is correct either way — at 144 there is no crop, and if the slot really is 123 our
+image becomes the *taller* one and the crop moves to top and bottom, where the badge
+block has ~45pt of padding to absorb it. Verified numerically for 1–12 stamps; worst side
+margin went **14.9pt → 33.8pt**.
+
+🚨 **And the trap that would have made the fix invisible.** Google caches the hero image
+**by URI**, and `heroVersion` was built from the design inputs and counts — *not* the
+renderer. Changing how the art is drawn would have left every existing Google card on the
+old cropped image **forever, with nothing erroring**. Same silent staleness as
+`logo_url`. `ART_VERSION` now feeds the cache key, with a bump-on-change rule.
+
+#### There was no onboarding
+
+Signup dropped an owner into the finished product: nine nav items, four empty stat cards,
+and a QR code for a signup page with nothing to sign up to. **`/dashboard/setup`** now
+asks one question per screen — your offer, your card, your first customer. Only accounts
+being *created* go there; a Google tap matching an existing account is a login.
+
+Every step is **derived from real state** — no `setup_completed` column, no cookie. That
+is also the fix for *"I clicked save design and it stayed on the same screen so I'm
+stuck"*: the step's condition is "`config_json` has a design object", so saving advances
+the wizard by itself. ⚠️ Every screen has a way out, and the Overview checklist still
+catches whoever takes it.
+
+#### The card builder opened with the last step
+
+It led with the signup QR *before an offer existed*. The owner asked exactly the right
+question: **the offer isn't created, so why is the QR first?** The page now follows the
+order the work happens in — no offer: one job on screen; offer exists: here is your card,
+change it, then take the QR to the counter.
+
+#### The rest
+
+- **"Program" → "offer"** across owner-facing UI. Display strings only; `loyalty_programs`,
+  `program_type` and every API path untouched, and `/admin` keeps the DB vocabulary.
+- **Max 12 stamps**, was 100 — which no layout could ever have rendered legibly.
+- **Preview is phone-shaped** (9:16). A pass is short, so a content-sized frame came out
+  ~280×330. The gallery looked fine only because it renders at 210px.
+- **Logo on Apple passes.** Google had it since Day 21; Apple sent only `logoText`.
+  Apple needs PNG and uploads may be JPEG at any size, so the original is wrapped in an
+  SVG `<image>` and rasterised — conversion and fitting in one step, using resvg, which
+  was already a dependency.
+- **Notifications.** 🚨 Apple **ignores** a `changeMessage` without `%@` and substitutes
+  its own flat text — a silent downgrade only a real phone could reveal. Copy now lives
+  in one pure shared module; `pnpm check:messages` asserts the token on every branch, and
+  mirrored, that Google never leaks `%@`. Milestone-aware with emoji; variety keyed on
+  the **balance, not random**, because a pass can be rebuilt several times for one stamp.
+- **Birthday required** on customer self-signup, optional when staff add a walk-in — a
+  customer knows their own birthday, a staff member usually does not. ⚠️ Checked in the
+  submit handler, not just `required`: the Google path never submits the form, and Google
+  returns no birthday. The field therefore sits **above** the Google button.
+- 🚨 **dd-mm-yyyy is impossible with `<input type="date">`** — it renders in the browser's
+  locale and nothing changes that. For a birthday that is not cosmetic: `05-12` is either
+  5 December or 12 May and the treat goes out in the wrong month. Three dropdowns state
+  the order instead, which also suits the audience: no keyboard, nothing to mistype,
+  months spelled out. Wire format stays ISO.
+
+---
+
 ### Day 31 — Remove, block, and delete: customers and cafés
 
 Two gaps asked for together. A café had **no action at all** against a customer behaving

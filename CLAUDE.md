@@ -187,11 +187,17 @@ When adding a new `program_type`, define its config + state shapes in `packages/
   Authorization is applied once, to the `/v1/admin` mount in `index.ts`, not per route —
   see `docs/admin/README.md`.
 
-## Status — Day 31 (current)
+## Status — Day 32 (current)
 
 **Deployed live at `api.onusclub.com` + `app.onusclub.com`**, from branch **`main`**.
 
-✅ **Production is up to date.** Deployed and verified 2026-11-12: all **19** migrations
+✅ **Production is up to date.** Deployed and verified 2026-11-24 (Day 32, UI/UX pass
+from a real café owner's testing): no new migrations, `verify-deploy.sh` **24/24**, no
+errors in the api log after the restart, `/dashboard/setup` live and the public enrol
+page rendering the new day/month/year birthday control. Pre-deploy dump at
+`/docker/stampdeck/backups/pre-ux-*.sql`.
+
+✅ Deployed and verified 2026-11-12: all **19** migrations
 applied (`migrate.js` reported `applied: 0` on a second run), `verify-deploy.sh`
 **24/24**, no errors in the api log after the restart, and the three new admin routes
 answer 401 rather than 404 so they are mounted and gated. Pre-deploy `mysqldump`s are at
@@ -253,7 +259,7 @@ What works end-to-end:
 - ✅ Per-card delivery audit (broadcasts + sweeps) with manual retry
 - ✅ Premium feature gate (fake unlock for now) + crons-enabled kill-switch
 - ✅ Staff/team accounts (`/dashboard/team`, owner-only CRUD)
-- ✅ Seven test layers, all gated in CI on every PR: `pnpm smoke` (API black-box, includes
+- ✅ Eight test layers, all gated in CI on every PR: `pnpm smoke` (API black-box, includes
   the cross-tenant isolation section), `pnpm smoke:admin` (needs `DATABASE_URL`, because
   granting platform admin is SQL-only), `pnpm e2e` (Playwright, in `e2e/`, browser flows
   only — it deliberately does not re-test the API; **`tests/admin.spec.ts` also needs
@@ -263,9 +269,12 @@ What works end-to-end:
   undeletable), `pnpm check:drafts` (the AI draft prompt + response validation — every
   call costs money), `pnpm check:google` (the Google auth contracts — a real ID token
   needs a browser signing in) and `pnpm check:blocks` (identifier normalisation and
-  hashing — a wrong hash cannot be un-widened once a block is written). ⚠️
+  hashing — a wrong hash cannot be un-widened once a block is written) and
+  `pnpm check:messages` (wallet notification copy — 🚨 Apple **ignores** a
+  `changeMessage` without `%@` and shows its own flat text instead, a silent downgrade
+  only a real phone receiving a real push could ever reveal). ⚠️
   `check:wallet` imports `config.ts` so it needs the api's env and runs in the smoke job;
-  the other three need nothing and run in the typecheck job — which is why the pure halves
+  the other four need nothing and run in the typecheck job — which is why the pure halves
   live in their own files (`ai/prompt.ts`, `customers/block-hash.ts`). ⚠️ The QR scanner
   is **not** covered: it is camera-only with no manual-entry fallback, so a test would
   really be testing `html5-qrcode`. See `playwright.config.ts`.
