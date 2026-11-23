@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
+import { MAX_STAMPS_REQUIRED } from "@onusclub/shared";
 
 type ProgramType = "stamp" | "points";
 
@@ -121,11 +122,17 @@ export function CreateProgramForm(): JSX.Element {
               required
               type="number"
               min={1}
-              max={100}
+              max={MAX_STAMPS_REQUIRED}
               value={stampsRequired}
               onChange={(e) => setStampsRequired(parseInt(e.target.value, 10))}
               className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
             />
+            {/* Said up front rather than as a validation error after the fact —
+                the number is a design constraint the owner cannot guess. */}
+            <p className="mt-1 text-xs text-gray-500">
+              Between 1 and {MAX_STAMPS_REQUIRED}, so the stamps stay big enough to read on
+              the card.
+            </p>
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-800">Expiry (optional)</label>

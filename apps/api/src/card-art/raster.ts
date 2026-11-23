@@ -12,10 +12,34 @@ import { logger } from "../logger.js";
  * at most 11 distinct strips per design.
  */
 
-// Apple storeCard strip, in points: 375×123. @2x and @3x are the retina
-// variants Wallet actually picks on modern devices.
+// Apple storeCard strip, in points. @2x and @3x are the retina variants Wallet
+// actually picks on modern devices.
+//
+// 🚨 WAS 375×123, AND THAT IS WHY STAMPS WERE CUT OFF.
+//
+// Apple's store-card strip slot is 375×**144**. At 123 we were handing Wallet
+// an image proportionally WIDER than the slot (3.05:1 against 2.60:1), so iOS
+// scaled it to fill and cropped roughly 8% off each side — straight through
+// the first and last badge. Reported from a real café owner's iPhone on a
+// 5-stamp card, where the end badges were visibly half-missing.
+//
+// Nothing errored and nothing looked wrong server-side: the PNG we generated
+// was always correct and complete. The crop happens entirely on the device,
+// which is why only a physical phone could have caught it.
+//
+// ⚠️ The sources for 144 are secondary (several cite Apple's Pass Designer;
+// Apple's own docs were not reachable), so this is belt-and-braces rather than
+// a number to trust blindly: `renderCardStrip` also keeps a horizontal safe
+// zone wide enough that a crop of this size cannot reach a badge. The two
+// together mean we are correct whichever figure is right —
+//   - slot really 144 → exact match, no crop at all;
+//   - slot really 123 → our image is now TALLER than the slot, so the crop
+//     moves to top and bottom, where the badge block has ~45pt of empty
+//     padding to absorb it.
+// Either way no badge is touched. Confirm on a physical iPhone before trusting
+// it; this cannot be tested from the API side.
 const STRIP_W = 375;
-const STRIP_H = 123;
+const STRIP_H = 144;
 export const STRIP_SCALES = [1, 2, 3] as const;
 
 export interface StripSet {
@@ -24,6 +48,27 @@ export interface StripSet {
   "strip@3x.png": Buffer;
 }
 
+/**
+ * 🚨 BUMP THIS ON EVERY CHANGE TO HOW THE ART IS DRAWN.
+ *
+ * The design inputs alone are not enough to identify a rendering. Google
+ * fetches the hero image server-side and caches it **by URI**
+ * (`…/hero.png?v=<heroVersion>`), and `heroVersion` is built from this key —
+ * so if the renderer changes while the key does not, every existing card keeps
+ * Google's copy of the OLD artwork, forever, with nothing erroring anywhere.
+ * That is the same silent-staleness failure that `merchants.logo_url` caused
+ * and migration 017 was written to kill.
+ *
+ * It also busts the in-process LRU below, which would otherwise serve
+ * pre-change strips until the container restarts.
+ *
+ * History:
+ *   1 — original.
+ *   2 — Apple strip 375×123 → 375×144 and the 9% horizontal safe zone, after
+ *       badges were found cropped on a real iPhone.
+ */
+const ART_VERSION = 2;
+
 // Small bounded LRU. Strips are ~30-90KB each, so a few hundred entries is a
 // handful of MB — cheap next to re-rasterising on every pass refresh.
 const MAX_ENTRIES = 240;
@@ -31,6 +76,7 @@ const cache = new Map<string, StripSet>();
 
 function cacheKey(design: CardDesign, current: number, total: number): string {
   return [
+    `v${ART_VERSION}`,
     current,
     total,
     design.stampIcon,

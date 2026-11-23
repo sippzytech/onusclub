@@ -202,10 +202,24 @@ export type StaffCreateInput = z.infer<typeof StaffCreateInput>;
 
 // ---------- Programs ----------
 
+/**
+ * Most stamps a card may require.
+ *
+ * This is a DESIGN limit, not a business one. The wallet strip is a fixed
+ * 375×144pt band; past about a dozen badges they shrink to the point where the
+ * icon inside them is unreadable at arm's length, which is the only distance a
+ * loyalty card is ever read at. `balancedColumns` lays 12 out as a tidy 4×3 —
+ * 13 would be 5+5+3 with a hole in it.
+ *
+ * ⚠️ Raising this means re-checking `renderCardStrip`, not just this number.
+ * It was 100, which no layout could ever have rendered legibly.
+ */
+export const MAX_STAMPS_REQUIRED = 12;
+
 export const StampProgramCreateInput = z.object({
   programType: z.literal("stamp"),
   name: z.string().min(1).max(200),
-  stampsRequired: z.number().int().positive().max(100),
+  stampsRequired: z.number().int().positive().max(MAX_STAMPS_REQUIRED),
   rewardText: z.string().min(1).max(500),
   // Optional: card expires after this many days of inactivity (no stamp /
   // redeem events). The expiry sweep flips status to 'expired' and PATCHes

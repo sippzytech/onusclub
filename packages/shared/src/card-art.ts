@@ -465,7 +465,19 @@ export function renderCardStrip(opts: CardStripOptions): StampGridResult {
     const rows = Math.ceil(total / columns);
     // Gap scales with the badge so dense cards stay legible.
     const gapRatio = 0.22;
-    const padX = width * 0.04;
+    // 🚨 HORIZONTAL SAFE ZONE — do not lower this to win back badge size.
+    //
+    // Wallet scales the strip to FILL its slot and crops the overflow; it
+    // never letterboxes. So any disagreement between our aspect ratio and the
+    // device's comes straight out of the left and right edges, and a badge
+    // sitting near the edge loses a chunk of itself. That is exactly what
+    // happened at 4%: a real owner's 5-stamp card showed the first and last
+    // badge half-cut on an iPhone.
+    //
+    // 9% absorbs a crop of about that much per side while costing roughly 11%
+    // of badge diameter — a trade worth making, because a slightly smaller
+    // badge reads fine and a sliced one looks broken.
+    const padX = width * 0.09;
     const padY = height * 0.1;
     const cellByWidth =
       (width - padX * 2) / (columns + gapRatio * (columns - 1));

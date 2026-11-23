@@ -1,5 +1,13 @@
 // End-to-end smoke test against a running api. Fails loud on any deviation.
 // Run with: pnpm --filter @onusclub/api run smoke
+//
+// This file is otherwise deliberately dependency-free — it talks to the API
+// the way any outside client would. The one import is a published contract
+// constant, because retyping a limit here is how the test and the rule drift
+// apart. The assertion below pins the design ceiling separately, so raising
+// the constant past what a card can legibly render still fails CI.
+import { MAX_STAMPS_REQUIRED } from "@onusclub/shared";
+
 const BASE = process.env.SMOKE_BASE ?? "http://localhost:4000";
 
 interface ErrBody {
@@ -143,6 +151,53 @@ async function main(): Promise<void> {
     jwt
   );
   assert(program.id, "no program id");
+
+  // The cap is a DESIGN limit — past ~12 badges the strip renders them too
+  // small to read. It lives in the shared contract, so the API must refuse
+  // what the form already prevents; a UI-only limit is not a limit.
+  //
+  // Pinned independently of the constant: importing it alone would let someone
+  // raise the cap to 100 and still see green, which is the exact change this
+  // is here to stop.
+  assert(
+    MAX_STAMPS_REQUIRED <= 12,
+    `MAX_STAMPS_REQUIRED is ${MAX_STAMPS_REQUIRED}; above 12 the strip badges are ` +
+      `too small to read — re-check renderCardStrip before raising this`
+  );
+
+  console.log(`→ more than ${MAX_STAMPS_REQUIRED} stamps is refused`);
+  let tooManyRefused = false;
+  try {
+    await call(
+      "POST",
+      "/v1/programs",
+      {
+        name: "Unreadable card",
+        stampsRequired: MAX_STAMPS_REQUIRED + 1,
+        rewardText: "A free coffee",
+      },
+      jwt
+    );
+  } catch (err) {
+    tooManyRefused = String(err).includes("400");
+  }
+  assert(
+    tooManyRefused,
+    `stampsRequired ${MAX_STAMPS_REQUIRED + 1} was accepted — the card cap is gone`
+  );
+
+  // ...and the boundary itself still works, so the cap is off-by-none.
+  const atStampCap = await call<{ id: string }>(
+    "POST",
+    "/v1/programs",
+    {
+      name: "Full house",
+      stampsRequired: MAX_STAMPS_REQUIRED,
+      rewardText: "A free coffee",
+    },
+    jwt
+  );
+  assert(atStampCap.id, `stampsRequired ${MAX_STAMPS_REQUIRED} should be allowed`);
 
   console.log("→ list programs");
   const list = await call<{ programs: Array<{ id: string }> }>(
