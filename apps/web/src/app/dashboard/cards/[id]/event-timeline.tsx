@@ -1,3 +1,4 @@
+import { formatDateTime } from "@/lib/dates";
 import { centsToEuroString, type CardEvent } from "@onusclub/shared";
 
 function describe(e: CardEvent): string {
@@ -103,7 +104,7 @@ export function EventTimeline({ events }: { events: CardEvent[] }): JSX.Element 
             ) : null}
           </span>
           <span className="text-xs text-brand-olive tabular-nums shrink-0">
-            {new Date(e.createdAt).toLocaleString()}
+            {formatDateTime(e.createdAt)}
           </span>
         </li>
       ))}

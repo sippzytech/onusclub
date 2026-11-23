@@ -82,20 +82,18 @@ export function DesignEditor({
 
   return (
     <div className="space-y-5">
-      {/* Above the controls: choosing a starting point is the right first
-          question for someone who runs a barber shop, not "what hex value
-          should your foreground be". */}
-      <TemplateGallery
-        current={design}
-        businessName={businessName}
-        programType={programType}
-        target={target}
-        onApply={(next) => {
-          setDesign(next);
-          setSaved(false);
-        }}
-      />
+    {/* ORDER: the card, then the controls, then the templates.
+        
+        This used to open with the template gallery, on the reasoning that
+        "pick a starting point" is a better first question for someone who
+        runs a barber shop than "what hex value should your foreground be".
+        That reasoning was sound and the café owner who actually used it still
+        disagreed: he wanted to see the card he already had before being asked
+        to choose a different one. Being shown a wall of 24 designs first reads
+        as "you must pick one of these", when the default is already fine.
 
+        So the card comes first and the gallery sits below as an alternative
+        for anyone who wants it — which is also what he asked for. */}
     <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
       {/* Live preview */}
       <div className="lg:sticky lg:top-4">
@@ -273,6 +271,18 @@ export function DesignEditor({
         ) : null}
       </div>
     </div>
+
+      {/* The alternative, offered after the card rather than instead of it. */}
+      <TemplateGallery
+        current={design}
+        businessName={businessName}
+        programType={programType}
+        target={target}
+        onApply={(next) => {
+          setDesign(next);
+          setSaved(false);
+        }}
+      />
     </div>
   );
 }

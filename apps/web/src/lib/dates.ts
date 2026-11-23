@@ -37,6 +37,27 @@ export function formatDayMonth(iso: string | null | undefined): string {
   return `${m[3]}-${m[2]}`;
 }
 
+/**
+ * A timestamp as "25-12-1990 14:30".
+ *
+ * `toLocaleString()` with no arguments renders in the VIEWER's locale, so the
+ * same card timeline read 25/12/1990 for one person and 12/25/1990 for
+ * another — and for an event log, "was that 5 December or 12 May" is a real
+ * question. One format, chosen by us, for everyone.
+ *
+ * Time is local to the viewer's device, which is correct: a café owner
+ * checking when a stamp was given wants their own clock, not UTC.
+ */
+export function formatDateTime(value: string | Date | null | undefined): string {
+  if (!value) return "";
+  const d = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(d.getTime())) return "";
+  const p = (n: number): string => String(n).padStart(2, "0");
+  return `${p(d.getDate())}-${p(d.getMonth() + 1)}-${d.getFullYear()} ${p(
+    d.getHours()
+  )}:${p(d.getMinutes())}`;
+}
+
 /** Build the ISO wire value from three parts, or "" if any is missing. */
 export function toIsoDate(day: string, month: string, year: string): string {
   if (!day || !month || !year) return "";
