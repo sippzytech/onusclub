@@ -1,5 +1,7 @@
 "use client";
 
+import { DateOfBirthInput } from "@/components/date-of-birth-input";
+
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
@@ -82,14 +84,19 @@ export function AddCustomerForm(): JSX.Element {
       </div>
       <div>
         <label className={labelClass}>Birthday (optional)</label>
-        <input
-          type="date"
+        <DateOfBirthInput
           value={birthday}
-          onChange={(e) => setBirthday(e.target.value)}
-          className={inputClass}
+          onChange={setBirthday}
+          idPrefix="add-customer-dob"
         />
+        {/* ⚠️ Optional HERE, required on the customer's own signup form.
+            Not an inconsistency: a customer knows their own birthday, while
+            a staff member adding a walk-in at the counter usually does not,
+            and making it required would block them from adding the customer
+            at all — a worse failure than a missing birthday. */}
         <p className="mt-1 text-xs text-brand-olive">
           Used by the birthday sweep to send an automatic greeting + bonus.
+          Customers signing up themselves are always asked for it.
         </p>
       </div>
       <p className="text-xs text-brand-olive">At least one of phone or email is required.</p>

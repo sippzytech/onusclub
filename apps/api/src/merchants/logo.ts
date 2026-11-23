@@ -61,6 +61,39 @@ export async function loadLogoUrl(merchantId: string): Promise<string | null> {
   return logoUrlFromVersion(merchantId, rows[0]?.version);
 }
 
+export interface LogoBytes {
+  bytes: Buffer;
+  contentType: string;
+  /** Content hash, so callers can cache a derived rendering by it. */
+  version: string;
+}
+
+interface LogoBytesRow extends RowDataPacket {
+  content_type: string;
+  bytes: Buffer;
+  version: string;
+}
+
+/**
+ * The raw logo for one merchant, for callers that need the IMAGE rather than
+ * a URL — currently only the Apple pass, which embeds `logo.png` in the
+ * signed bundle instead of fetching it.
+ *
+ * ⚠️ This is the one legitimate reason to read the bytes. Everything that can
+ * use a URL must use `loadLogoUrl`: Google fetches `programLogo` itself and
+ * caches it by URI, and a second copy of the image taken at some other moment
+ * is exactly the staleness this file exists to prevent.
+ */
+export async function loadLogoBytes(merchantId: string): Promise<LogoBytes | null> {
+  const [rows] = await pool.execute<LogoBytesRow[]>(
+    "SELECT content_type, bytes, version FROM merchant_assets WHERE merchant_id = ? AND kind = 'logo' LIMIT 1",
+    [merchantId]
+  );
+  const row = rows[0];
+  if (!row || !row.bytes) return null;
+  return { bytes: row.bytes, contentType: row.content_type, version: row.version };
+}
+
 /**
  * Logo URLs for many merchants at once, keyed by merchant id.
  *

@@ -40,7 +40,7 @@ export function DeliveryTable({
         <thead className="bg-gray-50">
           <tr className="text-left text-xs uppercase tracking-wide text-gray-500">
             <th className="px-4 py-2">Customer</th>
-            <th className="px-4 py-2">Program</th>
+            <th className="px-4 py-2">Offer</th>
             <th className="px-4 py-2">Status</th>
             <th className="px-4 py-2 tabular-nums">Attempts</th>
             <th className="px-4 py-2">Last error</th>

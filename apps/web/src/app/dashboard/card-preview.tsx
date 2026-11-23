@@ -76,11 +76,27 @@ export function CardPreview({
   const pct = target > 0 ? Math.min(100, Math.round((current / target) * 100)) : 0;
   const frameWidth = size === "compact" ? "w-[210px]" : "w-[280px]";
 
+  // The screen is held at a phone's proportions instead of collapsing to the
+  // height of its contents.
+  //
+  // A pass is short — title, art, two labels, a barcode — so a content-sized
+  // frame came out roughly 280×330, which is not the shape of any phone and
+  // read as a broken box rather than a preview. It was least convincing on
+  // points cards, where a progress bar replaces the taller stamp grid. The
+  // template gallery never showed the problem because it renders at 210px,
+  // where the same content happens to land near the right proportions.
+  //
+  // Empty space below the pass is correct, not a gap to fill: that is exactly
+  // what Wallet shows on a real device.
+  const screenShape = size === "compact" ? "" : "aspect-[9/16]";
+
   return (
     <div className={`${frameWidth} shrink-0`}>
       {/* Phone frame */}
       <div className="rounded-[2rem] bg-neutral-900 p-2.5 shadow-lg ring-1 ring-black/10">
-        <div className="relative overflow-hidden rounded-[1.6rem] bg-neutral-100">
+        <div
+          className={`relative overflow-hidden rounded-[1.6rem] bg-neutral-100 ${screenShape}`}
+        >
           {/* notch */}
           <div className="absolute left-1/2 top-1.5 z-10 h-3.5 w-16 -translate-x-1/2 rounded-full bg-neutral-900" />
 

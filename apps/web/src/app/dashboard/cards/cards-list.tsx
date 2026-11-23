@@ -76,7 +76,7 @@ export function CardsList({ cards }: { cards: Card[] }): JSX.Element {
       <input
         value={query}
         onChange={(e) => setQuery(e.target.value)}
-        placeholder="Search by customer or program…"
+        placeholder="Search by customer or offer…"
         className="block w-full rounded-lg border border-brand-green/10 bg-brand-cream/40 px-3 py-2 text-sm text-brand-green placeholder:text-brand-olive/70 focus:outline-none focus:border-brand-green/30"
       />
       {filtered.length === 0 ? (

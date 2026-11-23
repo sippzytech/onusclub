@@ -18,7 +18,7 @@ function describeAudience(filter: AudienceFilter): string {
     parts.push("birthday this month");
   }
   if (filter.programId) {
-    parts.push("specific program");
+    parts.push("specific offer");
   }
   return parts.length === 0
     ? "all active customers (no filters applied)"

@@ -213,7 +213,7 @@ export function BroadcastComposer({
                 onChange={(e) => setProgramId(e.target.value)}
                 className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm"
               >
-                <option value="">— any program —</option>
+                <option value="">— any offer —</option>
                 {programs.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.name}

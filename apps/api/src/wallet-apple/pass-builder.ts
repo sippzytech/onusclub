@@ -7,8 +7,11 @@ import {
   DEFAULT_CARD_DESIGN,
   type CardDesign,
 } from "@onusclub/shared";
+import { appleChangeMessage } from "@onusclub/shared";
 import { logger } from "../logger.js";
 import { buildStripSet } from "../card-art/raster.js";
+import { buildPassLogoSet } from "../card-art/pass-logo.js";
+import { loadLogoBytes } from "../merchants/logo.js";
 import { appleWalletCredentials } from "./client.js";
 import type {
   AppleCardForWallet,
@@ -92,14 +95,24 @@ interface PassBits {
 
 function renderBits(
   program: AppleProgramForWallet,
-  card: AppleCardForWallet
+  card: AppleCardForWallet,
+  // Needed only for the change messages, which name the café. Passed in
+  // rather than read from a wider scope so this stays a pure function of its
+  // arguments and `check:messages` can exercise it.
+  businessName: string
 ): PassBits {
   if (program.programType === "points" && card.state.type === "points") {
     const remaining = Math.max(0, program.pointsForReward - card.state.points_current);
     return {
       headerLabel: "Points",
       headerValue: `${card.state.points_current} / ${program.pointsForReward}`,
-      headerChangeMsg: "You have %@ points — keep going!",
+      headerChangeMsg: appleChangeMessage({
+        businessName,
+        current: card.state.points_current,
+        total: program.pointsForReward,
+        unitLabel: "points",
+        rewardText: program.rewardText,
+      }),
       remainingValue: String(remaining),
       remainingChangeMsg: "%@ points to your reward",
       progressBody: `${card.state.points_current} of ${program.pointsForReward} points · ${remaining} to go`,
@@ -124,7 +137,13 @@ function renderBits(
   return {
     headerLabel: "Stamps",
     headerValue: `${stampState.stamps_current} / ${stampsRequired}`,
-    headerChangeMsg: "You have %@ stamps — keep going!",
+    headerChangeMsg: appleChangeMessage({
+      businessName,
+      current: stampState.stamps_current,
+      total: stampsRequired,
+      unitLabel: "stamps",
+      rewardText: program.rewardText,
+    }),
     remainingValue: String(remaining),
     remainingChangeMsg: "%@ stamps to your reward",
     progressBody: `${stampState.stamps_current} of ${stampsRequired} stamps · ${remaining} to go`,
@@ -146,7 +165,7 @@ export async function buildPkPass(
   if (!creds) return null;
 
   const icons = await loadIcons();
-  const bits = renderBits(program, card);
+  const bits = renderBits(program, card, merchant.businessName);
 
   // Precedence: defaults < merchant brand colour < the design the merchant
   // saved in the card builder — the same chain, in the same order, as the
@@ -170,6 +189,15 @@ export async function buildPkPass(
     program.programType === "stamp" && bits.total > 0 && bits.total <= 30
       ? buildStripSet(design, bits.current, bits.total)
       : null;
+
+  // The café's own logo, top-left of the pass.
+  //
+  // Google has shown this since Day 21 via `programLogo`; Apple showed only
+  // `logoText`, the business name as text, so an owner who had uploaded a logo
+  // saw it on Android and not on iPhone. Null is normal — no logo uploaded, or
+  // an image we could not render — and the pass falls back to logoText exactly
+  // as before.
+  const passLogo = buildPassLogoSet(await loadLogoBytes(merchant.id));
 
   const passBg = design.backgroundColor;
   const passFg = design.foregroundColor;
@@ -219,6 +247,14 @@ export async function buildPkPass(
       // reward drops to a secondary field. Otherwise the reward text sits
       // across the stamp badges.
       for (const [name, buf] of Object.entries(strips)) {
+        pass.addBuffer(name, buf);
+      }
+    }
+
+    // Wallet shows logo.png in place of logoText when both are present, so
+    // this silently upgrades every pass whose café has uploaded a logo.
+    if (passLogo) {
+      for (const [name, buf] of Object.entries(passLogo)) {
         pass.addBuffer(name, buf);
       }
     }

@@ -324,7 +324,7 @@ export default async function DashboardPage(): Promise<JSX.Element> {
                 </p>
               </div>
               <div>
-                <p className="text-xs uppercase tracking-wide text-brand-olive">Total programs</p>
+                <p className="text-xs uppercase tracking-wide text-brand-olive">Total offers</p>
                 <p className="font-serif text-2xl text-brand-green mt-1 tabular-nums">
                   {programs.length}
                 </p>

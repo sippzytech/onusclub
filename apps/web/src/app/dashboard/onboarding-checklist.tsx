@@ -47,8 +47,11 @@ function buildSteps(s: OnboardingState): Step[] {
       done: s.hasProgram,
       title: "Create your loyalty card",
       why: "How many stamps, and what the reward is. Two minutes.",
-      href: "/dashboard/card-builder",
-      cta: "Card builder",
+      // Into the guided flow, not the full card builder. Anyone still on
+      // step one has not set anything up, which is exactly who /setup is
+      // for — including someone who pressed "Skip for now" and came back.
+      href: "/dashboard/setup",
+      cta: "Set up my card",
     },
     {
       done: s.hasBranding,

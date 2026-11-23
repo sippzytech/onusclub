@@ -8,7 +8,7 @@ import { createMerchant, createProgram, login, PASSWORD, stamp } from "./helpers
  * the case a browser test exists for.
  */
 test.describe("onboarding checklist", () => {
-  test("signing up lands on a checklist, not an empty dashboard", async ({ page }) => {
+  test("signing up lands on guided setup, not the whole dashboard", async ({ page }) => {
     // Signup driven through the UI here, because signup is what is being
     // tested — every other spec creates its merchant over HTTP.
     const s = stamp();
@@ -23,15 +23,32 @@ test.describe("onboarding checklist", () => {
     await page.getByLabel("Confirm password").fill(PASSWORD);
     await page.getByRole("button", { name: /create|sign up|get started/i }).click();
 
-    await page.waitForURL(/\/dashboard/, { timeout: 30_000 });
+    // A BRAND NEW café goes to guided setup, not the dashboard. This is the
+    // fix for "the main and big confusing part is onboarding a café" — the
+    // full product used to open the moment the account existed.
+    await page.waitForURL(/\/dashboard\/setup/, { timeout: 30_000 });
 
-    // The point of the feature: the next action is visible without scrolling
-    // past four dashed-out stat cards.
     await expect(page.getByText(/let.s get you set up/i)).toBeVisible();
+
+    // One question, and it is the first real decision an owner has to make.
+    await expect(
+      page.getByRole("heading", { name: /what do your customers collect/i })
+    ).toBeVisible();
+
+    // 🚨 The things that must NOT be on screen yet. Each was on the old
+    // signup landing page and each is what made it overwhelming: a QR code
+    // for a signup page with nothing to sign up to, and the full sidebar.
+    await expect(page.getByText(/your qr code/i)).toHaveCount(0);
+    await expect(page.getByRole("link", { name: "Analytics" })).toHaveCount(0);
+    await expect(page.getByRole("link", { name: "Campaigns" })).toHaveCount(0);
+
+    // Nobody is trapped: the way out is always on screen.
+    await page.getByRole("link", { name: /skip for now/i }).click();
+    await page.waitForURL(/\/dashboard(\?|$)/, { timeout: 30_000 });
+
+    // ...and whoever takes it still gets the checklist that was there before.
     await expect(page.getByText("Create your loyalty card")).toBeVisible();
     await expect(page.getByText("0 of 4 done")).toBeVisible();
-
-    // And the panel it replaced is gone.
     await expect(page.getByText("No programs yet")).toHaveCount(0);
   });
 

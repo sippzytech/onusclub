@@ -1,5 +1,7 @@
 "use client";
 
+import { formatDayMonth } from "@/lib/dates";
+
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { Customer } from "@onusclub/shared";
@@ -178,7 +180,7 @@ export function CustomersList({ customers }: { customers: Customer[] }): JSX.Ele
                     <td className="px-2 py-3 text-brand-olive">
                       {c.phone ?? "—"}
                       {c.birthday ? (
-                        <span className="ml-2 text-brand-gold">🎂 {c.birthday.slice(5)}</span>
+                        <span className="ml-2 text-brand-gold">🎂 {formatDayMonth(c.birthday)}</span>
                       ) : null}
                     </td>
                     <td className="px-2 py-3 text-right whitespace-nowrap">

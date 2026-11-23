@@ -55,7 +55,7 @@ export function EnrolCardForm({
         </select>
       </div>
       <div>
-        <label className="block text-sm font-medium text-gray-800">Program</label>
+        <label className="block text-sm font-medium text-gray-800">Offer</label>
         <select
           required
           value={programId}

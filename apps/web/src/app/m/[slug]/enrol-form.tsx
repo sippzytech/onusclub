@@ -3,6 +3,7 @@
 import { useState, type FormEvent } from "react";
 import type { PublicEnrolResult, PublicProgram } from "@onusclub/shared";
 import { GoogleButton } from "@/components/google-button";
+import { DateOfBirthInput } from "@/components/date-of-birth-input";
 
 interface SuccessState {
   walletSaveUrl: string | null;
@@ -50,6 +51,17 @@ export function PublicEnrolForm({
    */
   async function enrol(googleIdToken?: string): Promise<void> {
     setError(null);
+
+    // ⚠️ Checked HERE, not just via `required` on the inputs, because the
+    // Google path never submits the form — one tap calls this directly, and
+    // browser validation would be skipped entirely. Google returns no
+    // birthday, so without this a Google customer would silently enrol
+    // without one and never get a birthday offer.
+    if (birthday.trim() === "") {
+      setError("Please choose your birthday first — it only takes a second.");
+      return;
+    }
+
     setPending(true);
     const res = await fetch(`/api/public/${slug}/enrol`, {
       method: "POST",
@@ -198,16 +210,32 @@ export function PublicEnrolForm({
         Equal weight: the Google button and the full manual form are both
         visible, neither hidden behind a disclosure.
 
-        A Google tap enrols IMMEDIATELY — it carries the card choice above and
-        the verified name + email, which is everything the server needs. One
-        tap, card created.
+        A Google tap enrols IMMEDIATELY — it carries the card choice above,
+        the birthday asked for below, and the verified name + email. One tap,
+        card created.
 
-        The birthday is the one thing it skips, because Google does not return
-        one without an extra scope and a People API call. That is an accepted
-        trade: birthday is optional today and plenty of people skip it anyway,
-        whereas a second screen asking for it would undo the one-tap win. A
-        customer who wants the birthday treat uses the form below.
+        ⚠️ The birthday sits ABOVE the Google button on purpose. Google does
+        not return one without an extra scope and a People API call, so the
+        form is the only source on either path — and now that it is required,
+        asking afterwards would mean tapping Google, being refused, and
+        hunting for the field. One screen, filled top to bottom, no surprise.
       */}
+      <div>
+        <label className="block text-sm font-medium text-brand-green">
+          Your birthday
+        </label>
+        <DateOfBirthInput
+          value={birthday}
+          onChange={setBirthday}
+          disabled={pending}
+          required
+          idPrefix="enrol-dob"
+        />
+        <p className="mt-1 text-xs text-brand-olive">
+          So we can send you a treat on your birthday.
+        </p>
+      </div>
+
       <GoogleButton
         clientId={googleClientId}
         onCredential={(idToken) => enrol(idToken)}
@@ -260,18 +288,6 @@ export function PublicEnrolForm({
         </div>
       </div>
       <p className="text-xs text-brand-olive -mt-2">Phone or email is enough — we just need a way to know it&apos;s you next time.</p>
-      <div>
-        <label className="block text-sm font-medium text-brand-green">Birthday (optional)</label>
-        <input
-          type="date"
-          value={birthday}
-          onChange={(e) => setBirthday(e.target.value)}
-          className="mt-1 block w-full rounded-lg border border-brand-green/15 bg-brand-cream/30 px-3 py-2.5 text-sm text-brand-green placeholder:text-brand-olive/70 focus:outline-none focus:border-brand-green/40"
-        />
-        <p className="mt-1 text-xs text-brand-olive">
-          We&apos;ll send you a little treat on your birthday.
-        </p>
-      </div>
       {error ? (
         <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">
           {error}

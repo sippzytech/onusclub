@@ -71,6 +71,16 @@ jobs:
       - name: Check customer block hashing and masking
         run: pnpm --filter @onusclub/api run check:blocks
 
+      # 🚨 Apple IGNORES a changeMessage that does not contain %@ and shows
+      # its own flat "pass updated" text instead — a silent downgrade that
+      # only a real phone, holding a real pass, receiving a real push, could
+      # ever reveal. Google has no substitution, so the mirror rule applies:
+      # a stray %@ there would be shown to the customer verbatim.
+      #
+      # Needs no env — pass-messages.ts deliberately imports nothing.
+      - name: Check wallet notification copy
+        run: pnpm --filter @onusclub/api run check:messages
+
       # 🚨 merchants.logo_url was DROPPED in migration 017. It stored a URL
       # built from BASE_URL_API at upload time and frozen forever, so any
       # domain change orphaned every existing logo — silently, because Google

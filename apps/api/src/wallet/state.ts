@@ -1,4 +1,9 @@
 import type { CardDesign, PointsCardState, StampCardState } from "@onusclub/shared";
+import {
+  googleProgressMessage,
+  redeemMessage,
+  signupMessage,
+} from "@onusclub/shared";
 import { env } from "../config.js";
 import { buildHeroPng, heroVersion } from "../card-art/raster.js";
 import { WALLET_ISSUER_ID } from "./client.js";
@@ -311,36 +316,49 @@ export function buildEventMessage(ctx: MessageContext): Record<string, unknown> 
     end: { date: expiry.toISOString() },
   };
 
+  // Copy lives in @onusclub/shared so Apple's changeMessage and this cannot
+  // drift — the same stamp must read the same on both phones. See
+  // packages/shared/src/pass-messages.ts.
   let header: string;
   let body: string;
   switch (ctx.event) {
-    case "signup":
-      header = `Welcome to ${ctx.businessName} rewards`;
-      body =
-        ctx.unitLabel === "stamps"
-          ? `Earn a stamp every visit. Reward at ${ctx.thresholdValue} stamps.`
-          : `Earn points on every purchase. Reward at ${ctx.thresholdValue} points.`;
-      break;
-    case "stamp": {
-      const remaining = Math.max(0, ctx.thresholdValue - ctx.currentValue);
-      header =
-        ctx.unitLabel === "stamps"
-          ? `+1 stamp at ${ctx.businessName}`
-          : `Points added at ${ctx.businessName}`;
-      body = `${ctx.currentValue}/${ctx.thresholdValue} · ${remaining} to go`;
+    case "signup": {
+      const m = signupMessage({
+        businessName: ctx.businessName,
+        total: ctx.thresholdValue,
+        unitLabel: ctx.unitLabel,
+        rewardText: ctx.rewardText,
+      });
+      header = m.header;
+      body = m.body;
       break;
     }
-    case "threshold":
-      header = `Reward unlocked at ${ctx.businessName}`;
-      body = `Tap to redeem: ${ctx.rewardText}`;
+    // "threshold" is the same moment as a stamp that completes the card, so
+    // both go through the same milestone-aware copy rather than one of them
+    // getting its own wording.
+    case "stamp":
+    case "threshold": {
+      const m = googleProgressMessage({
+        businessName: ctx.businessName,
+        current: ctx.currentValue,
+        total: ctx.thresholdValue,
+        unitLabel: ctx.unitLabel,
+        rewardText: ctx.rewardText,
+      });
+      header = m.header;
+      body = m.body;
       break;
-    case "redeem":
-      header = `Reward redeemed at ${ctx.businessName}`;
-      body =
-        ctx.unitLabel === "stamps"
-          ? "Back to 0 — start your next one!"
-          : "Points deducted — keep earning!";
+    }
+    case "redeem": {
+      const m = redeemMessage({
+        businessName: ctx.businessName,
+        unitLabel: ctx.unitLabel,
+        rewardText: ctx.rewardText,
+      });
+      header = m.header;
+      body = m.body;
       break;
+    }
   }
 
   return {

@@ -60,7 +60,7 @@ export function CreateProgramForm(): JSX.Element {
     setPending(false);
     if (!res.ok) {
       const errBody = (await res.json().catch(() => ({}))) as { error?: string };
-      setError(errBody.error ?? "could not create program");
+      setError(errBody.error ?? "could not create offer");
       return;
     }
     // Reset to a sensible default for the next entry.
@@ -76,9 +76,9 @@ export function CreateProgramForm(): JSX.Element {
 
   return (
     <form onSubmit={onSubmit} className="space-y-3 rounded-md border border-gray-200 bg-white p-4">
-      {/* Program type selector */}
+      {/* Offer type selector */}
       <div>
-        <label className="block text-sm font-medium text-gray-800">Program type</label>
+        <label className="block text-sm font-medium text-gray-800">Offer type</label>
         <div className="mt-1 grid grid-cols-2 gap-2">
           {(["stamp", "points"] as const).map((t) => (
             <button
@@ -104,7 +104,7 @@ export function CreateProgramForm(): JSX.Element {
       </div>
 
       <div>
-        <label className="block text-sm font-medium text-gray-800">Program name</label>
+        <label className="block text-sm font-medium text-gray-800">Offer name</label>
         <input
           required
           value={name}
@@ -226,7 +226,7 @@ export function CreateProgramForm(): JSX.Element {
         disabled={pending}
         className="rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50"
       >
-        {pending ? "Creating…" : "Create program"}
+        {pending ? "Creating…" : "Create offer"}
       </button>
     </form>
   );

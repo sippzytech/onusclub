@@ -22,6 +22,20 @@ interface PendingGoogle {
   name: string | null;
 }
 
+/**
+ * Where a BRAND NEW café lands.
+ *
+ * Not the dashboard. A real owner signing up was dropped straight into the
+ * finished product — nine nav items, four empty stat cards and a QR code for
+ * a signup page that had nothing to sign up to — with no indication of what
+ * to do first. Setup asks one question at a time and hands over the full
+ * dashboard at the end.
+ *
+ * ⚠️ Only for accounts being CREATED. A Google tap that turns out to match
+ * an existing account is a login, and goes to /dashboard like any other.
+ */
+const SETUP_PATH = "/dashboard/setup";
+
 export function SignupForm({ googleClientId }: { googleClientId: string }): JSX.Element {
   const [businessName, setBusinessName] = useState("");
   const [ownerEmail, setOwnerEmail] = useState("");
@@ -65,7 +79,8 @@ export function SignupForm({ googleClientId }: { googleClientId: string }): JSX.
       });
       return;
     }
-    // Already had an account — signing up is just signing in.
+    // Already had an account — signing up is just signing in, so this one
+    // does NOT go to setup. They have been here before.
     window.location.href = "/dashboard";
   }
 
@@ -88,7 +103,7 @@ export function SignupForm({ googleClientId }: { googleClientId: string }): JSX.
       setPending(false);
       return;
     }
-    window.location.href = "/dashboard";
+    window.location.href = SETUP_PATH;
   }
 
   async function onSubmit(e: FormEvent<HTMLFormElement>): Promise<void> {
@@ -119,8 +134,7 @@ export function SignupForm({ googleClientId }: { googleClientId: string }): JSX.
       setPending(false);
       return;
     }
-    // Cookie is set by the server route; go straight to dashboard.
-    window.location.href = "/dashboard";
+    window.location.href = SETUP_PATH;
   }
 
   const inputClass =
