@@ -539,18 +539,62 @@ production. Items marked 🔴 are live exposures rather than features.
 
 ### 🔴 P0 — open exposures
 
-**1. Production is hosted in India.** 🔶 **DEFERRED 2026-10-03 — deliberately, with a
-trigger. Re-read this before onboarding anyone real.**
+**0. Bot signups are filling the merchant table.** 🚨 **FOUND 2026-11-24, not yet fixed.**
+
+Between **2026-11-01 and 2026-11-10**, **eight** automated accounts registered. The
+pattern is unmistakable: a gibberish business name ending in `LLC` (`Fwvsizxux LLC`,
+`Ijmrehf LLC`, `Zgzex LLC` …), a throwaway mail domain (aol, yahoo, hotmail, outlook,
+`cicesp.com`), **zero programs created** in every single case, and in three cases one
+junk customer with a random-string name (`cqfytmAnpOdowarZ`). Nobody was evaluating the
+product. At that point **8 of 15 merchants in production were junk.**
+
+**All eight came through the PASSWORD signup path. Not one used Google sign-in.** That is
+the diagnosis, not a detail: `POST /v1/auth/signup` creates a fully working café from any
+email address with **no verification step at all**, so a form-filler gets an account.
+Google sign-in was never abused because it requires a real verified Google account — the
+Day 29 path is the clean one.
+
+⚠️ `signupLimiter` is **not** the fix and did not help. It is 5/hour keyed on the client
+address, which does nothing against a crawler that is distributed or simply slow. Raising
+it or lowering it changes nothing here.
+
+Two of the addresses used Gmail dot/plus evasion (`evijim.og.u.w.o9.13@gmail.com`,
+`mevozel6.3.5@gmail.com`) — exactly the normalisation the Day 31 block list deliberately
+does **not** collapse. That remains the right call for blocks (a hash cannot be
+un-widened), but it means an email-equality check alone will not dedupe these.
+
+**The wave stopped on 2026-11-10** and nothing has arrived since, so this was a burst
+rather than an ongoing attack. It will refill: the form is public and now crawled.
+
+**The likely fix** (not yet planned in detail): require email verification before a café
+becomes usable. `auth_tokens` already exists and Resend delivery is confirmed, so it is
+mostly wiring rather than new infrastructure. A CAPTCHA is the alternative but adds a
+vendor and taxes real signups. ⚠️ **Purging the junk without fixing signup first just
+empties a bucket that is still filling.**
+
+**1. Production is hosted in India.** 🚨 **THE TRIGGER FIRED 2026-11-16. No longer
+deferred — this is now overdue, not scheduled.**
 
 `srv1573651.hstgr.cloud` / `187.127.149.147` is **Mumbai, IN** (Hostinger). India has no
 EU adequacy decision, so EU customer data there is a third-country transfer requiring
 SCCs, a Transfer Impact Assessment and disclosure in the privacy policy — none of which
 exist.
 
-**Why it is deferred**: GDPR protects *natural persons*. Every merchant and customer row
-today is test data (`Smoke Café …`, `@example.com`), so there is no data subject and
-therefore no exposure. Buying a second VPS now would mean 2-3 months of cost with no
-revenue and nothing to protect.
+🚨 **What fired it.** On **2026-11-16** a café (`Third Wave Coffee`, via Google sign-in)
+enrolled **two customers with real human names and real Gmail addresses** — a café owner
+testing the product from the outside. The condition written below was *"before the first
+real person's name enters the database"*. Two are in there now. It is a small number and
+a friendly tester rather than a stranger, so this is not an emergency — but the honest
+reading is that the deferral expired and every day since is exposure, not runway.
+
+The `leads` table (3 real rows from the marketing form) had already made the
+"no data subject exists" claim shaky before that. This settles it.
+
+**Why it WAS deferred** (kept for the reasoning, which was sound at the time): GDPR
+protects *natural persons*. Every merchant and customer row was test data
+(`Smoke Café …`, `@example.com`), so there was no data subject and therefore no exposure.
+Buying a second VPS then would have meant 2-3 months of cost with no revenue and nothing
+to protect. **That is no longer the situation.**
 
 🚨 **The trigger — migrate BEFORE whichever comes first:**
 - the first real merchant is onboarded
