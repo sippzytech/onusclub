@@ -39,6 +39,15 @@ export function PublicEnrolForm({
   const [programId, setProgramId] = useState(programs[0]?.id ?? "");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /**
+   * Shown at the birthday field, not with the general errors.
+   *
+   * The general error block sits above the submit button, near the bottom of
+   * the form. On a phone that is off-screen when someone taps the Google
+   * button at the top — so a refused Google tap looked like nothing
+   * happening at all, which is exactly what the café owner reported.
+   */
+  const [birthdayError, setBirthdayError] = useState<string | null>(null);
   const [success, setSuccess] = useState<SuccessState | null>(null);
 
   /**
@@ -58,9 +67,10 @@ export function PublicEnrolForm({
     // birthday, so without this a Google customer would silently enrol
     // without one and never get a birthday offer.
     if (birthday.trim() === "") {
-      setError("Please choose your birthday first — it only takes a second.");
+      setBirthdayError("Please pick the day, month and year first.");
       return;
     }
+    setBirthdayError(null);
 
     setPending(true);
     const res = await fetch(`/api/public/${slug}/enrol`, {
@@ -221,7 +231,12 @@ export function PublicEnrolForm({
         hunting for the field. One screen, filled top to bottom, no surprise.
       */}
       <div>
-        <label className="block text-sm font-medium text-brand-green">
+        {/* Points at the Day select — the first control in the group, so
+            tapping the label focuses something sensible. */}
+        <label
+          htmlFor="enrol-dob-day"
+          className="block text-sm font-medium text-brand-green"
+        >
           Your birthday
         </label>
         <DateOfBirthInput
@@ -231,9 +246,13 @@ export function PublicEnrolForm({
           required
           idPrefix="enrol-dob"
         />
-        <p className="mt-1 text-xs text-brand-olive">
-          So we can send you a treat on your birthday.
-        </p>
+        {birthdayError ? (
+          <p className="mt-1.5 text-xs font-medium text-red-700">{birthdayError}</p>
+        ) : (
+          <p className="mt-1 text-xs text-brand-olive">
+            So we can send you a treat on your birthday.
+          </p>
+        )}
       </div>
 
       <GoogleButton
@@ -256,9 +275,10 @@ export function PublicEnrolForm({
       ) : null}
 
       <div>
-        <label className="block text-sm font-medium text-brand-green">Your name</label>
+        <label htmlFor="enrol-name" className="block text-sm font-medium text-brand-green">Your name</label>
         <input
           required
+          id="enrol-name"
           value={name}
           onChange={(e) => setName(e.target.value)}
           className="mt-1 block w-full rounded-lg border border-brand-green/15 bg-brand-cream/30 px-3 py-2.5 text-sm text-brand-green placeholder:text-brand-olive/70 focus:outline-none focus:border-brand-green/40"
@@ -267,9 +287,10 @@ export function PublicEnrolForm({
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className="block text-sm font-medium text-brand-green">Phone</label>
+          <label htmlFor="enrol-phone" className="block text-sm font-medium text-brand-green">Phone</label>
           <input
-            value={phone}
+            id="enrol-phone"
+          value={phone}
             onChange={(e) => setPhone(e.target.value)}
             inputMode="tel"
             className="mt-1 block w-full rounded-lg border border-brand-green/15 bg-brand-cream/30 px-3 py-2.5 text-sm text-brand-green placeholder:text-brand-olive/70 focus:outline-none focus:border-brand-green/40"
@@ -277,10 +298,11 @@ export function PublicEnrolForm({
           />
         </div>
         <div>
-          <label className="block text-sm font-medium text-brand-green">Email</label>
+          <label htmlFor="enrol-email" className="block text-sm font-medium text-brand-green">Email</label>
           <input
             type="email"
-            value={email}
+            id="enrol-email"
+          value={email}
             onChange={(e) => setEmail(e.target.value)}
             className="mt-1 block w-full rounded-lg border border-brand-green/15 bg-brand-cream/30 px-3 py-2.5 text-sm text-brand-green placeholder:text-brand-olive/70 focus:outline-none focus:border-brand-green/40"
             placeholder="you@example.com"
